@@ -26,14 +26,16 @@ const ALL_MENU: {
   roles: MenuRole[];
 }[] = [
   { to: '/admin/dashboard', label: 'Dashboard', Icon: LayoutDashboard, roles: ['super', 'admin'] },
+  // Super-only platform tools
   { to: '/admin/approve', label: 'Approve Admins', Icon: UserPlus, roles: ['super'] },
-  { to: '/admin/subscriptions', label: 'Subscriptions', Icon: CreditCard, roles: ['super', 'admin'] },
-  { to: '/admin/emails', label: 'Send Emails', Icon: Mail, roles: ['super', 'admin'] },
+  { to: '/admin/subscriptions', label: 'Subscriptions', Icon: CreditCard, roles: ['super'] },
+  { to: '/admin/emails', label: 'Send Emails', Icon: Mail, roles: ['super'] },
+  { to: '/admin/setup', label: 'Setup Methods', Icon: Settings2, roles: ['super'] },
+  // Mentor + Super shared tools (each sees only their own data)
   { to: '/admin/connect-ea', label: 'Connect EA', Icon: Monitor, roles: ['super', 'admin'] },
   { to: '/admin/orders', label: 'Open Orders', Icon: LineChart, roles: ['super', 'admin'] },
   { to: '/admin/licenses', label: 'Generate License', Icon: KeyRound, roles: ['super', 'admin'] },
   { to: '/admin/eas', label: 'Manage EAs', Icon: Cpu, roles: ['super', 'admin'] },
-  { to: '/admin/setup', label: 'Setup Methods', Icon: Settings2, roles: ['super', 'admin'] },
   { to: '/admin/profile', label: 'Profile Settings', Icon: UserCircle2, roles: ['super', 'admin'] },
 ];
 
@@ -61,7 +63,7 @@ export function AdminShell() {
         <button type="button" onClick={() => setOpen(true)} style={{ background: 'transparent', color: 'var(--text)' }}>
           <Menu />
         </button>
-        <strong>{isSuper ? 'Super Admin' : 'Admin Portal'}</strong>
+        <strong>{isSuper ? 'Super Admin' : 'Mentor Portal'}</strong>
         <span style={{ width: 40 }} />
       </div>
       <div style={{ padding: 16, paddingBottom: 40 }}>
@@ -84,7 +86,7 @@ export function AdminShell() {
                     fontWeight: 700,
                   }}
                 >
-                  {isSuper ? 'SUPER' : 'ADMIN'}
+                  {isSuper ? 'SUPER' : 'MENTOR'}
                 </span>
               </div>
               <button type="button" onClick={() => setOpen(false)} style={{ background: 'transparent', color: 'var(--muted)' }}>
@@ -93,7 +95,12 @@ export function AdminShell() {
             </div>
             <div className="muted" style={{ fontSize: 11, letterSpacing: 1.4 }}>SIGNED IN AS</div>
             <div style={{ fontWeight: 700, fontSize: 20 }}>{admin.fullName}</div>
-            <div style={{ color: 'var(--cyan)', marginBottom: 14 }}>{admin.id}</div>
+            <div style={{ color: 'var(--electric)', marginBottom: 14 }}>{admin.id}</div>
+            {!isSuper ? (
+              <p className="muted" style={{ fontSize: 12, marginTop: 0, marginBottom: 12 }}>
+                Your private mentor space — EAs, licenses, and stats are yours only.
+              </p>
+            ) : null}
             <nav style={{ flex: 1, overflow: 'auto' }}>
               {menu.map(({ to, label, Icon }) => (
                 <NavLink

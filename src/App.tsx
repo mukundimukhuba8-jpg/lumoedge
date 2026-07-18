@@ -38,6 +38,14 @@ function AdminGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Platform tools — Super Admin only. Mentors stay in their private space. */
+function SuperOnly({ children }: { children: React.ReactNode }) {
+  const { admin } = useAdmin();
+  if (!admin) return <Navigate to="/admin/login" replace />;
+  if (admin.role !== 'super') return <Navigate to="/admin/dashboard" replace />;
+  return <>{children}</>;
+}
+
 function HomeRedirect() {
   const { user, accessStatus } = useApp();
   if (!user) return <RegisterPage />;
@@ -83,14 +91,42 @@ export default function App() {
         >
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="approve" element={<ApproveAdminsPage />} />
-          <Route path="subscriptions" element={<SubscriptionsPage />} />
-          <Route path="emails" element={<ComingSoonPage title="Send Emails" />} />
+          <Route
+            path="approve"
+            element={
+              <SuperOnly>
+                <ApproveAdminsPage />
+              </SuperOnly>
+            }
+          />
+          <Route
+            path="subscriptions"
+            element={
+              <SuperOnly>
+                <SubscriptionsPage />
+              </SuperOnly>
+            }
+          />
+          <Route
+            path="emails"
+            element={
+              <SuperOnly>
+                <ComingSoonPage title="Send Emails" />
+              </SuperOnly>
+            }
+          />
           <Route path="connect-ea" element={<ConnectEAPage />} />
           <Route path="orders" element={<OpenOrdersPage />} />
           <Route path="licenses" element={<GenerateLicensePage />} />
           <Route path="eas" element={<ManageEAsPage />} />
-          <Route path="setup" element={<ComingSoonPage title="Setup Methods" />} />
+          <Route
+            path="setup"
+            element={
+              <SuperOnly>
+                <ComingSoonPage title="Setup Methods" />
+              </SuperOnly>
+            }
+          />
           <Route path="profile" element={<ProfilePage />} />
         </Route>
 

@@ -125,6 +125,8 @@ export type AdminWorkspace = {
   mt5: Mt5Connection;
   profile: AdminProfile;
   orders: CopyOrder[];
+  /** Keys this mentor revoked — private to their portal stats */
+  revokedKeys: string[];
 };
 
 const AUTH_KEY = 'ub-web/admin-auth-v3';
@@ -203,7 +205,60 @@ export function createEmptyWorkspace(seed?: {
     mt5: emptyMt5(seed?.eaName ?? ''),
     profile: emptyProfile(seed),
     orders: [],
+    revokedKeys: [],
   };
+}
+
+function normalizeWorkspace(
+  ws: Partial<AdminWorkspace> | undefined,
+  seed?: {
+    id?: string;
+    email?: string;
+    fullName?: string;
+    mentorName?: string;
+    eaName?: string;
+    phone?: string;
+    mainText?: string;
+  },
+): AdminWorkspace {
+  const base = createEmptyWorkspace(seed);
+  if (!ws) return base;
+  return {
+    ...base,
+    ...ws,
+    eas: ws.eas ?? [],
+    licenses: (ws.licenses ?? []).filter((l) => l.status !== 'deleted'),
+    clientRequests: ws.clientRequests ?? [],
+    orders: ws.orders ?? [],
+    revokedKeys: ws.revokedKeys ?? [],
+    profile: { ...base.profile, ...(ws.profile ?? {}) },
+    mt5: { ...base.mt5, ...(ws.mt5 ?? {}) },
+  };
+}
+
+/** Find any live license already issued to this client email (any mentor). */
+function findLiveLicenseForEmail(
+  email: string,
+  workspaces: Record<string, AdminWorkspace>,
+  vault: VaultLicense[],
+): LicenseRecord | VaultLicense | undefined {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return undefined;
+  const fromVault = vault.find(
+    (v) =>
+      v.email?.toLowerCase() === normalized &&
+      (v.status === 'active' || v.status === 'assigned'),
+  );
+  if (fromVault) return fromVault;
+  for (const ws of Object.values(workspaces)) {
+    const hit = (ws.licenses || []).find(
+      (l) =>
+        l.clientEmail?.toLowerCase() === normalized &&
+        (l.status === 'active' || l.status === 'assigned'),
+    );
+    if (hit) return hit;
+  }
+  return undefined;
 }
 
 function uniqueKey(existing: LicenseRecord[]) {
@@ -243,7 +298,14 @@ function migrateAuth(): AuthState {
 function migrateStore(admins: AdminUser[]): StoreState {
   const v3 = loadJSON<StoreState | null>(STORE_KEY, null as unknown as StoreState);
   if (v3?.workspaces && typeof v3.workspaces === 'object') {
-    return v3;
+    const workspaces: Record<string, AdminWorkspace> = {};
+    for (const [id, ws] of Object.entries(v3.workspaces)) {
+      workspaces[id] = normalizeWorkspace(ws, { id } as AdminUser);
+    }
+    for (const a of admins) {
+      if (!workspaces[a.id]) workspaces[a.id] = createEmptyWorkspace(a);
+    }
+    return { workspaces };
   }
 
   // Migrate legacy shared data into Super Admin workspace only
@@ -322,7 +384,7 @@ type Ctx = {
     clientName: string;
     clientEmail: string;
     duration: string;
-  }) => LicenseRecord | null;
+  }) => { ok: true; license: LicenseRecord } | { ok: false; error: string };
   deleteLicense: (id: string) => void;
   claimLicense: (
     key: string,
@@ -382,12 +444,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           saveVaultLocal(vault);
         }
         if (db.store?.workspaces && typeof db.store.workspaces === 'object') {
-          const workspaces = { ...(db.store.workspaces as StoreState['workspaces']) };
-          for (const [id, ws] of Object.entries(workspaces)) {
-            workspaces[id] = {
-              ...ws,
-              licenses: (ws.licenses || []).filter((l) => l.status !== 'deleted'),
-            };
+          const workspaces: StoreState['workspaces'] = {};
+          for (const [id, ws] of Object.entries(
+            db.store.workspaces as StoreState['workspaces'],
+          )) {
+            workspaces[id] = normalizeWorkspace(ws, { id } as AdminUser);
           }
           const nextStore = { workspaces };
           setStore(nextStore);
@@ -457,14 +518,21 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Ctx>(() => {
     const adminId = auth.admin?.id ?? '';
-    const workspace =
-      (adminId && store.workspaces[adminId]) ||
-      createEmptyWorkspace(auth.admin ?? undefined);
+    const workspace = normalizeWorkspace(
+      adminId ? store.workspaces[adminId] : undefined,
+      auth.admin ?? undefined,
+    );
 
+    const isSuper = auth.admin?.role === 'super';
     const activeLicenses = workspace.licenses.filter(
       (l) => l.status === 'active' || l.status === 'assigned',
     ).length;
-    const deletedLicenses = loadRevokedKeys().length;
+    const deletedLicenses = (workspace.revokedKeys || []).length;
+    const ownClientEmails = new Set(
+      workspace.licenses
+        .filter((l) => l.status === 'active' || l.status === 'assigned')
+        .map((l) => l.clientEmail.toLowerCase()),
+    );
 
     return {
       portalOpen: auth.portalOpen,
@@ -554,8 +622,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ...auth,
           admins: auth.admins.map((a) => (a.id === id ? { ...a, role: 'admin' } : a)),
         }),
-      // Global subscription queue (disk-backed) — visible in admin Subscriptions
-      clientRequests: clients,
+      // Platform subscriptions are Super Admin only — mentors never see shared queue
+      clientRequests: isSuper ? clients : [],
       submitClientRegistration: (input) => {
         const email = input.email.trim().toLowerCase();
         const existing =
@@ -678,11 +746,36 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }));
       },
       generateLicense: (input) => {
-        if (!adminId) return null;
-        const ws =
-          store.workspaces[adminId] ?? createEmptyWorkspace(auth.admin ?? { id: adminId });
+        if (!adminId) {
+          return { ok: false, error: 'Sign in to generate a license.' };
+        }
+        const ws = normalizeWorkspace(
+          store.workspaces[adminId],
+          auth.admin ?? { id: adminId },
+        );
         const ea = ws.eas.find((e) => e.id === input.eaId);
-        if (!ea || !input.clientName.trim() || !input.clientEmail.trim()) return null;
+        if (!ea || !input.clientName.trim() || !input.clientEmail.trim()) {
+          return { ok: false, error: 'Select EA and fill client name + email.' };
+        }
+        const clientEmail = input.clientEmail.trim().toLowerCase();
+        const clientName = input.clientName.trim();
+
+        const existing = findLiveLicenseForEmail(
+          clientEmail,
+          store.workspaces,
+          loadVault(),
+        );
+        if (existing) {
+          return {
+            ok: false,
+            error:
+              `This email already has a license key (${normalizeLicenseKey(
+                existing.key,
+              )}).\n\n` +
+              'Delete it first, then generate another one. The client will pay the subscription again and log in with the new license key.',
+          };
+        }
+
         const profileImage =
           ws.profile.eaImage || getEaImage(`profile-${adminId}`) || '';
         const eaImage =
@@ -690,8 +783,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           profileImage ||
           getEaImage(`ea-${ea.id}`) ||
           '';
-        const clientEmail = input.clientEmail.trim().toLowerCase();
-        const clientName = input.clientName.trim();
         const id = `lic-${Date.now()}`;
         const key = uniqueKey(allLicenses);
         const mainText = ws.profile.mainText || '';
@@ -710,7 +801,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           duration: input.duration,
           status: 'active',
         };
-        // Persist image separately so client sync doesn't lose it
         if (eaImage) {
           saveEaImage(id, eaImage);
           saveEaImage(`key-${normalizeLicenseKey(key)}`, eaImage);
@@ -730,11 +820,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           eaId: ea.id,
           status: 'active',
         });
-        // Write workspace + push vault+store together so activate always finds the key
         setStore((prev) => {
-          const current =
-            prev.workspaces[adminId] ??
-            createEmptyWorkspace(auth.admin ?? { id: adminId });
+          const current = normalizeWorkspace(
+            prev.workspaces[adminId],
+            auth.admin ?? { id: adminId },
+          );
           const next = {
             ...prev,
             workspaces: {
@@ -749,19 +839,22 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           void pushDb({ store: next, vault: loadVault() });
           return next;
         });
-        return record;
+        return { ok: true, license: record };
       },
       deleteLicense: (id) => {
         if (!adminId) return;
-        const ws = store.workspaces[adminId];
-        const hit = ws?.licenses.find((l) => l.id === id);
+        const ws = normalizeWorkspace(store.workspaces[adminId], auth.admin ?? undefined);
+        const hit = ws.licenses.find((l) => l.id === id);
         if (!hit) return;
         const fp = keyFingerprint(hit.key);
-        // Hard revoke — key can never activate again
+        const norm = normalizeLicenseKey(hit.key);
+        // Global ban so the key can never activate again
         revokeLicenseKey(hit.key);
         setStore((prev) => {
-          const current = prev.workspaces[adminId];
-          if (!current) return prev;
+          const current = normalizeWorkspace(
+            prev.workspaces[adminId],
+            auth.admin ?? { id: adminId },
+          );
           const next = {
             ...prev,
             workspaces: {
@@ -769,6 +862,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               [adminId]: {
                 ...current,
                 licenses: current.licenses.filter((l) => l.id !== id),
+                revokedKeys: [
+                  norm,
+                  ...(current.revokedKeys || []).filter((k) => !keysMatch(k, norm)),
+                ],
               },
             },
           };
@@ -780,7 +877,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           });
           return next;
         });
-        // Kick any client sessions still using this key
         void fetchDb().then((db) => {
           if (!db?.sessions) return;
           const sessions: Record<string, Record<string, unknown>> = {
@@ -790,9 +886,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           for (const [email, session] of Object.entries(sessions)) {
             const bot = (session?.bot || {}) as { licenseKey?: string };
             if (bot.licenseKey && keyFingerprint(bot.licenseKey) === fp) {
+              // Key deleted → client must pay subscription again, then activate the new key
               sessions[email] = {
                 ...session,
-                accessStatus: 'paid',
+                accessStatus: 'approved',
                 bot: {
                   ...bot,
                   licenseKey: '',
@@ -1073,8 +1170,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       stats: {
         activeLicenses,
         deletedLicenses,
-        totalClients: clients.length,
-        pendingClients: clients.filter((c) => c.status === 'pending').length,
+        // Mentors only count their own licensed clients; Super sees platform queue too
+        totalClients: isSuper
+          ? clients.length
+          : ownClientEmails.size,
+        pendingClients: isSuper
+          ? clients.filter((c) => c.status === 'pending').length
+          : workspace.licenses.filter((l) => l.status === 'assigned').length,
       },
     };
   }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses]);

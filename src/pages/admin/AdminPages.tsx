@@ -6,6 +6,7 @@ import { Placeholder } from './AdminShell';
 
 export function DashboardPage() {
   const { profile, stats, admin, eas, licenses } = useAdmin();
+  const isSuper = admin?.role === 'super';
   const isEmpty = eas.length === 0 && licenses.length === 0;
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -20,8 +21,8 @@ export function DashboardPage() {
               </span>
             </div>
           </div>
-          <span style={{ background: 'var(--electric)', color: '#061018', borderRadius: 999, padding: '4px 10px', fontWeight: 700, height: 'fit-content' }}>
-            {admin?.role === 'super' ? 'SUPER' : 'ADMIN'}
+          <span style={{ background: isSuper ? 'var(--gold)' : 'var(--electric)', color: isSuper ? '#1a1200' : '#061018', borderRadius: 999, padding: '4px 10px', fontWeight: 700, height: 'fit-content' }}>
+            {isSuper ? 'SUPER' : 'MENTOR'}
           </span>
         </div>
       </div>
@@ -35,7 +36,11 @@ export function DashboardPage() {
       ) : null}
       <div className="stat-grid">
         <Stat value={String(stats.activeLicenses)} label="Active Licenses" color="var(--green)" />
-        <Stat value={String(stats.pendingClients)} label="Pending Approvals" color="var(--orange)" />
+        <Stat
+          value={String(stats.pendingClients)}
+          label={isSuper ? 'Pending Approvals' : 'Assigned Keys'}
+          color="var(--orange)"
+        />
         <Stat value={String(stats.deletedLicenses)} label="Revoked Keys" color="var(--red)" />
         <Stat value={String(stats.totalClients)} label="Total Clients" color="var(--electric)" />
       </div>
@@ -193,7 +198,7 @@ export function GenerateLicensePage() {
         <h3 style={{ marginTop: 0 }}>License Details</h3>
         <p className="muted" style={{ marginTop: 0 }}>
           Short keys like <strong style={{ color: 'var(--electric)' }}>LUMO-XXXX-XXXX-XXXX</strong>.
-          Generate for the client’s registered email (same browser/URL).
+          One live key per client email. If that email already has a key, delete it first — then generate a new one (client pays subscription and logs in with the new key).
         </p>
         <div className="field">
           <label>Select EA *</label>
@@ -239,13 +244,17 @@ export function GenerateLicensePage() {
               );
               if (!ok) return;
             }
-            const rec = generateLicense({
+            const result = generateLicense({
               eaId: effectiveEaId,
               clientName,
               clientEmail,
               duration,
             });
-            if (!rec) return alert('Select EA and fill client name + email');
+            if (!result.ok) {
+              alert(result.error);
+              return;
+            }
+            const rec = result.license;
             setLastKey(rec.key);
             navigator.clipboard?.writeText(rec.key).catch(() => undefined);
             alert(
