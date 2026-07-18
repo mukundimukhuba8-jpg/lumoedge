@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Home, Monitor, Pause, Play, Settings, Signal, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
@@ -21,11 +21,7 @@ export function HomePage() {
   const [licenseKey, setLicenseKey] = useState(bot.licenseKey);
   const taps = useRef(0);
   const timer = useRef<number | null>(null);
-
-  const title = useMemo(() => {
-    const parts = bot.displayName.split(/\s+/);
-    return { top: parts[0] ?? 'UNLIMITED', bottom: parts.slice(1).join(' ') || 'BULL V1' };
-  }, [bot.displayName]);
+  const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
 
   const onHomeTap = () => {
     taps.current += 1;
@@ -83,24 +79,31 @@ export function HomePage() {
             }}
           >
             <div style={{ color: 'var(--cyan)', fontFamily: 'var(--font-display)', fontSize: 28, textShadow: '0 0 14px var(--cyan)' }}>
-              {title.top}
-            </div>
-            <div style={{ color: 'var(--pink)', fontFamily: 'var(--font-display)', fontSize: 28, textShadow: '0 0 14px var(--pink)' }}>
-              {title.bottom}
+              {eaTitle}
             </div>
           </div>
         </div>
 
         <div style={{ textAlign: 'center', marginTop: 18 }}>
-          <div style={{ color: 'var(--cyan)', fontFamily: 'var(--font-display)', fontSize: 22 }}>{title.top}</div>
           <img
             src={eaImage || '/bull-avatar.jpg'}
             alt=""
             width={54}
             height={54}
-            style={{ borderRadius: '50%', border: '2px solid var(--red)', margin: '8px 0', objectFit: 'cover' }}
+            style={{ borderRadius: '50%', border: '2px solid var(--red)', margin: '0 0 10px', objectFit: 'cover' }}
           />
-          <div style={{ color: 'var(--pink)', fontFamily: 'var(--font-display)', fontSize: 22 }}>{title.bottom}</div>
+          <div
+            style={{
+              color: 'var(--electric)',
+              fontFamily: 'var(--font-display)',
+              fontSize: 13,
+              letterSpacing: 2,
+              textTransform: 'uppercase',
+              textShadow: '0 0 10px rgba(59,130,246,0.55)',
+            }}
+          >
+            powered by LUMOEDGE
+          </div>
         </div>
 
         <div className="neon-action">
