@@ -43,7 +43,7 @@ export function HomePage() {
         <h2
           style={{
             textAlign: 'center',
-            color: 'var(--gold)',
+            color: 'var(--electric)',
             fontFamily: 'var(--font-body)',
             fontWeight: 700,
             letterSpacing: 1,
@@ -57,7 +57,7 @@ export function HomePage() {
           style={{
             borderRadius: 24,
             overflow: 'hidden',
-            border: '1px solid rgba(255,0,255,0.28)',
+            border: '1px solid rgba(59,130,246,0.4)',
             position: 'relative',
             marginTop: 12,
           }}
@@ -78,7 +78,7 @@ export function HomePage() {
               background: 'linear-gradient(transparent, rgba(10,10,10,0.95))',
             }}
           >
-            <div style={{ color: 'var(--cyan)', fontFamily: 'var(--font-body)', fontSize: 24, fontWeight: 700 }}>
+            <div style={{ color: 'var(--electric)', fontFamily: 'var(--font-body)', fontSize: 24, fontWeight: 700 }}>
               {eaTitle}
             </div>
           </div>
@@ -90,7 +90,7 @@ export function HomePage() {
             alt=""
             width={54}
             height={54}
-            style={{ borderRadius: '50%', border: '2px solid var(--red)', margin: '0 0 10px', objectFit: 'cover' }}
+            style={{ borderRadius: '50%', border: '2px solid var(--electric)', margin: '0 0 10px', objectFit: 'cover' }}
           />
           <div
             style={{
@@ -105,17 +105,16 @@ export function HomePage() {
         </div>
 
         <div className="neon-action">
-          <button type="button" style={{ color: 'var(--red)' }} onClick={() => deleteBot()}>
+          <button type="button" onClick={() => deleteBot()}>
             <span className="circle-btn"><Trash2 size={22} /></span>
             DELETE
           </button>
-          <button type="button" style={{ color: 'var(--orange)' }} onClick={togglePause}>
+          <button type="button" onClick={togglePause}>
             <span className="circle-btn">{isPaused ? <Play size={22} /> : <Pause size={22} />}</span>
             {isPaused ? 'RESUME' : 'PAUSE'}
           </button>
           <button
             type="button"
-            style={{ color: 'var(--green)' }}
             onClick={() => {
               setLocalSymbols(bot.symbols);
               setSymbolsOpen(true);
@@ -130,22 +129,22 @@ export function HomePage() {
           <img src={eaImage || '/bull-avatar.jpg'} width={36} height={36} style={{ borderRadius: '50%', objectFit: 'cover' }} alt="" />
           <div>
             <div style={{ fontWeight: 700, letterSpacing: 1.2 }}>{bot.name}</div>
-            <div style={{ color: isPaused ? 'var(--orange)' : 'var(--green)', fontWeight: 600 }}>
+            <div style={{ color: 'var(--electric)', fontWeight: 600 }}>
               {isPaused ? 'PAUSED' : 'ACTIVE'}
             </div>
           </div>
         </div>
 
         <button type="button" className="pill" onClick={() => setLicenseOpen(true)}>
-          <span className="circle-btn" style={{ width: 44, height: 44, color: 'var(--red)' }}>+</span>
+          <span className="circle-btn" style={{ width: 44, height: 44 }}>+</span>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700 }}>Connect EA</div>
             <div className="muted" style={{ fontSize: 12 }}>Connect New License Key</div>
           </div>
-          <Settings size={20} color="var(--red)" />
+          <Settings size={20} color="var(--electric)" />
         </button>
 
-        <p style={{ textAlign: 'center', color: 'var(--green)', marginTop: 12, fontWeight: 600 }}>
+        <p style={{ textAlign: 'center', color: 'var(--electric)', marginTop: 12, fontWeight: 600 }}>
           Trading: {bot.symbols.join(' · ')}
         </p>
         <p className="muted" style={{ textAlign: 'center', marginTop: 4 }}>
@@ -173,7 +172,7 @@ export function HomePage() {
                 className="pill"
                 style={{
                   marginBottom: 8,
-                  borderColor: on ? 'rgba(57,255,20,0.55)' : 'rgba(255,255,255,0.08)',
+                  borderColor: on ? 'rgba(59,130,246,0.65)' : 'rgba(255,255,255,0.08)',
                   justifyContent: 'space-between',
                 }}
                 onClick={() =>
@@ -183,12 +182,12 @@ export function HomePage() {
                 }
               >
                 <span>{s}</span>
-                <span style={{ color: on ? 'var(--green)' : 'var(--muted)' }}>{on ? '✓' : ''}</span>
+                <span style={{ color: on ? 'var(--electric)' : 'var(--muted)' }}>{on ? '✓' : ''}</span>
               </button>
             );
           })}
           <button
-            className="btn btn-green"
+            className="btn btn-blue"
             type="button"
             onClick={() => {
               if (!localSymbols.length) return;
@@ -216,7 +215,6 @@ export function HomePage() {
           <button
             className="btn btn-blue"
             type="button"
-            style={{ background: 'var(--red)', color: '#fff' }}
             onClick={() => {
               if (!user) return;
               const result = claimLicense(licenseKey, user.email);
