@@ -158,12 +158,14 @@ export function ManageEAsPage() {
 
 export function GenerateLicensePage() {
   const { eas, licenses, generateLicense, deleteLicense, profile } = useAdmin();
-  const [eaId, setEaId] = useState(eas[0]?.id ?? '');
+  const [eaId, setEaId] = useState('');
   const [clientName, setClientName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
   const [duration, setDuration] = useState('1 Year');
   const [search, setSearch] = useState('');
-  const selected = eas.find((e) => e.id === eaId) ?? eas[0];
+  const [lastKey, setLastKey] = useState('');
+  const effectiveEaId = eaId || eas[0]?.id || '';
+  const selected = eas.find((e) => e.id === effectiveEaId) ?? eas[0];
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return licenses.filter((l) =>
@@ -183,9 +185,13 @@ export function GenerateLicensePage() {
       ) : null}
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>License Details</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Keys look like <strong style={{ color: 'var(--electric)' }}>LUMO-XXXX-XXXX-XXXX</strong>.
+          Use the same client email they registered with.
+        </p>
         <div className="field">
           <label>Select EA *</label>
-          <select value={eaId || eas[0]?.id || ''} onChange={(e) => setEaId(e.target.value)} disabled={!eas.length}>
+          <select value={effectiveEaId} onChange={(e) => setEaId(e.target.value)} disabled={!eas.length}>
             {eas.length === 0 ? <option value="">No EAs yet</option> : null}
             {eas.map((ea) => <option key={ea.id} value={ea.id}>{ea.name}</option>)}
           </select>
@@ -217,15 +223,37 @@ export function GenerateLicensePage() {
           className="btn btn-blue"
           type="button"
           onClick={() => {
-            const rec = generateLicense({ eaId, clientName, clientEmail, duration });
-            if (!rec) return alert('Select EA and fill client details');
-            alert(`License generated:\n${rec.key}`);
+            const rec = generateLicense({
+              eaId: effectiveEaId,
+              clientName,
+              clientEmail,
+              duration,
+            });
+            if (!rec) return alert('Select EA and fill client name + email');
+            setLastKey(rec.key);
+            navigator.clipboard?.writeText(rec.key).catch(() => undefined);
+            alert(`License generated:\n${rec.key}\n\nCopied to clipboard.\nClient must activate with email: ${rec.clientEmail}`);
             setClientName('');
             setClientEmail('');
           }}
         >
           Generate License
         </button>
+        {lastKey ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 12,
+              borderRadius: 12,
+              border: '1px solid rgba(57,255,20,0.45)',
+              background: 'rgba(57,255,20,0.08)',
+              wordBreak: 'break-all',
+            }}
+          >
+            <div className="muted">Latest key</div>
+            <strong style={{ color: 'var(--green)', fontSize: 18 }}>{lastKey}</strong>
+          </div>
+        ) : null}
       </div>
       <div className="glow-card" style={{ boxShadow: 'none', borderColor: 'rgba(255,255,255,0.08)' }}>
         <h3 style={{ marginTop: 0 }}>All Generated Licenses ({licenses.length})</h3>

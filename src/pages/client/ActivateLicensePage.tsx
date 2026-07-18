@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { KeyRound } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
+import { normalizeLicenseKey } from '../../lib/storage';
 
 export function ActivateLicensePage() {
   const navigate = useNavigate();
@@ -59,7 +60,8 @@ export function ActivateLicensePage() {
         Activate your license
       </h1>
       <p className="muted" style={{ marginBottom: 24 }}>
-        Enter the unique license key generated for you in the Super Admin portal.
+        Enter your LUMO license key from your admin. Use the same email the key was issued for
+        ({user?.email}).
       </p>
 
       <form className="glow-card" onSubmit={onActivate} style={{ textAlign: 'left' }}>
@@ -67,8 +69,8 @@ export function ActivateLicensePage() {
           <label>License Key *</label>
           <input
             value={key}
-            onChange={(e) => setKey(e.target.value.toUpperCase())}
-            placeholder="XXXX-XXXX-XXXX-XXXX"
+            onChange={(e) => setKey(normalizeLicenseKey(e.target.value))}
+            placeholder="LUMO-XXXX-XXXX-XXXX"
             autoCapitalize="characters"
             required
           />

@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { loadJSON, makeLicenseKey, saveJSON } from '../lib/storage';
+import { loadJSON, makeLicenseKey, normalizeLicenseKey, saveJSON } from '../lib/storage';
 
 export type AdminRole = 'super' | 'admin' | 'pending';
 
@@ -183,7 +183,10 @@ export function createEmptyWorkspace(seed?: {
 function uniqueKey(allLicenses: LicenseRecord[]) {
   let key = makeLicenseKey();
   let guard = 0;
-  while (allLicenses.some((l) => l.key === key) && guard < 20) {
+  while (
+    allLicenses.some((l) => normalizeLicenseKey(l.key) === normalizeLicenseKey(key)) &&
+    guard < 20
+  ) {
     key = makeLicenseKey();
     guard += 1;
   }
@@ -571,12 +574,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }));
       },
       claimLicense: (key, email) => {
-        const normalizedKey = key.trim().toUpperCase();
+        const normalizedKey = normalizeLicenseKey(key);
         const normalizedEmail = email.trim().toLowerCase();
         let ownerId: string | null = null;
         let license: LicenseRecord | undefined;
         for (const [wid, ws] of Object.entries(store.workspaces)) {
-          const found = ws.licenses.find((l) => l.key.toUpperCase() === normalizedKey);
+          const found = ws.licenses.find(
+            (l) => normalizeLicenseKey(l.key) === normalizedKey || l.key.toUpperCase() === key.trim().toUpperCase(),
+          );
           if (found) {
             ownerId = wid;
             license = found;
@@ -584,7 +589,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           }
         }
         if (!ownerId || !license || license.status === 'deleted') {
-          return { ok: false, error: 'Invalid license key. Ask your admin to generate one.' };
+          return {
+            ok: false,
+            error: 'Invalid license key. Generate a LUMO- key in Admin → Generate License.',
+          };
         }
         if (license.status === 'assigned') {
           if (license.assignedEmail === normalizedEmail) {
@@ -609,7 +617,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         ) {
           return {
             ok: false,
-            error: 'This license key was issued for a different email. Use the key generated for your account.',
+            error: `This key was issued for ${license.clientEmail}. Log in with that email, or generate a new key for ${normalizedEmail}.`,
           };
         }
         const ownerWs = store.workspaces[ownerId];

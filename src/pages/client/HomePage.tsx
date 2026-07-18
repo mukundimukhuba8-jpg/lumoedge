@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Home, Monitor, Pause, Play, Settings, Signal, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
+import { normalizeLicenseKey } from '../../lib/storage';
 
 const ALL_SYMBOLS = [
   'XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD',
@@ -206,8 +207,8 @@ export function HomePage() {
             <label>License Key</label>
             <input
               value={licenseKey}
-              onChange={(e) => setLicenseKey(e.target.value)}
-              placeholder="Paste license key"
+              onChange={(e) => setLicenseKey(normalizeLicenseKey(e.target.value))}
+              placeholder="LUMO-XXXX-XXXX-XXXX"
             />
           </div>
           <button

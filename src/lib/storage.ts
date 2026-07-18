@@ -15,5 +15,16 @@ export function saveJSON(key: string, value: unknown) {
 export function makeLicenseKey() {
   const chunk = () =>
     Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
-  return `${chunk()}-${chunk()}-${chunk()}-${chunk()}`;
+  // Always LUMO-XXXX-XXXX-XXXX
+  return `LUMO-${chunk()}-${chunk()}-${chunk()}`;
+}
+
+/** Normalize pasted keys so spacing / case don't break activation */
+export function normalizeLicenseKey(key: string) {
+  const cleaned = key.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!cleaned) return '';
+  // Ensure LUMO prefix
+  const body = cleaned.startsWith('LUMO') ? cleaned.slice(4) : cleaned;
+  const parts = body.match(/.{1,4}/g) ?? [];
+  return ['LUMO', ...parts.slice(0, 3)].join('-');
 }
