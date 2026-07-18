@@ -1,19 +1,38 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, CreditCard, ExternalLink } from 'lucide-react';
+import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
 
 export function SubscribePage() {
-  const { markPaid } = useApp();
+  const { user, accessStatus, markPaid, setAccessStatus } = useApp();
+  const { getClientByEmail } = useAdmin();
   const navigate = useNavigate();
-  const [pending, setPending] = useState(false);
+  const [pendingPay, setPendingPay] = useState(false);
   const [checking, setChecking] = useState(false);
 
-  const unlock = async () => {
+  useEffect(() => {
+    if (!user) {
+      navigate('/', { replace: true });
+      return;
+    }
+    const client = getClientByEmail(user.email);
+    if (!client || client.status === 'pending') {
+      navigate('/waiting', { replace: true });
+      return;
+    }
+    if (client.status === 'approved' && accessStatus === 'pending') {
+      setAccessStatus('approved');
+    }
+    if (accessStatus === 'paid') navigate('/activate', { replace: true });
+    if (accessStatus === 'licensed') navigate('/app', { replace: true });
+  }, [user, accessStatus, getClientByEmail, navigate, setAccessStatus]);
+
+  const unlockPaid = async () => {
     setChecking(true);
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, 700));
     markPaid();
-    navigate('/app');
+    navigate('/activate');
   };
 
   return (
@@ -33,18 +52,19 @@ export function SubscribePage() {
       >
         <CreditCard color="#3b82f6" />
       </div>
-      <h1 className="title-blue" style={{ fontSize: 28, marginBottom: 10 }}>
-        Activate Your Access
+      <h1 className="title-blue" style={{ fontSize: 26, marginBottom: 10 }}>
+        Complete your subscription payment
       </h1>
       <p className="muted" style={{ marginBottom: 28 }}>
-        Complete your one-time payment below to unlock Unlimited Bull
+        Your account was approved. Complete payment below to continue, then enter
+        your unique license key.
       </p>
 
       <button
         className="btn btn-blue"
         type="button"
         onClick={() => {
-          setPending(true);
+          setPendingPay(true);
           window.open('https://buy.stripe.com/test_unlimited_bull', '_blank');
         }}
       >
@@ -62,17 +82,17 @@ export function SubscribePage() {
         type="button"
         disabled={checking}
         onClick={async () => {
-          if (!pending) {
-            setPending(true);
+          if (!pendingPay) {
+            setPendingPay(true);
             return;
           }
-          await unlock();
+          await unlockPaid();
         }}
       >
-        <CheckCircle2 size={18} /> I've Paid — Check My Access
+        <CheckCircle2 size={18} /> I've Paid — Continue
       </button>
 
-      {pending ? (
+      {pendingPay ? (
         <div
           className="glow-card"
           style={{
@@ -83,22 +103,9 @@ export function SubscribePage() {
             fontWeight: 600,
           }}
         >
-          Payment not confirmed yet. Once verified you'll gain instant access.
+          Confirm payment, then continue to activate with your admin license key.
         </div>
       ) : null}
-
-      <button
-        type="button"
-        onClick={unlock}
-        style={{
-          marginTop: 28,
-          background: 'transparent',
-          color: 'var(--muted)',
-          textDecoration: 'underline',
-        }}
-      >
-        Continue with demo access
-      </button>
     </div>
   );
 }

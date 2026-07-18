@@ -22,6 +22,16 @@ export type AdminUser = {
   mainText?: string;
 };
 
+export type ClientRequest = {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+  notifiedAt?: string;
+};
+
 export type ManagedEA = {
   id: string;
   name: string;
@@ -38,7 +48,9 @@ export type LicenseRecord = {
   clientName: string;
   clientEmail: string;
   duration: string;
-  status: 'active' | 'deleted';
+  status: 'active' | 'deleted' | 'assigned';
+  assignedEmail?: string;
+  assignedAt?: string;
 };
 
 export type Mt5Connection = {
@@ -75,7 +87,7 @@ export type CopyOrder = {
 };
 
 const AUTH_KEY = 'ub-web/admin-auth-v1';
-const DATA_KEY = 'ub-web/admin-data-v1';
+const DATA_KEY = 'ub-web/admin-data-v2';
 
 export const SUPER_ADMIN = {
   email: 'mukundimukhuba8@gmail.com',
@@ -97,6 +109,7 @@ type AuthState = {
 type DataState = {
   eas: ManagedEA[];
   licenses: LicenseRecord[];
+  clientRequests: ClientRequest[];
   mt5: Mt5Connection;
   profile: AdminProfile;
   orders: CopyOrder[];
@@ -119,6 +132,7 @@ const defaultData: DataState = {
     },
   ],
   licenses: [],
+  clientRequests: [],
   mt5: {
     broker: 'Razor Markets',
     server: 'RazorMarkets-Live',
@@ -141,6 +155,16 @@ const defaultData: DataState = {
   orders: [],
 };
 
+function uniqueKey(existing: LicenseRecord[]) {
+  let key = makeLicenseKey();
+  let guard = 0;
+  while (existing.some((l) => l.key === key) && guard < 20) {
+    key = makeLicenseKey();
+    guard += 1;
+  }
+  return key;
+}
+
 type Ctx = {
   portalOpen: boolean;
   admin: AdminUser | null;
@@ -151,6 +175,15 @@ type Ctx = {
   registerAdmin: (data: Omit<AdminUser, 'id' | 'role'> & { password: string }) => string | null;
   logout: () => void;
   approveAdmin: (id: string) => void;
+  clientRequests: ClientRequest[];
+  submitClientRegistration: (input: {
+    email: string;
+    firstName: string;
+    lastName: string;
+  }) => ClientRequest;
+  approveClient: (id: string) => void;
+  rejectClient: (id: string) => void;
+  getClientByEmail: (email: string) => ClientRequest | undefined;
   eas: ManagedEA[];
   licenses: LicenseRecord[];
   mt5: Mt5Connection;
@@ -165,6 +198,10 @@ type Ctx = {
     duration: string;
   }) => LicenseRecord | null;
   deleteLicense: (id: string) => void;
+  claimLicense: (
+    key: string,
+    email: string,
+  ) => { ok: true; license: LicenseRecord } | { ok: false; error: string };
   findLicense: (key: string) => LicenseRecord | undefined;
   saveMt5: (mt5: Mt5Connection) => void;
   updateProfile: (patch: Partial<AdminProfile>) => void;
@@ -173,6 +210,7 @@ type Ctx = {
     activeLicenses: number;
     deletedLicenses: number;
     totalClients: number;
+    pendingClients: number;
   };
 };
 
@@ -185,12 +223,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   });
   const [data, setData] = useState<DataState>(() => {
     const saved = loadJSON(DATA_KEY, defaultData);
+    const legacy = loadJSON<Partial<DataState>>('ub-web/admin-data-v1', {});
+    const merged = { ...defaultData, ...legacy, ...saved };
     return {
-      ...defaultData,
-      ...saved,
-      eas: saved.eas?.length ? saved.eas : defaultData.eas,
-      profile: { ...defaultData.profile, ...saved.profile },
-      mt5: { ...defaultData.mt5, ...saved.mt5 },
+      ...merged,
+      eas: merged.eas?.length ? merged.eas : defaultData.eas,
+      clientRequests: merged.clientRequests ?? [],
+      licenses: (merged.licenses ?? []).map((l) => ({
+        ...l,
+        status: l.status === 'assigned' ? 'assigned' : l.status,
+      })),
+      profile: { ...defaultData.profile, ...merged.profile },
+      mt5: { ...defaultData.mt5, ...merged.mt5 },
     };
   });
 
@@ -205,8 +249,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<Ctx>(() => {
-    const activeLicenses = data.licenses.filter((l) => l.status === 'active').length;
+    const activeLicenses = data.licenses.filter(
+      (l) => l.status === 'active' || l.status === 'assigned',
+    ).length;
     const deletedLicenses = data.licenses.filter((l) => l.status === 'deleted').length;
+    const pendingClients = data.clientRequests.filter((c) => c.status === 'pending').length;
 
     return {
       portalOpen: auth.portalOpen,
@@ -267,6 +314,46 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             a.id === id ? { ...a, role: 'admin' } : a,
           ),
         }),
+      clientRequests: data.clientRequests,
+      submitClientRegistration: (input) => {
+        const email = input.email.trim().toLowerCase();
+        const existing = data.clientRequests.find((c) => c.email === email);
+        if (existing) {
+          return existing;
+        }
+        const entry: ClientRequest = {
+          id: `cli-${Date.now()}`,
+          email,
+          firstName: input.firstName.trim(),
+          lastName: input.lastName.trim(),
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          notifiedAt: new Date().toISOString(),
+        };
+        saveData({
+          ...data,
+          clientRequests: [entry, ...data.clientRequests],
+        });
+        return entry;
+      },
+      approveClient: (id) =>
+        saveData({
+          ...data,
+          clientRequests: data.clientRequests.map((c) =>
+            c.id === id ? { ...c, status: 'approved' } : c,
+          ),
+        }),
+      rejectClient: (id) =>
+        saveData({
+          ...data,
+          clientRequests: data.clientRequests.map((c) =>
+            c.id === id ? { ...c, status: 'rejected' } : c,
+          ),
+        }),
+      getClientByEmail: (email) =>
+        data.clientRequests.find(
+          (c) => c.email.toLowerCase() === email.trim().toLowerCase(),
+        ),
       eas: data.eas,
       licenses: data.licenses,
       mt5: data.mt5,
@@ -284,7 +371,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         if (!ea || !input.clientName.trim() || !input.clientEmail.trim()) return null;
         const record: LicenseRecord = {
           id: `lic-${Date.now()}`,
-          key: makeLicenseKey(),
+          key: uniqueKey(data.licenses),
           eaId: ea.id,
           eaName: ea.name,
           clientName: input.clientName.trim(),
@@ -302,11 +389,42 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             l.id === id ? { ...l, status: 'deleted' } : l,
           ),
         }),
+      claimLicense: (key, email) => {
+        const normalizedKey = key.trim().toUpperCase();
+        const normalizedEmail = email.trim().toLowerCase();
+        const license = data.licenses.find((l) => l.key.toUpperCase() === normalizedKey);
+        if (!license || license.status === 'deleted') {
+          return { ok: false, error: 'Invalid license key. Ask your admin to generate one.' };
+        }
+        if (license.status === 'assigned') {
+          if (license.assignedEmail === normalizedEmail) {
+            return { ok: true, license };
+          }
+          return { ok: false, error: 'This license key is already used by another account.' };
+        }
+        if (
+          license.clientEmail &&
+          license.clientEmail.toLowerCase() !== normalizedEmail
+        ) {
+          return {
+            ok: false,
+            error: 'This license key was issued for a different email. Use the key generated for your account.',
+          };
+        }
+        const updated: LicenseRecord = {
+          ...license,
+          status: 'assigned',
+          assignedEmail: normalizedEmail,
+          assignedAt: new Date().toISOString(),
+        };
+        saveData({
+          ...data,
+          licenses: data.licenses.map((l) => (l.id === license.id ? updated : l)),
+        });
+        return { ok: true, license: updated };
+      },
       findLicense: (key) =>
-        data.licenses.find(
-          (l) =>
-            l.key.toLowerCase() === key.trim().toLowerCase() && l.status === 'active',
-        ),
+        data.licenses.find((l) => l.key.toUpperCase() === key.trim().toUpperCase()),
       saveMt5: (mt5) => saveData({ ...data, mt5 }),
       updateProfile: (patch) =>
         saveData({ ...data, profile: { ...data.profile, ...patch } }),
@@ -314,7 +432,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const created: CopyOrder = {
           ...order,
           id: `ord-${Date.now()}`,
-          copiedTo: activeLicenses,
+          copiedTo: data.licenses.filter((l) => l.status === 'assigned').length,
         };
         saveData({ ...data, orders: [created, ...data.orders] });
         return created;
@@ -322,7 +440,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       stats: {
         activeLicenses,
         deletedLicenses,
-        totalClients: activeLicenses + deletedLicenses,
+        totalClients: data.clientRequests.length,
+        pendingClients,
       },
     };
   }, [auth, data, saveAuth, saveData]);
@@ -334,4 +453,20 @@ export function useAdmin() {
   const ctx = useContext(AdminContext);
   if (!ctx) throw new Error('useAdmin missing provider');
   return ctx;
+}
+
+export function notifySuperAdminEmail(client: {
+  firstName: string;
+  lastName: string;
+  email: string;
+}) {
+  const subject = encodeURIComponent('Lumo Edge — New client registration');
+  const body = encodeURIComponent(
+    `A new client registered on Lumo Edge and needs approval.\n\n` +
+      `Name: ${client.firstName} ${client.lastName}\n` +
+      `Email: ${client.email}\n\n` +
+      `Open the Super Admin portal → Subscriptions to approve.`,
+  );
+  // Open mail client without leaving the waiting page
+  window.open(`mailto:${SUPER_ADMIN.email}?subject=${subject}&body=${body}`, '_blank');
 }

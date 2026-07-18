@@ -1,12 +1,12 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAdmin } from '../../context/AdminContext';
+import { notifySuperAdminEmail, useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const { register } = useApp();
-  const { openPortal } = useAdmin();
+  const { registerLocal } = useApp();
+  const { openPortal, submitClientRegistration } = useAdmin();
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -34,8 +34,16 @@ export function RegisterPage() {
       setError('Enter email, first name and last name.');
       return;
     }
-    register({ email: email.trim(), firstName: firstName.trim(), lastName: lastName.trim() });
-    navigate('/subscribe');
+    const profile = {
+      email: email.trim().toLowerCase(),
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+    };
+    submitClientRegistration(profile);
+    registerLocal(profile);
+    // Opens device mail app to notify Super Admin
+    notifySuperAdminEmail(profile);
+    navigate('/waiting');
   };
 
   return (
@@ -53,14 +61,14 @@ export function RegisterPage() {
       >
         <img
           src="/bull-avatar.jpg"
-          alt="Unlimited Bull"
+          alt="Lumo Edge"
           width={88}
           height={88}
           style={{ borderRadius: 22, display: 'block' }}
         />
       </button>
       <h1 className="title-blue" style={{ fontSize: 34, margin: '0 0 8px' }}>
-        Unlimited Bull
+        Lumo Edge
       </h1>
       <p className="muted" style={{ marginBottom: 28 }}>
         Create your account to get started
@@ -69,19 +77,31 @@ export function RegisterPage() {
       <form className="glow-card" onSubmit={onSubmit} style={{ textAlign: 'left' }}>
         <div className="field">
           <label>Email</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Enter your email" />
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Enter your email"
+          />
         </div>
         <div className="field">
           <label>First Name</label>
-          <input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Enter your first name" />
+          <input
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            placeholder="Enter your first name"
+          />
         </div>
         <div className="field">
           <label>Last Name</label>
-          <input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Enter your last name" />
+          <input
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            placeholder="Enter your last name"
+          />
         </div>
         {error ? <p className="error">{error}</p> : null}
         <button className="btn btn-blue" type="submit">
-          Access Unlimited Bull
+          Access Lumo Edge
         </button>
       </form>
     </div>

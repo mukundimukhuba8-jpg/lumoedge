@@ -11,8 +11,8 @@ const ALL_SYMBOLS = [
 
 export function HomePage() {
   const navigate = useNavigate();
-  const { bot, isPaused, togglePause, deleteBot, setSymbols, connectLicense } = useApp();
-  const { openPortal, findLicense, eas, profile } = useAdmin();
+  const { bot, isPaused, togglePause, deleteBot, setSymbols, user, activateWithLicense } = useApp();
+  const { openPortal, claimLicense, eas, profile } = useAdmin();
   const [symbolsOpen, setSymbolsOpen] = useState(false);
   const [licenseOpen, setLicenseOpen] = useState(false);
   const [localSymbols, setLocalSymbols] = useState(bot.symbols);
@@ -210,11 +210,16 @@ export function HomePage() {
             type="button"
             style={{ background: 'var(--red)', color: '#fff' }}
             onClick={() => {
-              const lic = findLicense(licenseKey);
-              const ea = eas.find((e) => e.id === lic?.eaId);
-              connectLicense(licenseKey, {
-                name: ea?.name ?? lic?.eaName ?? profile.eaDisplayName,
-                displayName: ea?.name ?? lic?.eaName ?? profile.eaDisplayName,
+              if (!user) return;
+              const result = claimLicense(licenseKey, user.email);
+              if (!result.ok) {
+                alert(result.error);
+                return;
+              }
+              const ea = eas.find((e) => e.id === result.license.eaId);
+              activateWithLicense(result.license.key, {
+                name: ea?.name ?? result.license.eaName ?? profile.eaDisplayName,
+                displayName: ea?.name ?? result.license.eaName ?? profile.eaDisplayName,
                 mainText: profile.mainText,
                 symbols: ea?.symbols,
               });

@@ -25,7 +25,7 @@ export function DashboardPage() {
       </div>
       <div className="stat-grid">
         <Stat value={String(stats.activeLicenses)} label="Active Licenses" color="var(--green)" />
-        <Stat value="∞" label="Max Clients" color="var(--electric)" />
+        <Stat value={String(stats.pendingClients)} label="Pending Approvals" color="var(--orange)" />
         <Stat value={String(stats.deletedLicenses)} label="Deleted Licenses" color="var(--red)" />
         <Stat value={String(stats.totalClients)} label="Total Clients" color="var(--electric)" />
       </div>
@@ -186,7 +186,20 @@ export function GenerateLicensePage() {
             </div>
             <div className="muted">{lic.eaName} · {lic.duration} · {lic.clientName}</div>
             <div className="muted">{lic.clientEmail}</div>
-            <div style={{ color: lic.status === 'active' ? 'var(--green)' : 'var(--red)', fontWeight: 700 }}>{lic.status.toUpperCase()}</div>
+            <div
+              style={{
+                color:
+                  lic.status === 'assigned'
+                    ? 'var(--electric)'
+                    : lic.status === 'active'
+                      ? 'var(--green)'
+                      : 'var(--red)',
+                fontWeight: 700,
+              }}
+            >
+              {lic.status.toUpperCase()}
+              {lic.assignedEmail ? ` · ${lic.assignedEmail}` : ''}
+            </div>
             {lic.status === 'active' ? (
               <button type="button" style={{ background: 'transparent', color: 'var(--red)', fontWeight: 700 }} onClick={() => deleteLicense(lic.id)}>
                 Delete
@@ -337,6 +350,87 @@ export function ApproveAdminsPage() {
           <button className="btn btn-blue" type="button" style={{ marginTop: 10 }} onClick={() => approveAdmin(a.id)}>Approve</button>
         </div>
       ))}
+    </div>
+  );
+}
+
+export function SubscriptionsPage() {
+  const { clientRequests, approveClient, rejectClient, stats } = useAdmin();
+  const pending = clientRequests.filter((c) => c.status === 'pending');
+  const approved = clientRequests.filter((c) => c.status === 'approved');
+
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <div>
+        <h2 className="title-blue" style={{ fontSize: 24, margin: 0 }}>Subscriptions</h2>
+        <p className="muted">
+          New Lumo Edge registrations land here. Approve to unlock payment.
+        </p>
+      </div>
+
+      <div className="stat-grid">
+        <Stat value={String(stats.pendingClients)} label="Awaiting approval" color="var(--orange)" />
+        <Stat value={String(approved.length)} label="Approved clients" color="var(--green)" />
+      </div>
+
+      <div className="glow-card">
+        <h3 style={{ marginTop: 0 }}>Pending client registrations</h3>
+        {pending.length === 0 ? (
+          <p className="muted">No pending registrations.</p>
+        ) : (
+          pending.map((c) => (
+            <div
+              key={c.id}
+              style={{
+                padding: '12px 0',
+                borderTop: '1px solid rgba(255,255,255,0.08)',
+              }}
+            >
+              <strong>
+                {c.firstName} {c.lastName}
+              </strong>
+              <div className="muted">{c.email}</div>
+              <div className="muted">
+                Registered {new Date(c.createdAt).toLocaleString()}
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <button
+                  className="btn btn-blue"
+                  type="button"
+                  style={{ flex: 1 }}
+                  onClick={() => approveClient(c.id)}
+                >
+                  Approve
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  style={{ flex: 1, borderColor: 'var(--red)', color: 'var(--red)' }}
+                  onClick={() => rejectClient(c.id)}
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="glow-card" style={{ boxShadow: 'none', borderColor: 'rgba(255,255,255,0.08)' }}>
+        <h3 style={{ marginTop: 0 }}>Approved — ready for payment / license</h3>
+        {approved.length === 0 ? (
+          <p className="muted">No approved clients yet.</p>
+        ) : (
+          approved.map((c) => (
+            <div key={c.id} style={{ padding: '8px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <strong>
+                {c.firstName} {c.lastName}
+              </strong>
+              <div className="muted">{c.email}</div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

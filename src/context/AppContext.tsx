@@ -10,6 +10,8 @@ import { loadJSON, saveJSON } from '../lib/storage';
 
 export type UserProfile = { email: string; firstName: string; lastName: string };
 
+export type AccessStatus = 'none' | 'pending' | 'approved' | 'paid' | 'licensed';
+
 export type EABot = {
   name: string;
   displayName: string;
@@ -28,11 +30,11 @@ export type LicenseSync = {
 
 type Session = {
   user: UserProfile | null;
-  paid: boolean;
+  accessStatus: AccessStatus;
   bot: EABot;
 };
 
-const KEY = 'ub-web/session-v1';
+const KEY = 'ub-web/session-v2';
 
 const DEFAULT_BOT: EABot = {
   name: 'UNLIMITEDBULLV1',
@@ -45,23 +47,49 @@ const DEFAULT_BOT: EABot = {
 
 type Ctx = {
   user: UserProfile | null;
-  paid: boolean;
+  accessStatus: AccessStatus;
   bot: EABot;
   isPaused: boolean;
-  register: (u: UserProfile) => void;
+  setAccessStatus: (status: AccessStatus) => void;
+  registerLocal: (u: UserProfile) => void;
   markPaid: () => void;
+  activateWithLicense: (key: string, sync?: LicenseSync) => void;
   togglePause: () => void;
   deleteBot: () => void;
   setSymbols: (s: string[]) => void;
-  connectLicense: (key: string, sync?: LicenseSync) => void;
 };
 
 const AppContext = createContext<Ctx | null>(null);
 
-export function AppProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session>(() =>
-    loadJSON(KEY, { user: null, paid: false, bot: DEFAULT_BOT }),
+function migrateSession(): Session {
+  const v2 = loadJSON<Session | null>(KEY, null as unknown as Session);
+  if (v2 && typeof v2 === 'object' && 'accessStatus' in (v2 as object)) {
+    return {
+      user: v2.user ?? null,
+      accessStatus: v2.accessStatus ?? 'none',
+      bot: { ...DEFAULT_BOT, ...(v2.bot ?? {}) },
+    };
+  }
+  // migrate old session
+  const v1 = loadJSON<{ user: UserProfile | null; paid?: boolean; bot?: EABot }>(
+    'ub-web/session-v1',
+    { user: null, paid: false, bot: DEFAULT_BOT },
   );
+  let accessStatus: AccessStatus = 'none';
+  if (v1.user) {
+    if (v1.bot?.licenseKey) accessStatus = 'licensed';
+    else if (v1.paid) accessStatus = 'paid';
+    else accessStatus = 'pending';
+  }
+  return {
+    user: v1.user,
+    accessStatus,
+    bot: { ...DEFAULT_BOT, ...(v1.bot ?? {}) },
+  };
+}
+
+export function AppProvider({ children }: { children: ReactNode }) {
+  const [session, setSession] = useState<Session>(() => migrateSession());
 
   const persist = useCallback((next: Session) => {
     setSession(next);
@@ -71,11 +99,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Ctx>(
     () => ({
       user: session.user,
-      paid: session.paid,
+      accessStatus: session.accessStatus,
       bot: { ...DEFAULT_BOT, ...session.bot },
       isPaused: session.bot.status === 'paused',
-      register: (user) => persist({ ...session, user }),
-      markPaid: () => persist({ ...session, paid: true }),
+      setAccessStatus: (accessStatus) => persist({ ...session, accessStatus }),
+      registerLocal: (user) =>
+        persist({ ...session, user, accessStatus: 'pending' }),
+      markPaid: () => persist({ ...session, accessStatus: 'paid' }),
+      activateWithLicense: (key, sync) => {
+        const displayName =
+          sync?.displayName ?? sync?.name ?? session.bot.displayName;
+        persist({
+          ...session,
+          accessStatus: 'licensed',
+          bot: {
+            ...session.bot,
+            licenseKey: key.trim().toUpperCase(),
+            status: 'active',
+            name: (sync?.name ?? displayName).replace(/\s+/g, '').toUpperCase(),
+            displayName,
+            mainText: sync?.mainText ?? session.bot.mainText,
+            symbols: sync?.symbols?.length ? sync.symbols : session.bot.symbols,
+          },
+        });
+      },
       togglePause: () =>
         persist({
           ...session,
@@ -87,26 +134,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       deleteBot: () =>
         persist({
           ...session,
+          accessStatus: 'paid',
           bot: { ...session.bot, status: 'paused', licenseKey: '' },
         }),
       setSymbols: (symbols) =>
         persist({ ...session, bot: { ...session.bot, symbols } }),
-      connectLicense: (key, sync) => {
-        const displayName =
-          sync?.displayName ?? sync?.name ?? session.bot.displayName;
-        persist({
-          ...session,
-          bot: {
-            ...session.bot,
-            licenseKey: key.trim(),
-            status: 'active',
-            name: (sync?.name ?? displayName).replace(/\s+/g, '').toUpperCase(),
-            displayName,
-            mainText: sync?.mainText ?? session.bot.mainText,
-            symbols: sync?.symbols?.length ? sync.symbols : session.bot.symbols,
-          },
-        });
-      },
     }),
     [persist, session],
   );

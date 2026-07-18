@@ -12,16 +12,22 @@ import {
   MetaTraderPage,
   OpenOrdersPage,
   ProfilePage,
+  SubscriptionsPage,
 } from './pages/admin/AdminPages';
 import { AdminShell } from './pages/admin/AdminShell';
+import { ActivateLicensePage } from './pages/client/ActivateLicensePage';
 import { HomePage } from './pages/client/HomePage';
 import { RegisterPage } from './pages/client/RegisterPage';
 import { SubscribePage } from './pages/client/SubscribePage';
+import { WaitingApprovalPage } from './pages/client/WaitingApprovalPage';
 
-function ClientGate({ children }: { children: React.ReactNode }) {
-  const { user, paid } = useApp();
+function ClientAppGate({ children }: { children: React.ReactNode }) {
+  const { user, accessStatus } = useApp();
   if (!user) return <Navigate to="/" replace />;
-  if (!paid) return <Navigate to="/subscribe" replace />;
+  if (accessStatus === 'pending') return <Navigate to="/waiting" replace />;
+  if (accessStatus === 'approved') return <Navigate to="/subscribe" replace />;
+  if (accessStatus === 'paid') return <Navigate to="/activate" replace />;
+  if (accessStatus !== 'licensed') return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -32,48 +38,37 @@ function AdminGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export default function App() {
-  const { user, paid } = useApp();
+function HomeRedirect() {
+  const { user, accessStatus } = useApp();
+  if (!user) return <RegisterPage />;
+  if (accessStatus === 'licensed') return <Navigate to="/app" replace />;
+  if (accessStatus === 'paid') return <Navigate to="/activate" replace />;
+  if (accessStatus === 'approved') return <Navigate to="/subscribe" replace />;
+  return <Navigate to="/waiting" replace />;
+}
 
+export default function App() {
   return (
     <div className="app-shell">
       <Routes>
-        <Route
-          path="/"
-          element={
-            user && paid ? (
-              <Navigate to="/app" replace />
-            ) : user ? (
-              <Navigate to="/subscribe" replace />
-            ) : (
-              <RegisterPage />
-            )
-          }
-        />
-        <Route
-          path="/subscribe"
-          element={
-            user ? (
-              paid ? <Navigate to="/app" replace /> : <SubscribePage />
-            ) : (
-              <Navigate to="/" replace />
-            )
-          }
-        />
+        <Route path="/" element={<HomeRedirect />} />
+        <Route path="/waiting" element={<WaitingApprovalPage />} />
+        <Route path="/subscribe" element={<SubscribePage />} />
+        <Route path="/activate" element={<ActivateLicensePage />} />
         <Route
           path="/app"
           element={
-            <ClientGate>
+            <ClientAppGate>
               <HomePage />
-            </ClientGate>
+            </ClientAppGate>
           }
         />
         <Route
           path="/app/metatrader"
           element={
-            <ClientGate>
+            <ClientAppGate>
               <MetaTraderPage />
-            </ClientGate>
+            </ClientAppGate>
           }
         />
 
@@ -89,7 +84,7 @@ export default function App() {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="approve" element={<ApproveAdminsPage />} />
-          <Route path="subscriptions" element={<ComingSoonPage title="Subscriptions" />} />
+          <Route path="subscriptions" element={<SubscriptionsPage />} />
           <Route path="emails" element={<ComingSoonPage title="Send Emails" />} />
           <Route path="connect-ea" element={<ConnectEAPage />} />
           <Route path="orders" element={<OpenOrdersPage />} />
