@@ -303,3 +303,463 @@ a {
   color: var(--text);
   text-align: left;
 }
+
+/* —— Interface Style modal —— */
+.iface-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.62);
+  display: grid;
+  align-items: end;
+  backdrop-filter: blur(4px);
+}
+
+.iface-sheet {
+  position: relative;
+  width: min(100%, 480px);
+  margin: 0 auto;
+  max-height: 88vh;
+  overflow: auto;
+  background: linear-gradient(180deg, #141820 0%, #0c1018 100%);
+  border-radius: 28px 28px 0 0;
+  border: 1.5px solid rgba(59, 130, 246, 0.45);
+  border-bottom: none;
+  box-shadow: 0 -8px 40px rgba(59, 130, 246, 0.22);
+  padding: 10px 16px 28px;
+}
+
+.iface-handle {
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.45);
+  margin: 4px auto 12px;
+}
+
+.iface-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.iface-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+
+.iface-avatar-wrap {
+  justify-self: center;
+}
+
+.iface-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2.5px solid var(--electric);
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.55);
+  display: block;
+}
+
+.iface-close {
+  justify-self: end;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #1a2030;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+}
+
+.iface-section-label {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.iface-tool {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  background: #161c2a;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 18px;
+  padding: 12px 14px;
+  color: var(--text);
+  margin-bottom: 14px;
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.12);
+}
+
+.iface-tool-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--electric);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.iface-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.iface-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 4px;
+  border-radius: 999px;
+  background: #151a26;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.iface-tab.active {
+  color: #fff;
+  background: rgba(59, 130, 246, 0.22);
+  border-color: var(--electric);
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.35);
+}
+
+.iface-body {
+  min-height: 220px;
+  padding-bottom: 56px;
+}
+
+.iface-layout-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px 8px;
+}
+
+.iface-layout {
+  background: transparent;
+  color: var(--muted);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 4px;
+}
+
+.iface-layout-circle {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 2px solid rgba(100, 116, 139, 0.45);
+  background: #121826;
+  display: grid;
+  place-items: center;
+}
+
+.iface-layout.active .iface-layout-circle {
+  border-color: var(--electric);
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.55);
+}
+
+.iface-layout.active .iface-layout-label {
+  color: var(--electric);
+  font-weight: 700;
+}
+
+.iface-layout-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.iface-effect-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1.5px solid var(--electric);
+  border-radius: 999px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.25);
+}
+
+.iface-turn-off {
+  background: transparent;
+  color: var(--electric);
+  border: 1px solid var(--electric);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+}
+
+.iface-effect-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.iface-effect-card {
+  background: #151a26;
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 14px 10px;
+  color: var(--text);
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  text-align: center;
+}
+
+.iface-effect-card.active {
+  border-color: var(--electric);
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.4);
+}
+
+.iface-effect-orb {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: #0e1422;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  display: grid;
+  place-items: center;
+  margin-bottom: 2px;
+}
+
+.iface-onoff {
+  margin-top: 4px;
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.iface-onoff.on {
+  color: var(--electric);
+  border-color: var(--electric);
+}
+
+.iface-colour-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px 8px;
+}
+
+.iface-colour {
+  background: transparent;
+  color: var(--muted);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.iface-swatch {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+}
+
+.iface-colour.active {
+  color: var(--text);
+}
+
+.iface-custom-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.iface-custom-card {
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  padding: 0;
+}
+
+.iface-custom-preview {
+  height: 110px;
+  border-radius: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  background: #151a26 center/cover no-repeat;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.iface-custom-preview.default {
+  background: linear-gradient(160deg, #151a26, #0a0e16);
+}
+
+.iface-custom-card.active .iface-custom-preview {
+  border-color: var(--electric);
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.4);
+}
+
+.iface-custom-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.iface-custom-card.active .iface-custom-meta {
+  color: var(--electric);
+}
+
+.iface-fab {
+  position: sticky;
+  float: right;
+  bottom: 12px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  margin-top: -40px;
+  z-index: 2;
+}
+
+/* Layout variants on home */
+.home-layout-bold .home-hero {
+  max-height: 420px !important;
+}
+.home-layout-minimal .home-hero-wrap {
+  border: none !important;
+  box-shadow: none !important;
+}
+.home-layout-minimal .home-main-text {
+  font-size: 18px !important;
+}
+.home-layout-expanded .home-status-pill {
+  padding: 16px 18px !important;
+}
+.home-layout-dashboard .neon-action {
+  grid-template-columns: 1fr 1fr 1fr !important;
+}
+.home-layout-terminal .home-main-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+  letter-spacing: 2px !important;
+}
+.home-layout-focus .home-hero {
+  max-height: 440px !important;
+}
+.home-layout-focus .pill:not(.home-status-pill) {
+  opacity: 0.85;
+}
+.home-layout-vortex .home-hero-wrap {
+  border-radius: 50% 50% 24px 24px !important;
+  overflow: hidden;
+}
+.home-layout-phantom .home-hero-wrap {
+  opacity: 0.92;
+  filter: saturate(0.85);
+}
+.home-layout-apex .neon-action {
+  border-radius: 16px !important;
+}
+
+/* Visual effects overlays */
+.iface-fx {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  max-width: 480px;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+.iface-fx-matrix {
+  background-image: repeating-linear-gradient(
+    180deg,
+    transparent 0,
+    transparent 14px,
+    rgba(57, 255, 20, 0.04) 14px,
+    rgba(57, 255, 20, 0.04) 15px
+  );
+  animation: matrix-drift 8s linear infinite;
+  opacity: 0.55;
+  mix-blend-mode: screen;
+}
+
+.iface-fx-matrix::before {
+  content: '01001101011011010100110101101001 1101001011010010110100101101001';
+  position: absolute;
+  inset: -20% 0 auto;
+  color: rgba(57, 255, 20, 0.35);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-all;
+  animation: matrix-fall 12s linear infinite;
+}
+
+.iface-fx-stars {
+  background:
+    radial-gradient(1px 1px at 20% 30%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 70% 20%, #fff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 40% 70%, #93c5fd 50%, transparent 51%),
+    radial-gradient(1px 1px at 85% 60%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 15% 80%, #fff 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 55% 45%, #fff 50%, transparent 51%);
+  animation: star-twinkle 4s ease-in-out infinite alternate;
+  opacity: 0.7;
+}
+
+.iface-fx-fire {
+  box-shadow:
+    inset 0 -40px 60px rgba(249, 115, 22, 0.22),
+    inset 0 0 40px rgba(239, 68, 68, 0.12);
+  animation: fire-pulse 2.4s ease-in-out infinite alternate;
+}
+
+.iface-fx-night {
+  background:
+    radial-gradient(ellipse at center, transparent 35%, rgba(0, 0, 0, 0.55) 100%),
+    linear-gradient(rgba(59, 130, 246, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59, 130, 246, 0.05) 1px, transparent 1px);
+  background-size: auto, 28px 28px, 28px 28px;
+}
+
+@keyframes matrix-drift {
+  from { background-position: 0 0; }
+  to { background-position: 0 120px; }
+}
+@keyframes matrix-fall {
+  from { transform: translateY(-10%); }
+  to { transform: translateY(40%); }
+}
+@keyframes star-twinkle {
+  from { opacity: 0.45; }
+  to { opacity: 0.85; }
+}
+@keyframes fire-pulse {
+  from { box-shadow: inset 0 -30px 50px rgba(249, 115, 22, 0.16), inset 0 0 30px rgba(239, 68, 68, 0.08); }
+  to { box-shadow: inset 0 -50px 70px rgba(249, 115, 22, 0.28), inset 0 0 50px rgba(239, 68, 68, 0.16); }
+}

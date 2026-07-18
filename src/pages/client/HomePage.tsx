@@ -3,7 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { Home, Monitor, Pause, Play, Settings, Signal, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
+import {
+  accentHex,
+  hexToRgb,
+  loadInterfacePrefs,
+  saveInterfacePrefs,
+  type InterfacePrefs,
+} from '../../lib/interfaceStyle';
 import { loadJSON, normalizeLicenseKey, saveJSON } from '../../lib/storage';
+import { InterfaceStyleModal } from './InterfaceStyleModal';
 
 const ALL_SYMBOLS = [
   'XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD',
@@ -21,6 +29,9 @@ export function HomePage() {
   const eaImage = bot.imageUrl || '';
   const [symbolsOpen, setSymbolsOpen] = useState(false);
   const [licenseOpen, setLicenseOpen] = useState(false);
+  const [styleOpen, setStyleOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [stylePrefs, setStylePrefs] = useState<InterfacePrefs>(() => loadInterfacePrefs());
   const [localSymbols, setLocalSymbols] = useState(bot.symbols);
   const [licenseKey, setLicenseKey] = useState(bot.licenseKey);
   const [floatPos, setFloatPos] = useState<FloatPos>(() =>
@@ -40,6 +51,28 @@ export function HomePage() {
   } | null>(null);
   const floatRef = useRef<HTMLButtonElement | null>(null);
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
+  const accent = accentHex(stylePrefs.accent);
+  const accentRgb = hexToRgb(accent);
+  const customBg =
+    stylePrefs.customBg === 'interface-1' && eaImage
+      ? eaImage
+      : '';
+
+  // Apply accent colour app-wide while on home
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--electric', accent);
+    root.style.setProperty('--accent-rgb', accentRgb);
+    return () => {
+      root.style.setProperty('--electric', '#3b82f6');
+      root.style.removeProperty('--accent-rgb');
+    };
+  }, [accent, accentRgb]);
+
+  const updateStylePrefs = (next: InterfacePrefs) => {
+    setStylePrefs(next);
+    saveInterfacePrefs(next);
+  };
 
   // Default float near center of cover once measured
   useEffect(() => {
@@ -114,8 +147,21 @@ export function HomePage() {
     }, 900);
   };
 
+  const fxClass =
+    stylePrefs.effect === 'profit-matrix'
+      ? 'iface-fx-matrix'
+      : stylePrefs.effect === 'star-field'
+        ? 'iface-fx-stars'
+        : stylePrefs.effect === 'fire-mode'
+          ? 'iface-fx-fire'
+          : stylePrefs.effect === 'trader-night'
+            ? 'iface-fx-night'
+            : '';
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell home-layout-${stylePrefs.layout}`}>
+      {fxClass ? <div className={`iface-fx ${fxClass}`} aria-hidden /> : null}
+
       {/* Floating avatar only — drag to move, tap for EA info */}
       <button
         type="button"
@@ -139,7 +185,7 @@ export function HomePage() {
           borderRadius: '50%',
           border: '2px solid var(--electric)',
           background: '#0e1220',
-          boxShadow: '0 4px 18px rgba(59,130,246,0.45)',
+          boxShadow: `0 4px 18px rgba(${accentRgb},0.45)`,
           overflow: 'hidden',
         }}
       >
@@ -159,8 +205,19 @@ export function HomePage() {
         />
       </button>
 
-      <div className="page" style={{ paddingBottom: 8 }}>
+      <div
+        className="page"
+        style={{
+          paddingBottom: 8,
+          backgroundImage: customBg
+            ? `linear-gradient(rgba(10,10,16,0.78), rgba(10,10,16,0.92)), url(${customBg})`
+            : undefined,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      >
         <h2
+          className="home-main-text"
           style={{
             textAlign: 'center',
             color: 'var(--electric)',
@@ -174,15 +231,17 @@ export function HomePage() {
         </h2>
 
         <div
+          className="home-hero-wrap"
           style={{
             borderRadius: 24,
             overflow: 'hidden',
-            border: '1px solid rgba(59,130,246,0.4)',
+            border: `1px solid rgba(${accentRgb},0.4)`,
             position: 'relative',
             marginTop: 12,
           }}
         >
           <img
+            className="home-hero"
             src={eaImage || '/bull-hero.jpg'}
             alt={bot.displayName}
             style={{ width: '100%', display: 'block', maxHeight: 360, objectFit: 'cover' }}
@@ -238,7 +297,7 @@ export function HomePage() {
           </button>
         </div>
 
-        <div className="pill" style={{ marginBottom: 14 }}>
+        <div className="pill home-status-pill" style={{ marginBottom: 14 }}>
           <img src={eaImage || '/bull-avatar.jpg'} width={36} height={36} style={{ borderRadius: '50%', objectFit: 'cover' }} alt="" />
           <div>
             <div style={{ fontWeight: 700, letterSpacing: 1.2 }}>{bot.name}</div>
@@ -248,14 +307,42 @@ export function HomePage() {
           </div>
         </div>
 
-        <button type="button" className="pill" onClick={() => setLicenseOpen(true)}>
-          <span className="circle-btn" style={{ width: 44, height: 44 }}>+</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700 }}>Connect EA</div>
-            <div className="muted" style={{ fontSize: 12 }}>Connect New License Key</div>
-          </div>
-          <Settings size={20} color="var(--electric)" />
-        </button>
+        <div className="pill" style={{ marginBottom: 0 }}>
+          <button
+            type="button"
+            onClick={() => setLicenseOpen(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              flex: 1,
+              background: 'transparent',
+              color: 'var(--text)',
+              textAlign: 'left',
+              padding: 0,
+            }}
+          >
+            <span className="circle-btn" style={{ width: 44, height: 44 }}>+</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700 }}>Connect EA</div>
+              <div className="muted" style={{ fontSize: 12 }}>Connect New License Key</div>
+            </div>
+          </button>
+          <button
+            type="button"
+            aria-label="Interface Style"
+            onClick={() => setStyleOpen(true)}
+            style={{
+              background: 'transparent',
+              color: 'var(--electric)',
+              padding: 8,
+              display: 'grid',
+              placeItems: 'center',
+            }}
+          >
+            <Settings size={22} />
+          </button>
+        </div>
 
         <p style={{ textAlign: 'center', color: 'var(--electric)', marginTop: 12, fontWeight: 600 }}>
           Trading: {bot.symbols.join(' · ')}
@@ -388,6 +475,43 @@ export function HomePage() {
               Got it
             </button>
           </div>
+        </Modal>
+      ) : null}
+
+      <InterfaceStyleModal
+        open={styleOpen}
+        onClose={() => setStyleOpen(false)}
+        prefs={stylePrefs}
+        onChange={updateStylePrefs}
+        avatarUrl={eaImage || '/bull-avatar.jpg'}
+        mentorBgUrl={eaImage}
+        onOpenScanner={() => {
+          setStyleOpen(false);
+          setScannerOpen(true);
+        }}
+      />
+
+      {scannerOpen ? (
+        <Modal title="Chart Scanner" onClose={() => setScannerOpen(false)}>
+          <p className="muted" style={{ marginTop: 0 }}>
+            AI-powered chart analysis &amp; auto trade. Upload a chart screenshot to scan setups.
+          </p>
+          <div
+            style={{
+              border: '1.5px dashed rgba(59,130,246,0.45)',
+              borderRadius: 16,
+              padding: 28,
+              textAlign: 'center',
+              color: 'var(--electric)',
+              marginBottom: 14,
+              background: 'rgba(59,130,246,0.06)',
+            }}
+          >
+            Scanner ready — full AI scan ships next.
+          </div>
+          <button className="btn btn-blue" type="button" onClick={() => setScannerOpen(false)}>
+            Close
+          </button>
         </Modal>
       ) : null}
     </div>
