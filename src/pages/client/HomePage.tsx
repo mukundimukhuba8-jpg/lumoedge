@@ -1,14 +1,18 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Home, Monitor, Pause, Play, Settings, Signal, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
-import { normalizeLicenseKey } from '../../lib/storage';
+import { loadJSON, normalizeLicenseKey, saveJSON } from '../../lib/storage';
 
 const ALL_SYMBOLS = [
   'XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD',
   'NZDUSD', 'EURGBP', 'EURJPY', 'GBPJPY', 'XAGUSD', 'NAS100', 'US30', 'BTCUSD',
 ];
+
+const FLOAT_KEY = 'ub-web/float-avatar-pos';
+
+type FloatPos = { x: number; y: number };
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -19,9 +23,81 @@ export function HomePage() {
   const [licenseOpen, setLicenseOpen] = useState(false);
   const [localSymbols, setLocalSymbols] = useState(bot.symbols);
   const [licenseKey, setLicenseKey] = useState(bot.licenseKey);
+  const [floatPos, setFloatPos] = useState<FloatPos>(() =>
+    loadJSON<FloatPos>(FLOAT_KEY, { x: 0, y: 0 }),
+  );
+  const [dragging, setDragging] = useState(false);
   const taps = useRef(0);
   const timer = useRef<number | null>(null);
+  const drag = useRef<{
+    active: boolean;
+    moved: boolean;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+  const floatRef = useRef<HTMLDivElement | null>(null);
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
+
+  // Default float near center-top of cover area once measured
+  useEffect(() => {
+    if (floatPos.x || floatPos.y) return;
+    const shell = document.querySelector('.app-shell') as HTMLElement | null;
+    const width = shell?.clientWidth || window.innerWidth;
+    setFloatPos({ x: Math.max(12, width / 2 - 48), y: 220 });
+  }, [floatPos.x, floatPos.y]);
+
+  const clampPos = (x: number, y: number): FloatPos => {
+    const el = floatRef.current;
+    const w = el?.offsetWidth ?? 96;
+    const h = el?.offsetHeight ?? 88;
+    const maxX = Math.max(8, window.innerWidth - w - 8);
+    const maxY = Math.max(8, window.innerHeight - h - 8);
+    return {
+      x: Math.min(maxX, Math.max(8, x)),
+      y: Math.min(maxY, Math.max(8, y)),
+    };
+  };
+
+  const onFloatPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    drag.current = {
+      active: true,
+      moved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: floatPos.x,
+      originY: floatPos.y,
+    };
+    setDragging(true);
+  };
+
+  const onFloatPointerMove = (e: React.PointerEvent) => {
+    if (!drag.current?.active) return;
+    const dx = e.clientX - drag.current.startX;
+    const dy = e.clientY - drag.current.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) drag.current.moved = true;
+    const next = clampPos(drag.current.originX + dx, drag.current.originY + dy);
+    setFloatPos(next);
+  };
+
+  const onFloatPointerUp = (e: React.PointerEvent) => {
+    if (!drag.current?.active) return;
+    const moved = drag.current.moved;
+    drag.current.active = false;
+    setDragging(false);
+    saveJSON(FLOAT_KEY, floatPos);
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    // Tap without drag → open profile/connect
+    if (!moved) setLicenseOpen(true);
+    drag.current = null;
+  };
 
   const onHomeTap = () => {
     taps.current += 1;
@@ -39,6 +115,61 @@ export function HomePage() {
 
   return (
     <div className="app-shell">
+      {/* Floating movable profile + powered by */}
+      <div
+        ref={floatRef}
+        onPointerDown={onFloatPointerDown}
+        onPointerMove={onFloatPointerMove}
+        onPointerUp={onFloatPointerUp}
+        onPointerCancel={onFloatPointerUp}
+        style={{
+          position: 'fixed',
+          left: floatPos.x,
+          top: floatPos.y,
+          zIndex: 30,
+          touchAction: 'none',
+          cursor: dragging ? 'grabbing' : 'grab',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 2,
+          userSelect: 'none',
+          width: 96,
+        }}
+      >
+        <img
+          src={eaImage || '/bull-avatar.jpg'}
+          alt="Profile"
+          width={56}
+          height={56}
+          draggable={false}
+          style={{
+            borderRadius: '50%',
+            border: '2px solid var(--electric)',
+            objectFit: 'cover',
+            boxShadow: '0 4px 18px rgba(59,130,246,0.45)',
+            background: '#0e1220',
+            pointerEvents: 'none',
+          }}
+        />
+        <div
+          style={{
+            color: 'var(--muted)',
+            fontFamily: 'var(--font-body)',
+            fontSize: 10,
+            letterSpacing: 0.3,
+            lineHeight: 1.15,
+            textAlign: 'center',
+            pointerEvents: 'none',
+            textShadow: '0 1px 4px rgba(0,0,0,0.85)',
+          }}
+        >
+          powered by
+          <br />
+          LUMOEDGE
+        </div>
+      </div>
+
       <div className="page" style={{ paddingBottom: 8 }}>
         <h2
           style={{
@@ -60,6 +191,7 @@ export function HomePage() {
             border: '1px solid rgba(59,130,246,0.4)',
             position: 'relative',
             marginTop: 12,
+            marginBottom: 10,
           }}
         >
           <img
@@ -84,27 +216,7 @@ export function HomePage() {
           </div>
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: 18 }}>
-          <img
-            src={eaImage || '/bull-avatar.jpg'}
-            alt=""
-            width={54}
-            height={54}
-            style={{ borderRadius: '50%', border: '2px solid var(--electric)', margin: '0 0 10px', objectFit: 'cover' }}
-          />
-          <div
-            style={{
-              color: 'var(--muted)',
-              fontFamily: 'var(--font-body)',
-              fontSize: 13,
-              letterSpacing: 0.5,
-            }}
-          >
-            powered by LUMOEDGE
-          </div>
-        </div>
-
-        <div className="neon-action">
+        <div className="neon-action" style={{ marginTop: 0 }}>
           <button type="button" onClick={() => deleteBot()}>
             <span className="circle-btn"><Trash2 size={22} /></span>
             DELETE
