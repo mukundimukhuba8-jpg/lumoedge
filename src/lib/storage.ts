@@ -68,6 +68,19 @@ export function loadVault(): VaultLicense[] {
 
 export function saveVault(entries: VaultLicense[]) {
   localStorage.setItem(VAULT_KEY, JSON.stringify(entries));
+  void syncVaultRemote(entries);
+}
+
+async function syncVaultRemote(entries: VaultLicense[]) {
+  try {
+    await fetch('/api/db', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vault: entries }),
+    });
+  } catch {
+    // static host / offline
+  }
 }
 
 export function upsertVault(entry: VaultLicense) {
@@ -97,6 +110,11 @@ export function saveEaImage(id: string, dataUrl: string) {
     const all = loadJSON<Record<string, string>>(IMAGE_STORE, {});
     all[id] = dataUrl;
     saveJSON(IMAGE_STORE, all);
+    void fetch('/api/db', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ images: all }),
+    }).catch(() => undefined);
   } catch {
     // quota — ignore
   }

@@ -589,7 +589,7 @@ export function SubscriptionsPage() {
       <div>
         <h2 className="title-blue" style={{ fontSize: 24, margin: 0 }}>Subscriptions</h2>
         <p className="muted">
-          New Lumo Edge registrations land here. Approve to unlock payment.
+          New Lumo Edge registrations land here (saved on server — survives new preview links). Approve to unlock payment.
         </p>
       </div>
 

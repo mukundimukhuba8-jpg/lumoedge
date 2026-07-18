@@ -2,10 +2,18 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
+import {
+  fetchClients,
+  fetchDb,
+  patchClient,
+  postClient,
+  pushDb,
+} from '../lib/remote';
 import {
   findInVault,
   getEaImage,
@@ -15,7 +23,9 @@ import {
   normalizeLicenseKey,
   saveEaImage,
   saveJSON,
+  saveVault,
   upsertVault,
+  type VaultLicense,
 } from '../lib/storage';
 
 export type AdminRole = 'super' | 'admin' | 'pending';
@@ -323,20 +333,76 @@ type Ctx = {
 };
 
 const AdminContext = createContext<Ctx | null>(null);
+const IMAGE_STORE = 'ub-web/ea-images-v1';
 
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(() => migrateAuth());
   const [store, setStore] = useState<StoreState>(() => migrateStore(migrateAuth().admins));
+  const [clients, setClients] = useState<ClientRequest[]>([]);
+  const [booting, setBooting] = useState(true);
+
+  // Hydrate from disk-backed API so data survives new preview links
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const db = await fetchDb();
+      if (cancelled) return;
+      if (db) {
+        if (Array.isArray(db.auth?.admins)) {
+          const nextAuth: AuthState = {
+            portalOpen: false,
+            admin: (db.auth.admin as AdminUser | null) ?? null,
+            admins: db.auth.admins as AdminUser[],
+          };
+          setAuth(nextAuth);
+          saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+        }
+        if (db.store?.workspaces && typeof db.store.workspaces === 'object') {
+          const nextStore = { workspaces: db.store.workspaces as StoreState['workspaces'] };
+          setStore(nextStore);
+          saveJSON(STORE_KEY, nextStore);
+        }
+        if (Array.isArray(db.vault)) {
+          saveVault(db.vault as VaultLicense[]);
+        }
+        if (db.images && typeof db.images === 'object') {
+          saveJSON(IMAGE_STORE, db.images);
+        }
+        if (Array.isArray(db.clients)) {
+          setClients(db.clients as ClientRequest[]);
+        }
+      }
+      setBooting(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep subscription list fresh for admin portal
+  useEffect(() => {
+    if (booting) return;
+    const tick = async () => {
+      const list = await fetchClients();
+      if (list) setClients(list as ClientRequest[]);
+    };
+    void tick();
+    const id = window.setInterval(tick, 2500);
+    return () => window.clearInterval(id);
+  }, [booting]);
 
   const saveAuth = useCallback((next: AuthState) => {
     setAuth(next);
-    // Persist admins + current session; portalOpen always resets on reload
     saveJSON(AUTH_KEY, { ...next, portalOpen: false });
+    void pushDb({
+      auth: { admins: next.admins, admin: next.admin },
+    });
   }, []);
 
   const saveStore = useCallback((next: StoreState) => {
     setStore(next);
     saveJSON(STORE_KEY, next);
+    void pushDb({ store: next });
   }, []);
 
   const patchWorkspace = useCallback(
@@ -349,6 +415,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           workspaces: { ...prev.workspaces, [adminId]: nextWs },
         };
         saveJSON(STORE_KEY, next);
+        void pushDb({ store: next });
         return next;
       });
     },
@@ -370,7 +437,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       (l) => l.status === 'active' || l.status === 'assigned',
     ).length;
     const deletedLicenses = workspace.licenses.filter((l) => l.status === 'deleted').length;
-    const pendingClients = workspace.clientRequests.filter((c) => c.status === 'pending').length;
 
     return {
       portalOpen: auth.portalOpen,
@@ -460,20 +526,26 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ...auth,
           admins: auth.admins.map((a) => (a.id === id ? { ...a, role: 'admin' } : a)),
         }),
-      clientRequests: workspace.clientRequests,
+      // Global subscription queue (disk-backed) — visible in admin Subscriptions
+      clientRequests: clients,
       submitClientRegistration: (input) => {
-        // Platform registrations go to Super Admin's own queue only
-        const sid = SUPER_ADMIN.user.id;
-        const superWs = store.workspaces[sid] ?? createEmptyWorkspace({
-          id: sid,
-          email: SUPER_ADMIN.email,
-          fullName: SUPER_ADMIN.user.fullName,
-        });
         const email = input.email.trim().toLowerCase();
-        const existing = Object.values(store.workspaces)
-          .flatMap((ws) => ws.clientRequests)
-          .find((c) => c.email === email);
-        if (existing) return existing;
+        const existing =
+          clients.find((c) => c.email === email) ||
+          Object.values(store.workspaces)
+            .flatMap((ws) => ws.clientRequests)
+            .find((c) => c.email === email);
+        if (existing) {
+          setClients((prev) =>
+            prev.some((c) => c.id === existing.id) ? prev : [existing, ...prev],
+          );
+          void postClient({
+            email,
+            firstName: existing.firstName,
+            lastName: existing.lastName,
+          }).catch(() => undefined);
+          return existing;
+        }
         const entry: ClientRequest = {
           id: `cli-${Date.now()}`,
           email,
@@ -483,6 +555,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           createdAt: new Date().toISOString(),
           notifiedAt: new Date().toISOString(),
         };
+        setClients((prev) => [entry, ...prev.filter((c) => c.email !== email)]);
+        const sid = SUPER_ADMIN.user.id;
+        const superWs =
+          store.workspaces[sid] ??
+          createEmptyWorkspace({
+            id: sid,
+            email: SUPER_ADMIN.email,
+            fullName: SUPER_ADMIN.user.fullName,
+          });
         saveStore({
           ...store,
           workspaces: {
@@ -493,11 +574,27 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             },
           },
         });
+        void postClient({
+          email,
+          firstName: entry.firstName,
+          lastName: entry.lastName,
+        })
+          .then((serverEntry) => {
+            setClients((prev) => {
+              const without = prev.filter((c) => c.email !== email);
+              return [serverEntry as ClientRequest, ...without];
+            });
+          })
+          .catch(() => undefined);
         return entry;
       },
       approveClient: (id) => {
-        if (!adminId) return;
-        patchWorkspace(adminId, (ws) => ({
+        setClients((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, status: 'approved' } : c)),
+        );
+        void patchClient(id, { status: 'approved' }).catch(() => undefined);
+        const sid = SUPER_ADMIN.user.id;
+        patchWorkspace(sid, (ws) => ({
           ...ws,
           clientRequests: ws.clientRequests.map((c) =>
             c.id === id ? { ...c, status: 'approved' } : c,
@@ -505,8 +602,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }));
       },
       rejectClient: (id) => {
-        if (!adminId) return;
-        patchWorkspace(adminId, (ws) => ({
+        setClients((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, status: 'rejected' } : c)),
+        );
+        void patchClient(id, { status: 'rejected' }).catch(() => undefined);
+        const sid = SUPER_ADMIN.user.id;
+        patchWorkspace(sid, (ws) => ({
           ...ws,
           clientRequests: ws.clientRequests.map((c) =>
             c.id === id ? { ...c, status: 'rejected' } : c,
@@ -515,9 +616,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       },
       getClientByEmail: (email) => {
         const normalized = email.trim().toLowerCase();
-        return Object.values(store.workspaces)
-          .flatMap((ws) => ws.clientRequests)
-          .find((c) => c.email.toLowerCase() === normalized);
+        return (
+          clients.find((c) => c.email.toLowerCase() === normalized) ||
+          Object.values(store.workspaces)
+            .flatMap((ws) => ws.clientRequests)
+            .find((c) => c.email.toLowerCase() === normalized)
+        );
       },
       eas: workspace.eas,
       licenses: workspace.licenses,
@@ -828,11 +932,28 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       stats: {
         activeLicenses,
         deletedLicenses,
-        totalClients: workspace.clientRequests.length,
-        pendingClients,
+        totalClients: clients.length,
+        pendingClients: clients.filter((c) => c.status === 'pending').length,
       },
     };
-  }, [auth, store, saveAuth, saveStore, patchWorkspace, allLicenses]);
+  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses]);
+
+  if (booting) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'grid',
+          placeItems: 'center',
+          background: '#0a0a0f',
+          color: '#93c5fd',
+          fontFamily: 'system-ui, sans-serif',
+        }}
+      >
+        Loading Lumo Edge…
+      </div>
+    );
+  }
 
   return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;
 }

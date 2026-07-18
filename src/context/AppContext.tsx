@@ -2,10 +2,12 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
+import { fetchSession, pushSession } from '../lib/remote';
 import { loadJSON, saveJSON } from '../lib/storage';
 
 export type UserProfile = { email: string; firstName: string; lastName: string };
@@ -48,13 +50,21 @@ const DEFAULT_BOT: EABot = {
   imageUrl: '',
 };
 
+const RANK: Record<AccessStatus, number> = {
+  none: 0,
+  pending: 1,
+  approved: 2,
+  paid: 3,
+  licensed: 4,
+};
+
 type Ctx = {
   user: UserProfile | null;
   accessStatus: AccessStatus;
   bot: EABot;
   isPaused: boolean;
   setAccessStatus: (status: AccessStatus) => void;
-  registerLocal: (u: UserProfile) => void;
+  registerLocal: (u: UserProfile) => Promise<void>;
   markPaid: () => void;
   activateWithLicense: (key: string, sync?: LicenseSync) => void;
   togglePause: () => void;
@@ -73,7 +83,6 @@ function migrateSession(): Session {
       bot: { ...DEFAULT_BOT, ...(v2.bot ?? {}) },
     };
   }
-  // migrate old session
   const v1 = loadJSON<{ user: UserProfile | null; paid?: boolean; bot?: EABot }>(
     'ub-web/session-v1',
     { user: null, paid: false, bot: DEFAULT_BOT },
@@ -91,13 +100,54 @@ function migrateSession(): Session {
   };
 }
 
+function mergeSessions(local: Session, remote: Session | null): Session {
+  if (!remote?.user) return local;
+  const status =
+    RANK[remote.accessStatus] >= RANK[local.accessStatus]
+      ? remote.accessStatus
+      : local.accessStatus;
+  return {
+    user: remote.user || local.user,
+    accessStatus: status,
+    bot: {
+      ...DEFAULT_BOT,
+      ...local.bot,
+      ...remote.bot,
+      imageUrl: remote.bot?.imageUrl || local.bot.imageUrl || '',
+      licenseKey: remote.bot?.licenseKey || local.bot.licenseKey || '',
+    },
+  };
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session>(() => migrateSession());
 
   const persist = useCallback((next: Session) => {
     setSession(next);
     saveJSON(KEY, next);
+    if (next.user?.email) {
+      void pushSession(next.user.email, next);
+    }
   }, []);
+
+  // Restore progress from server when opening a new preview link
+  useEffect(() => {
+    const email = session.user?.email;
+    if (!email) return;
+    void fetchSession<Session>(email).then((remote) => {
+      if (!remote) return;
+      const merged = mergeSessions(session, remote);
+      if (
+        merged.accessStatus !== session.accessStatus ||
+        merged.bot.licenseKey !== session.bot.licenseKey ||
+        merged.bot.imageUrl !== session.bot.imageUrl
+      ) {
+        setSession(merged);
+        saveJSON(KEY, merged);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.user?.email]);
 
   const value = useMemo<Ctx>(
     () => ({
@@ -106,8 +156,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       bot: { ...DEFAULT_BOT, ...session.bot },
       isPaused: session.bot.status === 'paused',
       setAccessStatus: (accessStatus) => persist({ ...session, accessStatus }),
-      registerLocal: (user) =>
-        persist({ ...session, user, accessStatus: 'pending' }),
+      registerLocal: async (user) => {
+        const remote = await fetchSession<Session>(user.email);
+        if (remote?.user) {
+          persist(
+            mergeSessions(
+              { user, accessStatus: 'pending', bot: { ...DEFAULT_BOT, ...session.bot } },
+              remote,
+            ),
+          );
+          return;
+        }
+        persist({
+          user,
+          accessStatus: 'pending',
+          bot: { ...DEFAULT_BOT, ...session.bot, licenseKey: '', imageUrl: '' },
+        });
+      },
       markPaid: () => persist({ ...session, accessStatus: 'paid' }),
       activateWithLicense: (key, sync) => {
         const displayName =
@@ -139,7 +204,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         persist({
           ...session,
           accessStatus: 'paid',
-          bot: { ...session.bot, status: 'paused', licenseKey: '' },
+          bot: { ...session.bot, status: 'paused', licenseKey: '', imageUrl: '' },
         }),
       setSymbols: (symbols) =>
         persist({ ...session, bot: { ...session.bot, symbols } }),

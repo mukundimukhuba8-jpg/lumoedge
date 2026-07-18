@@ -28,7 +28,7 @@ export function RegisterPage() {
     }, 900);
   };
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.includes('@') || !firstName.trim() || !lastName.trim()) {
       setError('Enter email, first name and last name.');
@@ -40,7 +40,7 @@ export function RegisterPage() {
       lastName: lastName.trim(),
     };
     submitClientRegistration(profile);
-    registerLocal(profile);
+    await registerLocal(profile);
     // Opens device mail app to notify Super Admin
     notifySuperAdminEmail(profile);
     navigate('/waiting');
