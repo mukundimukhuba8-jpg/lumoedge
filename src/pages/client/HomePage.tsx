@@ -205,19 +205,11 @@ export function HomePage() {
           <p className="muted">Connect New License Key</p>
           <div className="field">
             <label>License Key</label>
-            <textarea
+            <input
               value={licenseKey}
-              rows={3}
-              onChange={(e) => {
-                const v = e.target.value.trim();
-                if (v.toUpperCase().startsWith('LUMO.')) {
-                  setLicenseKey(`LUMO.${v.slice(5)}`);
-                } else {
-                  setLicenseKey(normalizeLicenseKey(v));
-                }
-              }}
-              placeholder="LUMO.eyJ2IjoxLC..."
-              style={{ fontSize: 12 }}
+              onChange={(e) => setLicenseKey(normalizeLicenseKey(e.target.value))}
+              placeholder="LUMO-XXXX-XXXX-XXXX"
+              style={{ letterSpacing: 1, fontWeight: 700 }}
             />
           </div>
           <button

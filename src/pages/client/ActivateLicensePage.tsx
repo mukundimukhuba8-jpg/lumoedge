@@ -60,27 +60,19 @@ export function ActivateLicensePage() {
         Activate your license
       </h1>
       <p className="muted" style={{ marginBottom: 24 }}>
-        Paste the full key from your admin (starts with <strong>LUMO.</strong>). Issued for{' '}
-        {user?.email}.
+        Enter your short LUMO key from admin. Issued for {user?.email}.
       </p>
 
       <form className="glow-card" onSubmit={onActivate} style={{ textAlign: 'left' }}>
         <div className="field">
           <label>License Key *</label>
-          <textarea
+          <input
             value={key}
-            rows={4}
-            onChange={(e) => {
-              const v = e.target.value.trim();
-              if (v.toUpperCase().startsWith('LUMO.')) {
-                setKey(`LUMO.${v.slice(5)}`);
-              } else {
-                setKey(normalizeLicenseKey(v));
-              }
-            }}
-            placeholder="LUMO.eyJ2IjoxLC..."
+            onChange={(e) => setKey(normalizeLicenseKey(e.target.value))}
+            placeholder="LUMO-XXXX-XXXX-XXXX"
+            autoCapitalize="characters"
             required
-            style={{ fontSize: 12, wordBreak: 'break-all' }}
+            style={{ letterSpacing: 1, fontWeight: 700 }}
           />
         </div>
         {error ? <p className="error">{error}</p> : null}

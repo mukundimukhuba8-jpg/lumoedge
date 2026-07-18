@@ -186,8 +186,8 @@ export function GenerateLicensePage() {
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>License Details</h3>
         <p className="muted" style={{ marginTop: 0 }}>
-          Keys start with <strong style={{ color: 'var(--electric)' }}>LUMO.</strong> and carry the
-          EA name/image inside — copy the full key for the client. Use their registered email.
+          Short keys like <strong style={{ color: 'var(--electric)' }}>LUMO-XXXX-XXXX-XXXX</strong>.
+          Generate for the client’s registered email (same browser/URL).
         </p>
         <div className="field">
           <label>Select EA *</label>
@@ -232,9 +232,7 @@ export function GenerateLicensePage() {
             if (!rec) return alert('Select EA and fill client name + email');
             setLastKey(rec.key);
             navigator.clipboard?.writeText(rec.key).catch(() => undefined);
-            alert(
-              `License generated for ${rec.clientEmail}.\n\nFull key copied to clipboard.\nPaste the FULL LUMO. key on Activate (not a short code).`,
-            );
+            alert(`License key:\n${rec.key}\n\nFor: ${rec.clientEmail}\nCopied to clipboard.`);
             setClientName('');
             setClientEmail('');
           }}
@@ -249,33 +247,23 @@ export function GenerateLicensePage() {
               borderRadius: 12,
               border: '1px solid rgba(57,255,20,0.45)',
               background: 'rgba(57,255,20,0.08)',
+              textAlign: 'center',
             }}
           >
-            <div className="muted">Latest key — copy all of it</div>
-            <textarea
-              readOnly
-              value={lastKey}
-              rows={4}
-              style={{
-                width: '100%',
-                marginTop: 8,
-                fontSize: 12,
-                color: 'var(--green)',
-                wordBreak: 'break-all',
-                resize: 'vertical',
-              }}
-              onFocus={(e) => e.target.select()}
-            />
+            <div className="muted">Latest key</div>
+            <strong style={{ color: 'var(--green)', fontSize: 22, letterSpacing: 1 }}>
+              {lastKey}
+            </strong>
             <button
               type="button"
               className="btn btn-ghost"
-              style={{ marginTop: 8 }}
+              style={{ marginTop: 10 }}
               onClick={() => {
                 navigator.clipboard?.writeText(lastKey);
                 alert('Copied');
               }}
             >
-              Copy full key
+              Copy key
             </button>
           </div>
         ) : null}
@@ -285,10 +273,8 @@ export function GenerateLicensePage() {
         <div className="field"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, email or key..." /></div>
         {filtered.map((lic) => (
           <div key={lic.id} style={{ padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <strong style={{ fontSize: 12, wordBreak: 'break-all', flex: 1 }}>
-                {lic.key.startsWith('LUMO.') ? `${lic.key.slice(0, 28)}…` : lic.key}
-              </strong>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <strong style={{ letterSpacing: 0.5 }}>{lic.key}</strong>
               <button type="button" style={{ background: 'transparent', color: 'var(--electric)' }} onClick={() => navigator.clipboard.writeText(lic.key)}>
                 <Copy size={14} />
               </button>
