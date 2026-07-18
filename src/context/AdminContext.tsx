@@ -6,7 +6,17 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { loadJSON, makeLicenseKey, normalizeLicenseKey, saveJSON } from '../lib/storage';
+import {
+  findInVault,
+  loadJSON,
+  makeShortLicenseCode,
+  normalizeLicenseKey,
+  packLicenseKey,
+  saveJSON,
+  unpackLicenseKey,
+  upsertVault,
+  type LicensePayload,
+} from '../lib/storage';
 
 export type AdminRole = 'super' | 'admin' | 'pending';
 
@@ -180,17 +190,22 @@ export function createEmptyWorkspace(seed?: {
   };
 }
 
-function uniqueKey(allLicenses: LicenseRecord[]) {
-  let key = makeLicenseKey();
+function uniqueShortCode(allLicenses: LicenseRecord[]) {
+  let code = makeShortLicenseCode();
   let guard = 0;
   while (
-    allLicenses.some((l) => normalizeLicenseKey(l.key) === normalizeLicenseKey(key)) &&
+    allLicenses.some(
+      (l) =>
+        normalizeLicenseKey(l.key) === normalizeLicenseKey(code) ||
+        normalizeLicenseKey((l as LicenseRecord & { shortCode?: string }).shortCode ?? '') ===
+          normalizeLicenseKey(code),
+    ) &&
     guard < 20
   ) {
-    key = makeLicenseKey();
+    code = makeShortLicenseCode();
     guard += 1;
   }
-  return key;
+  return code;
 }
 
 function migrateAuth(): AuthState {
@@ -327,25 +342,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     saveJSON(STORE_KEY, next);
   }, []);
 
-  const ensureWorkspace = useCallback(
-    (adminId: string, seed?: AdminUser): AdminWorkspace => {
-      const existing = store.workspaces[adminId];
-      if (existing) return existing;
-      return createEmptyWorkspace(seed ?? { id: adminId });
-    },
-    [store.workspaces],
-  );
-
   const patchWorkspace = useCallback(
     (adminId: string, updater: (ws: AdminWorkspace) => AdminWorkspace, seed?: AdminUser) => {
-      const current = store.workspaces[adminId] ?? createEmptyWorkspace(seed ?? { id: adminId });
-      const nextWs = updater(current);
-      saveStore({
-        ...store,
-        workspaces: { ...store.workspaces, [adminId]: nextWs },
+      setStore((prev) => {
+        const current = prev.workspaces[adminId] ?? createEmptyWorkspace(seed ?? { id: adminId });
+        const nextWs = updater(current);
+        const next = {
+          ...prev,
+          workspaces: { ...prev.workspaces, [adminId]: nextWs },
+        };
+        saveJSON(STORE_KEY, next);
+        return next;
       });
     },
-    [saveStore, store],
+    [],
   );
 
   const allLicenses = useMemo(
@@ -540,24 +550,50 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       },
       generateLicense: (input) => {
         if (!adminId) return null;
-        const ws = ensureWorkspace(adminId, auth.admin ?? undefined);
+        const ws =
+          store.workspaces[adminId] ?? createEmptyWorkspace(auth.admin ?? { id: adminId });
         const ea = ws.eas.find((e) => e.id === input.eaId);
         if (!ea || !input.clientName.trim() || !input.clientEmail.trim()) return null;
         const eaImage = ea.imageUrl || ws.profile.eaImage || '';
+        const clientEmail = input.clientEmail.trim().toLowerCase();
+        const clientName = input.clientName.trim();
+        const id = `lic-${Date.now()}`;
+        const shortCode = uniqueShortCode(allLicenses);
+        const payload: LicensePayload = {
+          v: 1,
+          id,
+          email: clientEmail,
+          eaName: ea.name,
+          mainText: ws.profile.mainText || '',
+          symbols: ea.symbols,
+          // Keep key pasteable; large images stay in vault/workspace
+          eaImage: eaImage.length <= 14000 ? eaImage : '',
+          duration: input.duration,
+          ownerAdminId: adminId,
+          clientName,
+        };
+        const packedKey = packLicenseKey(payload);
         const record: LicenseRecord = {
-          id: `lic-${Date.now()}`,
-          key: uniqueKey(allLicenses),
+          id,
+          key: packedKey,
           eaId: ea.id,
           eaName: ea.name,
           eaImage,
-          mainText: ws.profile.mainText || '',
+          mainText: payload.mainText,
           symbols: ea.symbols,
           ownerAdminId: adminId,
-          clientName: input.clientName.trim(),
-          clientEmail: input.clientEmail.trim().toLowerCase(),
+          clientName,
+          clientEmail,
           duration: input.duration,
           status: 'active',
         };
+        upsertVault({
+          ...payload,
+          eaImage, // full image in vault
+          key: packedKey,
+          shortCode,
+          status: 'active',
+        });
         patchWorkspace(adminId, (current) => ({
           ...current,
           licenses: [record, ...current.licenses],
@@ -566,6 +602,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       },
       deleteLicense: (id) => {
         if (!adminId) return;
+        const vaultHit = findInVault(id);
+        if (vaultHit) {
+          upsertVault({ ...vaultHit, status: 'deleted' });
+        }
         patchWorkspace(adminId, (ws) => ({
           ...ws,
           licenses: ws.licenses.map((l) =>
@@ -574,43 +614,85 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }));
       },
       claimLicense: (key, email) => {
-        const normalizedKey = normalizeLicenseKey(key);
         const normalizedEmail = email.trim().toLowerCase();
-        let ownerId: string | null = null;
-        let license: LicenseRecord | undefined;
-        for (const [wid, ws] of Object.entries(store.workspaces)) {
-          const found = ws.licenses.find(
-            (l) => normalizeLicenseKey(l.key) === normalizedKey || l.key.toUpperCase() === key.trim().toUpperCase(),
-          );
-          if (found) {
-            ownerId = wid;
-            license = found;
-            break;
+        const packed = unpackLicenseKey(key);
+        const vault = findInVault(key);
+
+        const fromPacked = (): LicenseRecord | null => {
+          if (!packed) return null;
+          return {
+            id: packed.id,
+            key: packLicenseKey(packed),
+            eaId: '',
+            eaName: packed.eaName,
+            eaImage: vault?.eaImage || packed.eaImage || '',
+            mainText: packed.mainText,
+            symbols: packed.symbols ?? [],
+            ownerAdminId: packed.ownerAdminId,
+            clientName: packed.clientName,
+            clientEmail: packed.email,
+            duration: packed.duration,
+            status: vault?.status === 'assigned' ? 'assigned' : 'active',
+            assignedEmail: vault?.assignedEmail,
+            assignedAt: vault?.assignedAt,
+          };
+        };
+
+        let license: LicenseRecord | undefined = fromPacked() ?? undefined;
+        let ownerId: string | null = packed?.ownerAdminId ?? vault?.ownerAdminId ?? null;
+
+        if (!license && vault && vault.status !== 'deleted') {
+          license = {
+            id: vault.id,
+            key: vault.key,
+            eaId: '',
+            eaName: vault.eaName,
+            eaImage: vault.eaImage,
+            mainText: vault.mainText,
+            symbols: vault.symbols ?? [],
+            ownerAdminId: vault.ownerAdminId,
+            clientName: vault.clientName,
+            clientEmail: vault.email,
+            duration: vault.duration,
+            status: vault.status,
+            assignedEmail: vault.assignedEmail,
+            assignedAt: vault.assignedAt,
+          };
+          ownerId = vault.ownerAdminId;
+        }
+
+        if (!license) {
+          const normalizedKey = normalizeLicenseKey(key);
+          for (const [wid, ws] of Object.entries(store.workspaces)) {
+            const found = ws.licenses.find(
+              (l) =>
+                l.key === key.trim() ||
+                normalizeLicenseKey(l.key) === normalizedKey ||
+                unpackLicenseKey(l.key)?.id === unpackLicenseKey(key)?.id,
+            );
+            if (found) {
+              ownerId = wid;
+              license = found;
+              break;
+            }
           }
         }
-        if (!ownerId || !license || license.status === 'deleted') {
+
+        if (!license || license.status === 'deleted') {
           return {
             ok: false,
-            error: 'Invalid license key. Generate a LUMO- key in Admin → Generate License.',
+            error:
+              'Invalid license key. Copy the full key from Admin → Generate License (starts with LUMO.).',
           };
         }
+
         if (license.status === 'assigned') {
           if (license.assignedEmail === normalizedEmail) {
-            const ownerWs = store.workspaces[ownerId];
-            const ea = ownerWs?.eas.find((e) => e.id === license!.eaId);
-            return {
-              ok: true,
-              license: {
-                ...license,
-                eaName: ea?.name ?? license.eaName,
-                eaImage: ea?.imageUrl || ownerWs?.profile.eaImage || license.eaImage,
-                mainText: ownerWs?.profile.mainText || license.mainText,
-                symbols: ea?.symbols?.length ? ea.symbols : license.symbols,
-              },
-            };
+            return { ok: true, license };
           }
           return { ok: false, error: 'This license key is already used by another account.' };
         }
+
         if (
           license.clientEmail &&
           license.clientEmail.toLowerCase() !== normalizedEmail
@@ -620,32 +702,67 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             error: `This key was issued for ${license.clientEmail}. Log in with that email, or generate a new key for ${normalizedEmail}.`,
           };
         }
-        const ownerWs = store.workspaces[ownerId];
-        const ea = ownerWs?.eas.find((e) => e.id === license!.eaId);
+
         const updated: LicenseRecord = {
           ...license,
           status: 'assigned',
           assignedEmail: normalizedEmail,
           assignedAt: new Date().toISOString(),
-          eaName: ea?.name ?? license.eaName,
-          eaImage: ea?.imageUrl || ownerWs?.profile.eaImage || license.eaImage,
-          mainText: ownerWs?.profile.mainText || license.mainText,
-          symbols: ea?.symbols?.length ? ea.symbols : license.symbols ?? [],
         };
-        saveStore({
-          ...store,
-          workspaces: {
-            ...store.workspaces,
-            [ownerId]: {
-              ...ownerWs!,
-              licenses: ownerWs!.licenses.map((l) => (l.id === license!.id ? updated : l)),
-            },
-          },
+
+        upsertVault({
+          v: 1,
+          id: updated.id,
+          email: updated.clientEmail,
+          eaName: updated.eaName,
+          mainText: updated.mainText,
+          symbols: updated.symbols,
+          eaImage: updated.eaImage,
+          duration: updated.duration,
+          ownerAdminId: updated.ownerAdminId,
+          clientName: updated.clientName,
+          key: updated.key,
+          shortCode: makeShortLicenseCode(),
+          status: 'assigned',
+          assignedEmail: normalizedEmail,
+          assignedAt: updated.assignedAt,
         });
+
+        if (ownerId && store.workspaces[ownerId]) {
+          patchWorkspace(ownerId, (ws) => ({
+            ...ws,
+            licenses: ws.licenses.some((l) => l.id === updated.id)
+              ? ws.licenses.map((l) => (l.id === updated.id ? updated : l))
+              : [updated, ...ws.licenses],
+          }));
+        }
+
         return { ok: true, license: updated };
       },
-      findLicense: (key) =>
-        allLicenses.find((l) => l.key.toUpperCase() === key.trim().toUpperCase()),
+      findLicense: (key) => {
+        const packed = unpackLicenseKey(key);
+        if (packed) {
+          return {
+            id: packed.id,
+            key: packLicenseKey(packed),
+            eaId: '',
+            eaName: packed.eaName,
+            eaImage: packed.eaImage,
+            mainText: packed.mainText,
+            symbols: packed.symbols,
+            ownerAdminId: packed.ownerAdminId,
+            clientName: packed.clientName,
+            clientEmail: packed.email,
+            duration: packed.duration,
+            status: 'active',
+          };
+        }
+        return allLicenses.find(
+          (l) =>
+            l.key === key.trim() ||
+            normalizeLicenseKey(l.key) === normalizeLicenseKey(key),
+        );
+      },
       saveMt5: (mt5) => {
         if (!adminId) return;
         patchWorkspace(adminId, (ws) => ({ ...ws, mt5 }));
@@ -694,7 +811,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         pendingClients,
       },
     };
-  }, [auth, store, saveAuth, saveStore, patchWorkspace, ensureWorkspace, allLicenses]);
+  }, [auth, store, saveAuth, saveStore, patchWorkspace, allLicenses]);
 
   return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;
 }
