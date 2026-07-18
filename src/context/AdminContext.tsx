@@ -8,10 +8,12 @@ import {
 } from 'react';
 import {
   findInVault,
+  getEaImage,
   loadJSON,
   loadVault,
   makeLicenseKey,
   normalizeLicenseKey,
+  saveEaImage,
   saveJSON,
   upsertVault,
 } from '../lib/storage';
@@ -549,17 +551,24 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           store.workspaces[adminId] ?? createEmptyWorkspace(auth.admin ?? { id: adminId });
         const ea = ws.eas.find((e) => e.id === input.eaId);
         if (!ea || !input.clientName.trim() || !input.clientEmail.trim()) return null;
-        const eaImage = ea.imageUrl || ws.profile.eaImage || '';
+        const profileImage =
+          ws.profile.eaImage || getEaImage(`profile-${adminId}`) || '';
+        const eaImage =
+          ea.imageUrl ||
+          profileImage ||
+          getEaImage(`ea-${ea.id}`) ||
+          '';
         const clientEmail = input.clientEmail.trim().toLowerCase();
         const clientName = input.clientName.trim();
         const id = `lic-${Date.now()}`;
         const key = uniqueKey(allLicenses);
         const mainText = ws.profile.mainText || '';
+        const eaName = ea.name || ws.profile.eaDisplayName || 'Lumo Edge';
         const record: LicenseRecord = {
           id,
           key,
           eaId: ea.id,
-          eaName: ea.name,
+          eaName,
           eaImage,
           mainText,
           symbols: ea.symbols,
@@ -569,13 +578,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           duration: input.duration,
           status: 'active',
         };
-        // Vault is the source of truth for short-key activation
+        // Persist image separately so client sync doesn't lose it
+        if (eaImage) {
+          saveEaImage(id, eaImage);
+          saveEaImage(`key-${normalizeLicenseKey(key)}`, eaImage);
+          saveEaImage(`profile-${adminId}`, eaImage);
+        }
         upsertVault({
           id,
           key,
           email: clientEmail,
           clientName,
-          eaName: ea.name,
+          eaName,
           mainText,
           symbols: ea.symbols,
           eaImage,
@@ -653,6 +667,36 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           };
         }
 
+        // Always re-resolve EA branding from admin profile / image store
+        const ownerWs = ownerId ? store.workspaces[ownerId] : undefined;
+        const ownerEa = ownerWs?.eas.find((e) => e.id === license!.eaId);
+        const resolvedImage =
+          license.eaImage ||
+          getEaImage(license.id) ||
+          getEaImage(`key-${normalizedKey}`) ||
+          ownerEa?.imageUrl ||
+          ownerWs?.profile.eaImage ||
+          getEaImage(`profile-${ownerId || license.ownerAdminId}`) ||
+          '';
+        const resolvedName =
+          license.eaName || ownerEa?.name || ownerWs?.profile.eaDisplayName || 'Lumo Edge';
+        const resolvedMain =
+          license.mainText || ownerWs?.profile.mainText || '';
+        const resolvedSymbols =
+          license.symbols?.length
+            ? license.symbols
+            : ownerEa?.symbols?.length
+              ? ownerEa.symbols
+              : ['XAUUSD'];
+
+        license = {
+          ...license,
+          eaImage: resolvedImage,
+          eaName: resolvedName,
+          mainText: resolvedMain,
+          symbols: resolvedSymbols,
+        };
+
         if (license.status === 'assigned') {
           if (license.assignedEmail === normalizedEmail) {
             return { ok: true, license };
@@ -676,6 +720,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           assignedEmail: normalizedEmail,
           assignedAt: new Date().toISOString(),
         };
+
+        if (updated.eaImage) {
+          saveEaImage(updated.id, updated.eaImage);
+          saveEaImage(`key-${normalizeLicenseKey(updated.key)}`, updated.eaImage);
+        }
 
         upsertVault({
           id: updated.id,
@@ -734,21 +783,28 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       },
       updateProfile: (patch) => {
         if (!adminId) return;
-        patchWorkspace(adminId, (ws) => ({
-          ...ws,
-          profile: { ...ws.profile, ...patch },
-          // Keep EA records in sync with uploaded branding image when set
-          eas: patch.eaImage
-            ? ws.eas.map((ea) => ({
-                ...ea,
-                imageUrl: patch.eaImage || ea.imageUrl,
-              }))
-            : ws.eas,
-          mt5:
-            patch.eaDisplayName !== undefined
-              ? { ...ws.mt5, eaName: patch.eaDisplayName || ws.mt5.eaName }
-              : ws.mt5,
-        }));
+        if (patch.eaImage) {
+          saveEaImage(`profile-${adminId}`, patch.eaImage);
+        }
+        patchWorkspace(adminId, (ws) => {
+          const nextProfile = { ...ws.profile, ...patch };
+          const image = nextProfile.eaImage || '';
+          return {
+            ...ws,
+            profile: nextProfile,
+            // Sync branding image onto every EA for this admin
+            eas: image
+              ? ws.eas.map((ea) => {
+                  if (image) saveEaImage(`ea-${ea.id}`, image);
+                  return { ...ea, imageUrl: image };
+                })
+              : ws.eas,
+            mt5:
+              patch.eaDisplayName !== undefined
+                ? { ...ws.mt5, eaName: patch.eaDisplayName || ws.mt5.eaName }
+                : ws.mt5,
+          };
+        });
       },
       executeOrder: (order) => {
         if (!adminId) {

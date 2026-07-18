@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Copy, Plus, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
+import { compressImageFile } from '../../lib/storage';
 import { Placeholder } from './AdminShell';
 
 export function DashboardPage() {
@@ -207,7 +208,11 @@ export function GenerateLicensePage() {
             />
             <div>
               <strong>{selected.name}</strong>
-              <div className="muted">Synced image + name go to the client app</div>
+              <div className="muted">
+                {(selected.imageUrl || profile.eaImage)
+                  ? 'EA image will sync to the client app'
+                  : 'No EA image — upload one in Profile Settings first'}
+              </div>
             </div>
           </div>
         ) : null}
@@ -223,6 +228,12 @@ export function GenerateLicensePage() {
           className="btn btn-blue"
           type="button"
           onClick={() => {
+            if (!(selected?.imageUrl || profile.eaImage)) {
+              const ok = confirm(
+                'No EA image on your profile yet. Upload one in Profile Settings for best sync.\n\nGenerate key anyway?',
+              );
+              if (!ok) return;
+            }
             const rec = generateLicense({
               eaId: effectiveEaId,
               clientName,
@@ -232,7 +243,9 @@ export function GenerateLicensePage() {
             if (!rec) return alert('Select EA and fill client name + email');
             setLastKey(rec.key);
             navigator.clipboard?.writeText(rec.key).catch(() => undefined);
-            alert(`License key:\n${rec.key}\n\nFor: ${rec.clientEmail}\nCopied to clipboard.`);
+            alert(
+              `License key:\n${rec.key}\n\nFor: ${rec.clientEmail}\nEA: ${rec.eaName}\nImage: ${rec.eaImage ? 'synced' : 'missing — update Profile image & regenerate'}\n\nCopied to clipboard.`,
+            );
             setClientName('');
             setClientEmail('');
           }}
@@ -415,23 +428,30 @@ export function ProfilePage() {
   const { profile, updateProfile } = useAdmin();
   const [form, setForm] = useState(profile);
   const [imageError, setImageError] = useState('');
+  const [savingImage, setSavingImage] = useState(false);
 
-  const onPickImage = (file: File | null) => {
+  useEffect(() => {
+    setForm(profile);
+  }, [profile]);
+
+  const onPickImage = async (file: File | null) => {
     setImageError('');
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       setImageError('Choose an image file (PNG, JPG, WEBP).');
       return;
     }
-    if (file.size > 1_500_000) {
-      setImageError('Image must be under 1.5 MB.');
-      return;
+    try {
+      setSavingImage(true);
+      const dataUrl = await compressImageFile(file, 512, 0.72);
+      const next = { ...form, eaImage: dataUrl };
+      setForm(next);
+      updateProfile(next); // auto-save so Generate License can sync it
+    } catch {
+      setImageError('Could not process image. Try a smaller JPG/PNG.');
+    } finally {
+      setSavingImage(false);
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setForm((f) => ({ ...f, eaImage: String(reader.result || '') }));
-    };
-    reader.readAsDataURL(file);
   };
 
   return (
@@ -447,7 +467,7 @@ export function ProfilePage() {
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>Branding & Assets</h3>
         <p className="muted" style={{ marginTop: 0 }}>
-          Upload your EA image — generated license keys sync this image and your EA name to the client app.
+          Upload your EA image — it auto-saves and syncs to clients when you generate a license key.
         </p>
         <div className="field"><label>EA Name (Displayed on App)</label><input value={form.eaDisplayName} onChange={(e) => setForm({ ...form, eaDisplayName: e.target.value })} /></div>
         <div className="field"><label>Main Text (Top of Home Page)</label><input value={form.mainText} onChange={(e) => setForm({ ...form, mainText: e.target.value })} /></div>
@@ -459,6 +479,7 @@ export function ProfilePage() {
             onChange={(e) => onPickImage(e.target.files?.[0] ?? null)}
           />
         </div>
+        {savingImage ? <p className="muted">Saving image…</p> : null}
         {form.eaImage ? (
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 10 }}>
             <img
@@ -468,14 +489,21 @@ export function ProfilePage() {
               height={72}
               style={{ borderRadius: 16, objectFit: 'cover', border: '1px solid rgba(59,130,246,0.5)' }}
             />
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ width: 'auto', padding: '8px 14px' }}
-              onClick={() => setForm((f) => ({ ...f, eaImage: '' }))}
-            >
-              Remove image
-            </button>
+            <div>
+              <div style={{ color: 'var(--green)', fontWeight: 700 }}>Saved — ready to sync</div>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ width: 'auto', padding: '8px 14px', marginTop: 6 }}
+                onClick={() => {
+                  const next = { ...form, eaImage: '' };
+                  setForm(next);
+                  updateProfile(next);
+                }}
+              >
+                Remove image
+              </button>
+            </div>
           </div>
         ) : (
           <p className="muted">No EA image uploaded yet.</p>
@@ -487,7 +515,7 @@ export function ProfilePage() {
         type="button"
         onClick={() => {
           updateProfile(form);
-          alert('Profile updated — EA name & image sync to new license activations');
+          alert('Profile updated — EA name & image sync on new license keys');
         }}
       >
         Update Profile

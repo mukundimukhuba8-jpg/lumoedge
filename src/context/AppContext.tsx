@@ -123,7 +123,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             displayName,
             mainText: sync?.mainText ?? session.bot.mainText,
             symbols: sync?.symbols?.length ? sync.symbols : session.bot.symbols,
-            imageUrl: sync?.imageUrl ?? session.bot.imageUrl ?? '',
+            imageUrl: sync?.imageUrl || session.bot.imageUrl || '',
           },
         });
       },

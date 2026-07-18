@@ -29,11 +29,15 @@ export function ActivateLicensePage() {
       return;
     }
     const lic = result.license;
+    if (!lic.eaImage) {
+      setError('Key works, but no EA image was attached. Ask admin to upload EA image in Profile, then generate a new key.');
+      // still activate name/text so they can use the app
+    }
     activateWithLicense(lic.key, {
       name: lic.eaName,
       displayName: lic.eaName,
       mainText: lic.mainText,
-      imageUrl: lic.eaImage,
+      imageUrl: lic.eaImage || '',
       symbols: lic.symbols,
     });
     navigate('/app');

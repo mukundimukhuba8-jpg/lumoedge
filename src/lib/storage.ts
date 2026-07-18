@@ -87,3 +87,56 @@ export function findInVault(key: string): VaultLicense | undefined {
   if (!norm || norm === 'LUMO') return undefined;
   return loadVault().find((e) => normalizeLicenseKey(e.key) === norm);
 }
+
+const IMAGE_STORE = 'ub-web/ea-images-v1';
+
+/** Keep EA images outside huge JSON blobs so they survive reliably */
+export function saveEaImage(id: string, dataUrl: string) {
+  if (!id || !dataUrl) return;
+  try {
+    const all = loadJSON<Record<string, string>>(IMAGE_STORE, {});
+    all[id] = dataUrl;
+    saveJSON(IMAGE_STORE, all);
+  } catch {
+    // quota — ignore
+  }
+}
+
+export function getEaImage(id: string): string {
+  if (!id) return '';
+  try {
+    const all = loadJSON<Record<string, string>>(IMAGE_STORE, {});
+    return all[id] || '';
+  } catch {
+    return '';
+  }
+}
+
+/** Compress uploads so profile + license sync fits in localStorage */
+export function compressImageFile(file: File, maxSize = 512, quality = 0.72): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read image'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Invalid image'));
+      img.onload = () => {
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(String(reader.result || ''));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = String(reader.result || '');
+    };
+    reader.readAsDataURL(file);
+  });
+}
