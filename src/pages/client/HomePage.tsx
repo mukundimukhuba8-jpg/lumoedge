@@ -44,9 +44,9 @@ export function HomePage() {
           style={{
             textAlign: 'center',
             color: 'var(--gold)',
-            fontFamily: 'var(--font-display)',
-            letterSpacing: 3,
-            textShadow: '0 0 10px rgba(245,215,110,0.65)',
+            fontFamily: 'var(--font-body)',
+            fontWeight: 700,
+            letterSpacing: 1,
             marginTop: 8,
           }}
         >
@@ -78,7 +78,7 @@ export function HomePage() {
               background: 'linear-gradient(transparent, rgba(10,10,10,0.95))',
             }}
           >
-            <div style={{ color: 'var(--cyan)', fontFamily: 'var(--font-display)', fontSize: 28, textShadow: '0 0 14px var(--cyan)' }}>
+            <div style={{ color: 'var(--cyan)', fontFamily: 'var(--font-body)', fontSize: 24, fontWeight: 700 }}>
               {eaTitle}
             </div>
           </div>
@@ -94,12 +94,10 @@ export function HomePage() {
           />
           <div
             style={{
-              color: 'var(--electric)',
-              fontFamily: 'var(--font-display)',
+              color: 'var(--muted)',
+              fontFamily: 'var(--font-body)',
               fontSize: 13,
-              letterSpacing: 2,
-              textTransform: 'uppercase',
-              textShadow: '0 0 10px rgba(59,130,246,0.55)',
+              letterSpacing: 0.5,
             }}
           >
             powered by LUMOEDGE

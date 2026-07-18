@@ -16,6 +16,7 @@ const emptyDb = () => ({
   images: {},
   clients: [],
   sessions: {},
+  revokedKeys: [],
   updatedAt: new Date().toISOString(),
 });
 
@@ -150,6 +151,9 @@ const server = http.createServer(async (req, res) => {
         images: { ...current.images, ...(body.images || {}) },
         clients: Array.isArray(body.clients) ? body.clients : current.clients,
         sessions: { ...current.sessions, ...(body.sessions || {}) },
+        revokedKeys: Array.isArray(body.revokedKeys)
+          ? [...new Set([...(current.revokedKeys || []), ...body.revokedKeys])]
+          : current.revokedKeys || [],
       });
       sendJson(res, 200, next);
       return;

@@ -36,7 +36,7 @@ export function DashboardPage() {
       <div className="stat-grid">
         <Stat value={String(stats.activeLicenses)} label="Active Licenses" color="var(--green)" />
         <Stat value={String(stats.pendingClients)} label="Pending Approvals" color="var(--orange)" />
-        <Stat value={String(stats.deletedLicenses)} label="Deleted Licenses" color="var(--red)" />
+        <Stat value={String(stats.deletedLicenses)} label="Revoked Keys" color="var(--red)" />
         <Stat value={String(stats.totalClients)} label="Total Clients" color="var(--electric)" />
       </div>
       <div className="glow-card">
@@ -56,7 +56,7 @@ export function DashboardPage() {
 function Stat({ value, label, color }: { value: string; label: string; color: string }) {
   return (
     <div className="stat-card">
-      <div style={{ color, fontFamily: 'var(--font-display)', fontSize: 28 }}>{value}</div>
+      <div style={{ color, fontFamily: 'var(--font-body)', fontSize: 28, fontWeight: 700 }}>{value}</div>
       <div className="muted">{label}</div>
     </div>
   );
@@ -169,8 +169,13 @@ export function GenerateLicensePage() {
   const selected = eas.find((e) => e.id === effectiveEaId) ?? eas[0];
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return licenses.filter((l) =>
-      !q || l.key.toLowerCase().includes(q) || l.clientName.toLowerCase().includes(q) || l.clientEmail.toLowerCase().includes(q),
+    return licenses.filter(
+      (l) =>
+        l.status !== 'deleted' &&
+        (!q ||
+          l.key.toLowerCase().includes(q) ||
+          l.clientName.toLowerCase().includes(q) ||
+          l.clientEmail.toLowerCase().includes(q)),
     );
   }, [licenses, search]);
 
@@ -313,9 +318,17 @@ export function GenerateLicensePage() {
               {lic.status.toUpperCase()}
               {lic.assignedEmail ? ` · ${lic.assignedEmail}` : ''}
             </div>
-            {lic.status === 'active' ? (
-              <button type="button" style={{ background: 'transparent', color: 'var(--red)', fontWeight: 700 }} onClick={() => deleteLicense(lic.id)}>
-                Delete
+            {lic.status === 'active' || lic.status === 'assigned' ? (
+              <button
+                type="button"
+                style={{ background: 'transparent', color: 'var(--red)', fontWeight: 700 }}
+                onClick={() => {
+                  if (confirm(`Delete key ${lic.key}? It can never be used again.`)) {
+                    deleteLicense(lic.id);
+                  }
+                }}
+              >
+                Delete permanently
               </button>
             ) : null}
           </div>

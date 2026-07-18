@@ -52,8 +52,9 @@ export function AdminAuthPage() {
           placeItems: 'center',
           boxShadow: '0 0 24px rgba(59,130,246,0.8)',
           color: 'var(--electric)',
-          fontFamily: 'var(--font-display)',
+          fontFamily: 'var(--font-body)',
           fontSize: 34,
+          fontWeight: 700,
         }}
       >
         A

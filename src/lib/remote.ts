@@ -15,6 +15,7 @@ export type RemoteDb = {
     notifiedAt?: string;
   }>;
   sessions: Record<string, unknown>;
+  revokedKeys?: string[];
   updatedAt?: string;
 };
 

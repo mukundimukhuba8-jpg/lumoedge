@@ -17,12 +17,16 @@ import {
 import {
   findInVault,
   getEaImage,
+  isRevokedKey,
   loadJSON,
+  loadRevokedKeys,
   loadVault,
   makeLicenseKey,
   normalizeLicenseKey,
+  revokeLicenseKey,
   saveEaImage,
   saveJSON,
+  saveRevokedKeys,
   saveVault,
   upsertVault,
   type VaultLicense,
@@ -202,11 +206,13 @@ export function createEmptyWorkspace(seed?: {
 
 function uniqueKey(existing: LicenseRecord[]) {
   const vaultKeys = loadVault().map((v) => v.key);
+  const revoked = new Set(loadRevokedKeys());
   let key = makeLicenseKey();
   let guard = 0;
   while (
     (existing.some((l) => normalizeLicenseKey(l.key) === normalizeLicenseKey(key)) ||
-      vaultKeys.some((k) => normalizeLicenseKey(k) === normalizeLicenseKey(key))) &&
+      vaultKeys.some((k) => normalizeLicenseKey(k) === normalizeLicenseKey(key)) ||
+      revoked.has(normalizeLicenseKey(key))) &&
     guard < 20
   ) {
     key = makeLicenseKey();
@@ -363,7 +369,24 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           saveJSON(STORE_KEY, nextStore);
         }
         if (Array.isArray(db.vault)) {
-          saveVault(db.vault as VaultLicense[]);
+          // Drop any vault entries that were revoked
+          const revoked = new Set([
+            ...loadRevokedKeys(),
+            ...((db as { revokedKeys?: string[] }).revokedKeys || []).map((k) =>
+              normalizeLicenseKey(k),
+            ),
+          ]);
+          if ((db as { revokedKeys?: string[] }).revokedKeys) {
+            saveRevokedKeys([
+              ...loadRevokedKeys(),
+              ...((db as { revokedKeys?: string[] }).revokedKeys || []),
+            ]);
+          }
+          const vault = (db.vault as VaultLicense[]).filter(
+            (v) =>
+              v.status !== 'deleted' && !revoked.has(normalizeLicenseKey(v.key)),
+          );
+          saveVault(vault);
         }
         if (db.images && typeof db.images === 'object') {
           saveJSON(IMAGE_STORE, db.images);
@@ -436,7 +459,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const activeLicenses = workspace.licenses.filter(
       (l) => l.status === 'active' || l.status === 'assigned',
     ).length;
-    const deletedLicenses = workspace.licenses.filter((l) => l.status === 'deleted').length;
+    const deletedLicenses = loadRevokedKeys().length;
 
     return {
       portalOpen: auth.portalOpen,
@@ -712,26 +735,72 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         if (!adminId) return;
         const ws = store.workspaces[adminId];
         const hit = ws?.licenses.find((l) => l.id === id);
-        if (hit) {
-          const vaultHit = findInVault(hit.key);
-          if (vaultHit) upsertVault({ ...vaultHit, status: 'deleted' });
-        }
+        if (!hit) return;
+        const norm = normalizeLicenseKey(hit.key);
+        // Hard revoke — key can never activate again
+        revokeLicenseKey(hit.key);
+        // Strip from workspace list entirely
         patchWorkspace(adminId, (current) => ({
           ...current,
-          licenses: current.licenses.map((l) =>
-            l.id === id ? { ...l, status: 'deleted' } : l,
-          ),
+          licenses: current.licenses.filter((l) => l.id !== id),
         }));
+        // Kick any client sessions still using this key
+        void fetch('/api/db')
+          .then((r) => r.json())
+          .then((db: { sessions?: Record<string, Record<string, unknown>> }) => {
+            const sessions: Record<string, Record<string, unknown>> = {
+              ...(db.sessions || {}),
+            };
+            let changed = false;
+            for (const [email, session] of Object.entries(sessions)) {
+              const bot = (session?.bot || {}) as { licenseKey?: string };
+              const sk = normalizeLicenseKey(bot.licenseKey || '');
+              if (sk && sk === norm) {
+                sessions[email] = {
+                  ...session,
+                  accessStatus: 'paid',
+                  bot: {
+                    ...bot,
+                    licenseKey: '',
+                    status: 'paused',
+                    imageUrl: '',
+                  },
+                };
+                changed = true;
+              }
+            }
+            if (changed) {
+              return pushDb({ sessions, revokedKeys: loadRevokedKeys() });
+            }
+            return pushDb({ revokedKeys: loadRevokedKeys() });
+          })
+          .catch(() => undefined);
       },
       claimLicense: (key, email) => {
         const normalizedEmail = email.trim().toLowerCase();
         const normalizedKey = normalizeLicenseKey(key);
+
+        if (isRevokedKey(normalizedKey)) {
+          return {
+            ok: false,
+            error: 'This license key was deleted and is no longer valid.',
+          };
+        }
+
         const vault = findInVault(normalizedKey);
+
+        if (vault?.status === 'deleted') {
+          revokeLicenseKey(normalizedKey);
+          return {
+            ok: false,
+            error: 'This license key was deleted and is no longer valid.',
+          };
+        }
 
         let license: LicenseRecord | undefined;
         let ownerId: string | null = null;
 
-        if (vault && vault.status !== 'deleted') {
+        if (vault) {
           license = {
             id: vault.id,
             key: vault.key,
@@ -754,7 +823,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         if (!license) {
           for (const [wid, ws] of Object.entries(store.workspaces)) {
             const found = ws.licenses.find(
-              (l) => normalizeLicenseKey(l.key) === normalizedKey,
+              (l) =>
+                normalizeLicenseKey(l.key) === normalizedKey &&
+                l.status !== 'deleted',
             );
             if (found) {
               ownerId = wid;
@@ -764,10 +835,28 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        if (!license || license.status === 'deleted') {
+        // Soft-deleted leftovers in workspace — revoke and block
+        if (!license) {
+          for (const ws of Object.values(store.workspaces)) {
+            const dead = ws.licenses.find(
+              (l) =>
+                normalizeLicenseKey(l.key) === normalizedKey &&
+                l.status === 'deleted',
+            );
+            if (dead) {
+              revokeLicenseKey(normalizedKey);
+              return {
+                ok: false,
+                error: 'This license key was deleted and is no longer valid.',
+              };
+            }
+          }
+        }
+
+        if (!license) {
           return {
             ok: false,
-            error: 'Invalid license key. Generate a LUMO- key in Admin → Generate License (same browser).',
+            error: 'Invalid license key. Generate a new LUMO- key in Admin → Generate License.',
           };
         }
 

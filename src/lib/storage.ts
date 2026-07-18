@@ -101,6 +101,55 @@ export function findInVault(key: string): VaultLicense | undefined {
   return loadVault().find((e) => normalizeLicenseKey(e.key) === norm);
 }
 
+/** Permanently remove a key from the vault (not soft-delete). */
+export function removeFromVault(keyOrId: string) {
+  const norm = normalizeLicenseKey(keyOrId);
+  const next = loadVault().filter(
+    (e) => e.id !== keyOrId && normalizeLicenseKey(e.key) !== norm,
+  );
+  saveVault(next);
+  return next;
+}
+
+const REVOKED_KEY = 'ub-web/revoked-keys-v1';
+
+export function loadRevokedKeys(): string[] {
+  try {
+    const raw = localStorage.getItem(REVOKED_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map((k) => normalizeLicenseKey(String(k))) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveRevokedKeys(keys: string[]) {
+  const unique = [...new Set(keys.map((k) => normalizeLicenseKey(k)).filter(Boolean))];
+  localStorage.setItem(REVOKED_KEY, JSON.stringify(unique));
+  void fetch('/api/db', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ revokedKeys: unique }),
+  }).catch(() => undefined);
+}
+
+/** Ban a key forever — deleted keys can never activate again. */
+export function revokeLicenseKey(key: string) {
+  const norm = normalizeLicenseKey(key);
+  if (!norm || norm === 'LUMO') return;
+  const all = loadRevokedKeys();
+  if (!all.includes(norm)) {
+    saveRevokedKeys([norm, ...all]);
+  }
+  removeFromVault(norm);
+}
+
+export function isRevokedKey(key: string) {
+  const norm = normalizeLicenseKey(key);
+  return Boolean(norm && loadRevokedKeys().includes(norm));
+}
+
 const IMAGE_STORE = 'ub-web/ea-images-v1';
 
 /** Keep EA images outside huge JSON blobs so they survive reliably */
