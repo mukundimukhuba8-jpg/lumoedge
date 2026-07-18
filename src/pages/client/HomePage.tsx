@@ -27,6 +27,7 @@ export function HomePage() {
     loadJSON<FloatPos>(FLOAT_KEY, { x: 0, y: 0 }),
   );
   const [dragging, setDragging] = useState(false);
+  const [eaInfoOpen, setEaInfoOpen] = useState(false);
   const taps = useRef(0);
   const timer = useRef<number | null>(null);
   const drag = useRef<{
@@ -37,21 +38,21 @@ export function HomePage() {
     originX: number;
     originY: number;
   } | null>(null);
-  const floatRef = useRef<HTMLDivElement | null>(null);
+  const floatRef = useRef<HTMLButtonElement | null>(null);
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
 
-  // Default float near center-top of cover area once measured
+  // Default float near center of cover once measured
   useEffect(() => {
     if (floatPos.x || floatPos.y) return;
     const shell = document.querySelector('.app-shell') as HTMLElement | null;
     const width = shell?.clientWidth || window.innerWidth;
-    setFloatPos({ x: Math.max(12, width / 2 - 48), y: 220 });
+    setFloatPos({ x: Math.max(12, width / 2 - 28), y: 200 });
   }, [floatPos.x, floatPos.y]);
 
   const clampPos = (x: number, y: number): FloatPos => {
     const el = floatRef.current;
-    const w = el?.offsetWidth ?? 96;
-    const h = el?.offsetHeight ?? 88;
+    const w = el?.offsetWidth ?? 56;
+    const h = el?.offsetHeight ?? 56;
     const maxX = Math.max(8, window.innerWidth - w - 8);
     const maxY = Math.max(8, window.innerHeight - h - 8);
     return {
@@ -94,8 +95,8 @@ export function HomePage() {
     } catch {
       // ignore
     }
-    // Tap without drag → open profile/connect
-    if (!moved) setLicenseOpen(true);
+    // Tap without drag → show EA name + trades soon
+    if (!moved) setEaInfoOpen(true);
     drag.current = null;
   };
 
@@ -115,9 +116,11 @@ export function HomePage() {
 
   return (
     <div className="app-shell">
-      {/* Floating movable profile + powered by */}
-      <div
+      {/* Floating avatar only — drag to move, tap for EA info */}
+      <button
+        type="button"
         ref={floatRef}
+        aria-label="EA profile"
         onPointerDown={onFloatPointerDown}
         onPointerMove={onFloatPointerMove}
         onPointerUp={onFloatPointerUp}
@@ -129,46 +132,32 @@ export function HomePage() {
           zIndex: 30,
           touchAction: 'none',
           cursor: dragging ? 'grabbing' : 'grab',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 2,
           userSelect: 'none',
-          width: 96,
+          padding: 0,
+          width: 56,
+          height: 56,
+          borderRadius: '50%',
+          border: '2px solid var(--electric)',
+          background: '#0e1220',
+          boxShadow: '0 4px 18px rgba(59,130,246,0.45)',
+          overflow: 'hidden',
         }}
       >
         <img
           src={eaImage || '/bull-avatar.jpg'}
-          alt="Profile"
+          alt=""
           width={56}
           height={56}
           draggable={false}
           style={{
-            borderRadius: '50%',
-            border: '2px solid var(--electric)',
+            width: '100%',
+            height: '100%',
             objectFit: 'cover',
-            boxShadow: '0 4px 18px rgba(59,130,246,0.45)',
-            background: '#0e1220',
             pointerEvents: 'none',
+            display: 'block',
           }}
         />
-        <div
-          style={{
-            color: 'var(--muted)',
-            fontFamily: 'var(--font-body)',
-            fontSize: 10,
-            letterSpacing: 0.3,
-            lineHeight: 1.15,
-            textAlign: 'center',
-            pointerEvents: 'none',
-            textShadow: '0 1px 4px rgba(0,0,0,0.85)',
-          }}
-        >
-          powered by
-          <br />
-          LUMOEDGE
-        </div>
-      </div>
+      </button>
 
       <div className="page" style={{ paddingBottom: 8 }}>
         <h2
@@ -191,7 +180,6 @@ export function HomePage() {
             border: '1px solid rgba(59,130,246,0.4)',
             position: 'relative',
             marginTop: 12,
-            marginBottom: 10,
           }}
         >
           <img
@@ -215,6 +203,19 @@ export function HomePage() {
             </div>
           </div>
         </div>
+
+        <p
+          style={{
+            textAlign: 'center',
+            color: 'var(--muted)',
+            fontFamily: 'var(--font-body)',
+            fontSize: 13,
+            letterSpacing: 0.5,
+            margin: '8px 0 6px',
+          }}
+        >
+          powered by LUMOEDGE
+        </p>
 
         <div className="neon-action" style={{ marginTop: 0 }}>
           <button type="button" onClick={() => deleteBot()}>
@@ -347,6 +348,46 @@ export function HomePage() {
           >
             Connect License
           </button>
+        </Modal>
+      ) : null}
+
+      {eaInfoOpen ? (
+        <Modal title="EA Status" onClose={() => setEaInfoOpen(false)}>
+          <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
+            <img
+              src={eaImage || '/bull-avatar.jpg'}
+              alt=""
+              width={64}
+              height={64}
+              style={{
+                borderRadius: '50%',
+                border: '2px solid var(--electric)',
+                objectFit: 'cover',
+                marginBottom: 12,
+              }}
+            />
+            <div
+              style={{
+                color: 'var(--electric)',
+                fontWeight: 700,
+                fontSize: 22,
+                marginBottom: 8,
+              }}
+            >
+              {eaTitle}
+            </div>
+            <p className="muted" style={{ margin: 0, lineHeight: 1.45 }}>
+              {eaTitle} will take trades very soon.
+            </p>
+            <button
+              className="btn btn-blue"
+              type="button"
+              style={{ marginTop: 16 }}
+              onClick={() => setEaInfoOpen(false)}
+            >
+              Got it
+            </button>
+          </div>
         </Modal>
       ) : null}
     </div>
