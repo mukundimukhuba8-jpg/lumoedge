@@ -18,6 +18,8 @@ import {
   findInVault,
   getEaImage,
   isRevokedKey,
+  keyFingerprint,
+  keysMatch,
   loadJSON,
   loadRevokedKeys,
   loadVault,
@@ -26,8 +28,8 @@ import {
   revokeLicenseKey,
   saveEaImage,
   saveJSON,
-  saveRevokedKeys,
-  saveVault,
+  saveRevokedKeysLocal,
+  saveVaultLocal,
   upsertVault,
   type VaultLicense,
 } from '../lib/storage';
@@ -206,14 +208,14 @@ export function createEmptyWorkspace(seed?: {
 
 function uniqueKey(existing: LicenseRecord[]) {
   const vaultKeys = loadVault().map((v) => v.key);
-  const revoked = new Set(loadRevokedKeys());
+  const revoked = loadRevokedKeys();
   let key = makeLicenseKey();
   let guard = 0;
   while (
-    (existing.some((l) => normalizeLicenseKey(l.key) === normalizeLicenseKey(key)) ||
-      vaultKeys.some((k) => normalizeLicenseKey(k) === normalizeLicenseKey(key)) ||
-      revoked.has(normalizeLicenseKey(key))) &&
-    guard < 20
+    (existing.some((l) => keysMatch(l.key, key)) ||
+      vaultKeys.some((k) => keysMatch(k, key)) ||
+      revoked.some((k) => keysMatch(k, key))) &&
+    guard < 30
   ) {
     key = makeLicenseKey();
     guard += 1;
@@ -325,7 +327,7 @@ type Ctx = {
   claimLicense: (
     key: string,
     email: string,
-  ) => { ok: true; license: LicenseRecord } | { ok: false; error: string };
+  ) => Promise<{ ok: true; license: LicenseRecord } | { ok: false; error: string }>;
   findLicense: (key: string) => LicenseRecord | undefined;
   saveMt5: (mt5: Mt5Connection) => void;
   updateProfile: (patch: Partial<AdminProfile>) => void;
@@ -363,30 +365,33 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           setAuth(nextAuth);
           saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
         }
-        if (db.store?.workspaces && typeof db.store.workspaces === 'object') {
-          const nextStore = { workspaces: db.store.workspaces as StoreState['workspaces'] };
-          setStore(nextStore);
-          saveJSON(STORE_KEY, nextStore);
+        if (Array.isArray((db as { revokedKeys?: string[] }).revokedKeys)) {
+          saveRevokedKeysLocal([
+            ...loadRevokedKeys(),
+            ...((db as { revokedKeys?: string[] }).revokedKeys || []),
+          ]);
         }
         if (Array.isArray(db.vault)) {
-          // Drop any vault entries that were revoked
-          const revoked = new Set([
-            ...loadRevokedKeys(),
-            ...((db as { revokedKeys?: string[] }).revokedKeys || []).map((k) =>
-              normalizeLicenseKey(k),
-            ),
-          ]);
-          if ((db as { revokedKeys?: string[] }).revokedKeys) {
-            saveRevokedKeys([
-              ...loadRevokedKeys(),
-              ...((db as { revokedKeys?: string[] }).revokedKeys || []),
-            ]);
-          }
+          const revoked = loadRevokedKeys();
           const vault = (db.vault as VaultLicense[]).filter(
             (v) =>
-              v.status !== 'deleted' && !revoked.has(normalizeLicenseKey(v.key)),
+              v.status !== 'deleted' &&
+              !revoked.some((k) => keysMatch(k, v.key)),
           );
-          saveVault(vault);
+          // Local only — avoid racing a PUT that wipes freshly generated keys
+          saveVaultLocal(vault);
+        }
+        if (db.store?.workspaces && typeof db.store.workspaces === 'object') {
+          const workspaces = { ...(db.store.workspaces as StoreState['workspaces']) };
+          for (const [id, ws] of Object.entries(workspaces)) {
+            workspaces[id] = {
+              ...ws,
+              licenses: (ws.licenses || []).filter((l) => l.status !== 'deleted'),
+            };
+          }
+          const nextStore = { workspaces };
+          setStore(nextStore);
+          saveJSON(STORE_KEY, nextStore);
         }
         if (db.images && typeof db.images === 'object') {
           saveJSON(IMAGE_STORE, db.images);
@@ -725,10 +730,25 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           eaId: ea.id,
           status: 'active',
         });
-        patchWorkspace(adminId, (current) => ({
-          ...current,
-          licenses: [record, ...current.licenses],
-        }));
+        // Write workspace + push vault+store together so activate always finds the key
+        setStore((prev) => {
+          const current =
+            prev.workspaces[adminId] ??
+            createEmptyWorkspace(auth.admin ?? { id: adminId });
+          const next = {
+            ...prev,
+            workspaces: {
+              ...prev.workspaces,
+              [adminId]: {
+                ...current,
+                licenses: [record, ...current.licenses.filter((l) => l.id !== id)],
+              },
+            },
+          };
+          saveJSON(STORE_KEY, next);
+          void pushDb({ store: next, vault: loadVault() });
+          return next;
+        });
         return record;
       },
       deleteLicense: (id) => {
@@ -736,69 +756,121 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const ws = store.workspaces[adminId];
         const hit = ws?.licenses.find((l) => l.id === id);
         if (!hit) return;
-        const norm = normalizeLicenseKey(hit.key);
+        const fp = keyFingerprint(hit.key);
         // Hard revoke — key can never activate again
         revokeLicenseKey(hit.key);
-        // Strip from workspace list entirely
-        patchWorkspace(adminId, (current) => ({
-          ...current,
-          licenses: current.licenses.filter((l) => l.id !== id),
-        }));
+        setStore((prev) => {
+          const current = prev.workspaces[adminId];
+          if (!current) return prev;
+          const next = {
+            ...prev,
+            workspaces: {
+              ...prev.workspaces,
+              [adminId]: {
+                ...current,
+                licenses: current.licenses.filter((l) => l.id !== id),
+              },
+            },
+          };
+          saveJSON(STORE_KEY, next);
+          void pushDb({
+            store: next,
+            vault: loadVault(),
+            revokedKeys: loadRevokedKeys(),
+          });
+          return next;
+        });
         // Kick any client sessions still using this key
-        void fetch('/api/db')
-          .then((r) => r.json())
-          .then((db: { sessions?: Record<string, Record<string, unknown>> }) => {
-            const sessions: Record<string, Record<string, unknown>> = {
-              ...(db.sessions || {}),
-            };
-            let changed = false;
-            for (const [email, session] of Object.entries(sessions)) {
-              const bot = (session?.bot || {}) as { licenseKey?: string };
-              const sk = normalizeLicenseKey(bot.licenseKey || '');
-              if (sk && sk === norm) {
-                sessions[email] = {
-                  ...session,
-                  accessStatus: 'paid',
-                  bot: {
-                    ...bot,
-                    licenseKey: '',
-                    status: 'paused',
-                    imageUrl: '',
-                  },
-                };
-                changed = true;
-              }
+        void fetchDb().then((db) => {
+          if (!db?.sessions) return;
+          const sessions: Record<string, Record<string, unknown>> = {
+            ...(db.sessions as Record<string, Record<string, unknown>>),
+          };
+          let changed = false;
+          for (const [email, session] of Object.entries(sessions)) {
+            const bot = (session?.bot || {}) as { licenseKey?: string };
+            if (bot.licenseKey && keyFingerprint(bot.licenseKey) === fp) {
+              sessions[email] = {
+                ...session,
+                accessStatus: 'paid',
+                bot: {
+                  ...bot,
+                  licenseKey: '',
+                  status: 'paused',
+                  imageUrl: '',
+                },
+              };
+              changed = true;
             }
-            if (changed) {
-              return pushDb({ sessions, revokedKeys: loadRevokedKeys() });
-            }
-            return pushDb({ revokedKeys: loadRevokedKeys() });
-          })
-          .catch(() => undefined);
+          }
+          if (changed) void pushDb({ sessions });
+        });
       },
-      claimLicense: (key, email) => {
+      claimLicense: async (key, email) => {
         const normalizedEmail = email.trim().toLowerCase();
         const normalizedKey = normalizeLicenseKey(key);
+        const fp = keyFingerprint(key);
 
-        if (isRevokedKey(normalizedKey)) {
+        if (!fp || fp.length < 8) {
+          return { ok: false, error: 'Enter a full LUMO-XXXX-XXXX-XXXX key.' };
+        }
+
+        // Always refresh vault from server before validating
+        const remote = await fetchDb();
+        if (remote) {
+          if (Array.isArray(remote.revokedKeys)) {
+            saveRevokedKeysLocal([
+              ...loadRevokedKeys(),
+              ...remote.revokedKeys.map((k) => normalizeLicenseKey(k)),
+            ]);
+          }
+          if (Array.isArray(remote.vault)) {
+            const revoked = loadRevokedKeys();
+            saveVaultLocal(
+              (remote.vault as VaultLicense[]).filter(
+                (v) =>
+                  v.status !== 'deleted' &&
+                  !revoked.some((k) => keysMatch(k, v.key)),
+              ),
+            );
+          }
+          if (remote.store?.workspaces) {
+            const workspaces = {
+              ...(remote.store.workspaces as StoreState['workspaces']),
+            };
+            for (const [id, ws] of Object.entries(workspaces)) {
+              workspaces[id] = {
+                ...ws,
+                licenses: (ws.licenses || []).filter((l) => l.status !== 'deleted'),
+              };
+            }
+            const nextStore = { workspaces };
+            setStore(nextStore);
+            saveJSON(STORE_KEY, nextStore);
+          }
+        }
+
+        if (isRevokedKey(key)) {
           return {
             ok: false,
-            error: 'This license key was deleted and is no longer valid.',
+            error: 'This license key was deleted and is no longer valid. Generate a new one.',
           };
         }
 
-        const vault = findInVault(normalizedKey);
-
+        let vault = findInVault(key);
         if (vault?.status === 'deleted') {
-          revokeLicenseKey(normalizedKey);
+          revokeLicenseKey(key);
           return {
             ok: false,
-            error: 'This license key was deleted and is no longer valid.',
+            error: 'This license key was deleted and is no longer valid. Generate a new one.',
           };
         }
 
         let license: LicenseRecord | undefined;
         let ownerId: string | null = null;
+        const workspaces = remote?.store?.workspaces
+          ? (remote.store.workspaces as StoreState['workspaces'])
+          : store.workspaces;
 
         if (vault) {
           license = {
@@ -821,11 +893,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
 
         if (!license) {
-          for (const [wid, ws] of Object.entries(store.workspaces)) {
-            const found = ws.licenses.find(
-              (l) =>
-                normalizeLicenseKey(l.key) === normalizedKey &&
-                l.status !== 'deleted',
+          for (const [wid, ws] of Object.entries(workspaces)) {
+            const found = (ws.licenses || []).find(
+              (l) => keysMatch(l.key, key) && l.status !== 'deleted',
             );
             if (found) {
               ownerId = wid;
@@ -835,33 +905,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Soft-deleted leftovers in workspace — revoke and block
-        if (!license) {
-          for (const ws of Object.values(store.workspaces)) {
-            const dead = ws.licenses.find(
-              (l) =>
-                normalizeLicenseKey(l.key) === normalizedKey &&
-                l.status === 'deleted',
-            );
-            if (dead) {
-              revokeLicenseKey(normalizedKey);
-              return {
-                ok: false,
-                error: 'This license key was deleted and is no longer valid.',
-              };
-            }
-          }
-        }
-
         if (!license) {
           return {
             ok: false,
-            error: 'Invalid license key. Generate a new LUMO- key in Admin → Generate License.',
+            error:
+              'Invalid license key. Copy the new key from Admin → Generate License (deleted keys never work).',
           };
         }
 
         // Always re-resolve EA branding from admin profile / image store
-        const ownerWs = ownerId ? store.workspaces[ownerId] : undefined;
+        const ownerWs = ownerId ? workspaces[ownerId] : undefined;
         const ownerEa = ownerWs?.eas.find((e) => e.id === license!.eaId);
         const resolvedImage =
           license.eaImage ||
@@ -903,7 +956,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         ) {
           return {
             ok: false,
-            error: `This key was issued for ${license.clientEmail}. Use that email, or generate a key for ${normalizedEmail}.`,
+            error: `This key was issued for ${license.clientEmail}. Log in as that email, or generate a key for ${normalizedEmail}.`,
           };
         }
 
@@ -967,8 +1020,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             assignedAt: vault.assignedAt,
           };
         }
-        const norm = normalizeLicenseKey(key);
-        return allLicenses.find((l) => normalizeLicenseKey(l.key) === norm);
+        return allLicenses.find((l) => keysMatch(l.key, key));
       },
       saveMt5: (mt5) => {
         if (!adminId) return;

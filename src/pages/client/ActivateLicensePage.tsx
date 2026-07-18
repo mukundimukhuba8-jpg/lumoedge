@@ -11,6 +11,7 @@ export function ActivateLicensePage() {
   const { claimLicense } = useAdmin();
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!user) navigate('/', { replace: true });
@@ -20,23 +21,29 @@ export function ActivateLicensePage() {
     else if (accessStatus !== 'paid') navigate('/', { replace: true });
   }, [user, accessStatus, navigate]);
 
-  const onActivate = (e: React.FormEvent) => {
+  const onActivate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
-    const result = claimLicense(key, user.email);
-    if (!result.ok) {
-      setError(result.error);
-      return;
+    if (!user || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await claimLicense(key, user.email);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      const lic = result.license;
+      activateWithLicense(lic.key, {
+        name: lic.eaName,
+        displayName: lic.eaName,
+        mainText: lic.mainText,
+        imageUrl: lic.eaImage || '',
+        symbols: lic.symbols,
+      });
+      navigate('/app');
+    } finally {
+      setBusy(false);
     }
-    const lic = result.license;
-    activateWithLicense(lic.key, {
-      name: lic.eaName,
-      displayName: lic.eaName,
-      mainText: lic.mainText,
-      imageUrl: lic.eaImage || '',
-      symbols: lic.symbols,
-    });
-    navigate('/app');
   };
 
   return (
@@ -76,8 +83,8 @@ export function ActivateLicensePage() {
           />
         </div>
         {error ? <p className="error">{error}</p> : null}
-        <button className="btn btn-blue" type="submit">
-          Activate & Open App
+        <button className="btn btn-blue" type="submit" disabled={busy}>
+          {busy ? 'Checking key…' : 'Activate & Open App'}
         </button>
       </form>
     </div>

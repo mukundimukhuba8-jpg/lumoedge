@@ -21,15 +21,34 @@ export function saveJSON(key: string, value: unknown) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-/** Short key: LUMO-XXXX-XXXX-XXXX */
+const KEY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function randomChunk(len = 4) {
+  let out = '';
+  for (let i = 0; i < len; i += 1) {
+    out += KEY_ALPHABET[Math.floor(Math.random() * KEY_ALPHABET.length)];
+  }
+  return out;
+}
+
+/** Short key: LUMO-XXXX-XXXX-XXXX (always 4-char chunks) */
 export function makeLicenseKey() {
-  const chunk = () =>
-    Math.random().toString(36).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
-  return `LUMO-${chunk()}-${chunk()}-${chunk()}`;
+  return `LUMO-${randomChunk()}-${randomChunk()}-${randomChunk()}`;
+}
+
+/** Strip to A-Z0-9 for reliable compare (ignores dashes/spaces) */
+export function keyFingerprint(key: string) {
+  return key.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+export function keysMatch(a: string, b: string) {
+  const fa = keyFingerprint(a);
+  const fb = keyFingerprint(b);
+  return Boolean(fa && fb && fa === fb);
 }
 
 export function normalizeLicenseKey(key: string) {
-  const cleaned = key.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const cleaned = keyFingerprint(key);
   if (!cleaned) return '';
   const body = cleaned.startsWith('LUMO') ? cleaned.slice(4) : cleaned;
   const parts = body.match(/.{1,4}/g) ?? [];
@@ -66,8 +85,13 @@ export function loadVault(): VaultLicense[] {
   }
 }
 
-export function saveVault(entries: VaultLicense[]) {
+/** Local only — used during hydrate so we don't race-overwrite the server */
+export function saveVaultLocal(entries: VaultLicense[]) {
   localStorage.setItem(VAULT_KEY, JSON.stringify(entries));
+}
+
+export function saveVault(entries: VaultLicense[]) {
+  saveVaultLocal(entries);
   void syncVaultRemote(entries);
 }
 
@@ -85,9 +109,8 @@ async function syncVaultRemote(entries: VaultLicense[]) {
 
 export function upsertVault(entry: VaultLicense) {
   const all = loadVault();
-  const norm = normalizeLicenseKey(entry.key);
   const idx = all.findIndex(
-    (e) => e.id === entry.id || normalizeLicenseKey(e.key) === norm,
+    (e) => e.id === entry.id || keysMatch(e.key, entry.key),
   );
   if (idx >= 0) all[idx] = entry;
   else all.unshift(entry);
@@ -96,16 +119,15 @@ export function upsertVault(entry: VaultLicense) {
 }
 
 export function findInVault(key: string): VaultLicense | undefined {
-  const norm = normalizeLicenseKey(key);
-  if (!norm || norm === 'LUMO') return undefined;
-  return loadVault().find((e) => normalizeLicenseKey(e.key) === norm);
+  const fp = keyFingerprint(key);
+  if (!fp || fp === 'LUMO') return undefined;
+  return loadVault().find((e) => keyFingerprint(e.key) === fp);
 }
 
 /** Permanently remove a key from the vault (not soft-delete). */
 export function removeFromVault(keyOrId: string) {
-  const norm = normalizeLicenseKey(keyOrId);
   const next = loadVault().filter(
-    (e) => e.id !== keyOrId && normalizeLicenseKey(e.key) !== norm,
+    (e) => e.id !== keyOrId && !keysMatch(e.key, keyOrId),
   );
   saveVault(next);
   return next;
@@ -118,7 +140,9 @@ export function loadRevokedKeys(): string[] {
     const raw = localStorage.getItem(REVOKED_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map((k) => normalizeLicenseKey(String(k))) : [];
+    return Array.isArray(parsed)
+      ? parsed.map((k) => normalizeLicenseKey(String(k))).filter(Boolean)
+      : [];
   } catch {
     return [];
   }
@@ -134,6 +158,11 @@ export function saveRevokedKeys(keys: string[]) {
   }).catch(() => undefined);
 }
 
+export function saveRevokedKeysLocal(keys: string[]) {
+  const unique = [...new Set(keys.map((k) => normalizeLicenseKey(k)).filter(Boolean))];
+  localStorage.setItem(REVOKED_KEY, JSON.stringify(unique));
+}
+
 /** Ban a key forever — deleted keys can never activate again. */
 export function revokeLicenseKey(key: string) {
   const norm = normalizeLicenseKey(key);
@@ -146,8 +175,9 @@ export function revokeLicenseKey(key: string) {
 }
 
 export function isRevokedKey(key: string) {
-  const norm = normalizeLicenseKey(key);
-  return Boolean(norm && loadRevokedKeys().includes(norm));
+  const fp = keyFingerprint(key);
+  if (!fp) return false;
+  return loadRevokedKeys().some((k) => keyFingerprint(k) === fp);
 }
 
 const IMAGE_STORE = 'ub-web/ea-images-v1';

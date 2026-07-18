@@ -328,9 +328,9 @@ export function HomePage() {
           <button
             className="btn btn-blue"
             type="button"
-            onClick={() => {
+            onClick={async () => {
               if (!user) return;
-              const result = claimLicense(licenseKey, user.email);
+              const result = await claimLicense(licenseKey, user.email);
               if (!result.ok) {
                 alert(result.error);
                 return;
