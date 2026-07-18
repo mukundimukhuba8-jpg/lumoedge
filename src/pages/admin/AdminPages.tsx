@@ -4,17 +4,18 @@ import { useAdmin } from '../../context/AdminContext';
 import { Placeholder } from './AdminShell';
 
 export function DashboardPage() {
-  const { profile, stats, admin } = useAdmin();
+  const { profile, stats, admin, eas, licenses } = useAdmin();
+  const isEmpty = eas.length === 0 && licenses.length === 0;
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div className="glow-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
           <div>
-            <h2 style={{ margin: 0 }}>Welcome, {profile.firstName} {profile.lastName}</h2>
+            <h2 style={{ margin: 0 }}>Welcome, {profile.firstName || admin?.fullName} {profile.lastName}</h2>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
               <span className="muted" style={{ fontSize: 11 }}>MENTOR ID</span>
               <span style={{ border: '1px solid var(--electric)', borderRadius: 999, padding: '3px 10px', color: 'var(--electric)', fontWeight: 700 }}>
-                {profile.mentorId}
+                {profile.mentorId || admin?.id}
               </span>
             </div>
           </div>
@@ -23,6 +24,14 @@ export function DashboardPage() {
           </span>
         </div>
       </div>
+      {isEmpty ? (
+        <div className="glow-card" style={{ borderColor: 'rgba(59,130,246,0.45)' }}>
+          <strong>Set up your own portal</strong>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            This space is yours alone — no shared EAs or licenses. Upload your EA image in Profile Settings, create an EA, then generate license keys.
+          </p>
+        </div>
+      ) : null}
       <div className="stat-grid">
         <Stat value={String(stats.activeLicenses)} label="Active Licenses" color="var(--green)" />
         <Stat value={String(stats.pendingClients)} label="Pending Approvals" color="var(--orange)" />
@@ -53,13 +62,21 @@ function Stat({ value, label, color }: { value: string; label: string; color: st
 }
 
 export function ManageEAsPage() {
-  const { eas, createEA, deleteEA } = useAdmin();
+  const { eas, createEA, deleteEA, profile } = useAdmin();
   const [name, setName] = useState('');
   const [draft, setDraft] = useState('');
   const [symbols, setSymbols] = useState<string[]>([]);
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
+      {eas.length === 0 ? (
+        <div className="glow-card" style={{ borderColor: 'rgba(245,158,11,0.4)' }}>
+          <strong style={{ color: 'var(--orange)' }}>Your portal starts empty</strong>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            Create your own EA below. Nothing is shared from other admins.
+          </p>
+        </div>
+      ) : null}
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>Create New EA</h3>
         <div className="field"><label>EA Name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter EA name" /></div>
@@ -101,7 +118,13 @@ export function ManageEAsPage() {
           type="button"
           onClick={() => {
             if (!name.trim() || !symbols.length) return alert('EA name and symbols required');
-            createEA({ name: name.trim(), symbols, lotSize: 0.01, direction: 'both' });
+            createEA({
+              name: name.trim(),
+              symbols,
+              lotSize: 0.01,
+              direction: 'both',
+              imageUrl: profile.eaImage || '',
+            });
             setName('');
             setSymbols([]);
           }}
@@ -111,11 +134,17 @@ export function ManageEAsPage() {
       </div>
       <div className="glow-card" style={{ boxShadow: 'none', borderColor: 'rgba(255,255,255,0.08)' }}>
         <h3 style={{ marginTop: 0 }}>Created EAs</h3>
+        {eas.length === 0 ? <p className="muted">No EAs yet — create one to generate licenses.</p> : null}
         {eas.map((ea) => (
           <div key={ea.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-            <div>
-              <strong>{ea.name}</strong>
-              <div className="muted">{ea.symbols.length} symbols · lot {ea.lotSize} · {ea.direction}</div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              {ea.imageUrl ? (
+                <img src={ea.imageUrl} alt="" width={40} height={40} style={{ borderRadius: 10, objectFit: 'cover' }} />
+              ) : null}
+              <div>
+                <strong>{ea.name}</strong>
+                <div className="muted">{ea.symbols.length} symbols · lot {ea.lotSize} · {ea.direction}</div>
+              </div>
             </div>
             <button type="button" onClick={() => deleteEA(ea.id)} style={{ background: 'var(--red)', borderRadius: 17, width: 34, height: 34, color: '#fff' }}>
               <Trash2 size={14} />
@@ -128,12 +157,13 @@ export function ManageEAsPage() {
 }
 
 export function GenerateLicensePage() {
-  const { eas, licenses, generateLicense, deleteLicense } = useAdmin();
+  const { eas, licenses, generateLicense, deleteLicense, profile } = useAdmin();
   const [eaId, setEaId] = useState(eas[0]?.id ?? '');
   const [clientName, setClientName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
   const [duration, setDuration] = useState('1 Year');
   const [search, setSearch] = useState('');
+  const selected = eas.find((e) => e.id === eaId) ?? eas[0];
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return licenses.filter((l) =>
@@ -143,14 +173,38 @@ export function GenerateLicensePage() {
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
+      {eas.length === 0 ? (
+        <div className="glow-card" style={{ borderColor: 'rgba(245,158,11,0.4)' }}>
+          <strong style={{ color: 'var(--orange)' }}>Create an EA first</strong>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            Your license list is empty until you create an EA under Manage EAs and upload your EA image in Profile Settings.
+          </p>
+        </div>
+      ) : null}
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>License Details</h3>
         <div className="field">
           <label>Select EA *</label>
-          <select value={eaId} onChange={(e) => setEaId(e.target.value)}>
+          <select value={eaId || eas[0]?.id || ''} onChange={(e) => setEaId(e.target.value)} disabled={!eas.length}>
+            {eas.length === 0 ? <option value="">No EAs yet</option> : null}
             {eas.map((ea) => <option key={ea.id} value={ea.id}>{ea.name}</option>)}
           </select>
         </div>
+        {selected ? (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+            <img
+              src={selected.imageUrl || profile.eaImage || '/bull-avatar.jpg'}
+              alt=""
+              width={48}
+              height={48}
+              style={{ borderRadius: 12, objectFit: 'cover' }}
+            />
+            <div>
+              <strong>{selected.name}</strong>
+              <div className="muted">Synced image + name go to the client app</div>
+            </div>
+          </div>
+        ) : null}
         <div className="field"><label>Client Name</label><input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Enter client's full name" /></div>
         <div className="field"><label>Client Email</label><input value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} placeholder="Enter client's email" /></div>
         <div className="field">
@@ -184,7 +238,12 @@ export function GenerateLicensePage() {
                 <Copy size={14} />
               </button>
             </div>
-            <div className="muted">{lic.eaName} · {lic.duration} · {lic.clientName}</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+              {lic.eaImage ? (
+                <img src={lic.eaImage} alt="" width={28} height={28} style={{ borderRadius: 8, objectFit: 'cover' }} />
+              ) : null}
+              <div className="muted">{lic.eaName} · {lic.duration} · {lic.clientName}</div>
+            </div>
             <div className="muted">{lic.clientEmail}</div>
             <div
               style={{
@@ -314,6 +373,26 @@ export function OpenOrdersPage() {
 export function ProfilePage() {
   const { profile, updateProfile } = useAdmin();
   const [form, setForm] = useState(profile);
+  const [imageError, setImageError] = useState('');
+
+  const onPickImage = (file: File | null) => {
+    setImageError('');
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setImageError('Choose an image file (PNG, JPG, WEBP).');
+      return;
+    }
+    if (file.size > 1_500_000) {
+      setImageError('Image must be under 1.5 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setForm((f) => ({ ...f, eaImage: String(reader.result || '') }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div className="glow-card">
@@ -326,10 +405,50 @@ export function ProfilePage() {
       </div>
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>Branding & Assets</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Upload your EA image — generated license keys sync this image and your EA name to the client app.
+        </p>
         <div className="field"><label>EA Name (Displayed on App)</label><input value={form.eaDisplayName} onChange={(e) => setForm({ ...form, eaDisplayName: e.target.value })} /></div>
         <div className="field"><label>Main Text (Top of Home Page)</label><input value={form.mainText} onChange={(e) => setForm({ ...form, mainText: e.target.value })} /></div>
+        <div className="field">
+          <label>EA Image</label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => onPickImage(e.target.files?.[0] ?? null)}
+          />
+        </div>
+        {form.eaImage ? (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 10 }}>
+            <img
+              src={form.eaImage}
+              alt="EA"
+              width={72}
+              height={72}
+              style={{ borderRadius: 16, objectFit: 'cover', border: '1px solid rgba(59,130,246,0.5)' }}
+            />
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ width: 'auto', padding: '8px 14px' }}
+              onClick={() => setForm((f) => ({ ...f, eaImage: '' }))}
+            >
+              Remove image
+            </button>
+          </div>
+        ) : (
+          <p className="muted">No EA image uploaded yet.</p>
+        )}
+        {imageError ? <p className="error">{imageError}</p> : null}
       </div>
-      <button className="btn btn-blue" type="button" onClick={() => { updateProfile(form); alert('Profile updated — branding syncs to client licenses'); }}>
+      <button
+        className="btn btn-blue"
+        type="button"
+        onClick={() => {
+          updateProfile(form);
+          alert('Profile updated — EA name & image sync to new license activations');
+        }}
+      >
         Update Profile
       </button>
     </div>
@@ -337,19 +456,56 @@ export function ProfilePage() {
 }
 
 export function ApproveAdminsPage() {
-  const { pendingAdmins, approveAdmin } = useAdmin();
-  const list = pendingAdmins.filter((a) => a.role === 'pending');
+  const { admins, approveAdmin } = useAdmin();
+  const pending = admins.filter((a) => a.role === 'pending');
+  const approved = admins.filter((a) => a.role === 'admin');
+
   return (
-    <div>
-      <h2 className="title-blue" style={{ fontSize: 24 }}>Approve Admins</h2>
-      {list.length === 0 ? <p className="muted">No pending admin requests.</p> : list.map((a) => (
-        <div key={a.id} className="glow-card" style={{ marginBottom: 10 }}>
-          <strong>{a.fullName}</strong>
-          <div className="muted">{a.email}</div>
-          <div className="muted">ID {a.id}</div>
-          <button className="btn btn-blue" type="button" style={{ marginTop: 10 }} onClick={() => approveAdmin(a.id)}>Approve</button>
-        </div>
-      ))}
+    <div style={{ display: 'grid', gap: 14 }}>
+      <div>
+        <h2 className="title-blue" style={{ fontSize: 24, margin: 0 }}>Approve Admins</h2>
+        <p className="muted">Pending requests and admins already approved. Each admin gets their own empty portal.</p>
+      </div>
+
+      <div className="stat-grid">
+        <Stat value={String(pending.length)} label="Pending" color="var(--orange)" />
+        <Stat value={String(approved.length)} label="Approved" color="var(--green)" />
+      </div>
+
+      <div className="glow-card">
+        <h3 style={{ marginTop: 0 }}>Pending</h3>
+        {pending.length === 0 ? (
+          <p className="muted">No pending admin requests.</p>
+        ) : (
+          pending.map((a) => (
+            <div key={a.id} style={{ padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <strong>{a.fullName}</strong>
+              <div className="muted">{a.email}</div>
+              <div className="muted">ID {a.id}{a.eaName ? ` · EA ${a.eaName}` : ''}</div>
+              <div style={{ color: 'var(--orange)', fontWeight: 700, marginTop: 4 }}>PENDING</div>
+              <button className="btn btn-blue" type="button" style={{ marginTop: 10 }} onClick={() => approveAdmin(a.id)}>
+                Approve
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="glow-card" style={{ boxShadow: 'none', borderColor: 'rgba(255,255,255,0.08)' }}>
+        <h3 style={{ marginTop: 0 }}>Approved</h3>
+        {approved.length === 0 ? (
+          <p className="muted">No approved admins yet.</p>
+        ) : (
+          approved.map((a) => (
+            <div key={a.id} style={{ padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <strong>{a.fullName}</strong>
+              <div className="muted">{a.email}</div>
+              <div className="muted">ID {a.id}{a.eaName ? ` · EA ${a.eaName}` : ''}</div>
+              <div style={{ color: 'var(--green)', fontWeight: 700, marginTop: 4 }}>APPROVED</div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

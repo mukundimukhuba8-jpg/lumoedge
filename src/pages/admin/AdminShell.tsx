@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { NavLink, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import {
   Cpu,
@@ -17,17 +17,24 @@ import {
 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 
-const MENU = [
-  { to: '/admin/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
-  { to: '/admin/approve', label: 'Approve Admins', Icon: UserPlus },
-  { to: '/admin/subscriptions', label: 'Subscriptions', Icon: CreditCard },
-  { to: '/admin/emails', label: 'Send Emails', Icon: Mail },
-  { to: '/admin/connect-ea', label: 'Connect EA', Icon: Monitor },
-  { to: '/admin/orders', label: 'Open Orders', Icon: LineChart },
-  { to: '/admin/licenses', label: 'Generate License', Icon: KeyRound },
-  { to: '/admin/eas', label: 'Manage EAs', Icon: Cpu },
-  { to: '/admin/setup', label: 'Setup Methods', Icon: Settings2 },
-  { to: '/admin/profile', label: 'Profile Settings', Icon: UserCircle2 },
+type MenuRole = 'super' | 'admin';
+
+const ALL_MENU: {
+  to: string;
+  label: string;
+  Icon: typeof LayoutDashboard;
+  roles: MenuRole[];
+}[] = [
+  { to: '/admin/dashboard', label: 'Dashboard', Icon: LayoutDashboard, roles: ['super', 'admin'] },
+  { to: '/admin/approve', label: 'Approve Admins', Icon: UserPlus, roles: ['super'] },
+  { to: '/admin/subscriptions', label: 'Subscriptions', Icon: CreditCard, roles: ['super', 'admin'] },
+  { to: '/admin/emails', label: 'Send Emails', Icon: Mail, roles: ['super', 'admin'] },
+  { to: '/admin/connect-ea', label: 'Connect EA', Icon: Monitor, roles: ['super', 'admin'] },
+  { to: '/admin/orders', label: 'Open Orders', Icon: LineChart, roles: ['super', 'admin'] },
+  { to: '/admin/licenses', label: 'Generate License', Icon: KeyRound, roles: ['super', 'admin'] },
+  { to: '/admin/eas', label: 'Manage EAs', Icon: Cpu, roles: ['super', 'admin'] },
+  { to: '/admin/setup', label: 'Setup Methods', Icon: Settings2, roles: ['super', 'admin'] },
+  { to: '/admin/profile', label: 'Profile Settings', Icon: UserCircle2, roles: ['super', 'admin'] },
 ];
 
 export function AdminShell() {
@@ -35,18 +42,18 @@ export function AdminShell() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
-  if (!admin) return <Navigate to="/admin" replace />;
-  if (admin.role !== 'super') {
-    return (
-      <div className="page" style={{ textAlign: 'center', paddingTop: 80 }}>
-        <h2 className="title-blue">Admin portal coming next</h2>
-        <p className="muted">Regular admin tools unlock after Super Admin setup.</p>
-        <button className="btn btn-blue" type="button" onClick={() => { logout(); navigate('/admin'); }}>
-          Back
-        </button>
-      </div>
-    );
+  const menu = useMemo(() => {
+    if (!admin || (admin.role !== 'super' && admin.role !== 'admin')) return [];
+    const role: MenuRole = admin.role;
+    return ALL_MENU.filter((item) => item.roles.includes(role));
+  }, [admin]);
+
+  if (!admin) return <Navigate to="/admin/login" replace />;
+  if (admin.role !== 'super' && admin.role !== 'admin') {
+    return <Navigate to="/admin/login" replace />;
   }
+
+  const isSuper = admin.role === 'super';
 
   return (
     <div className="app-shell">
@@ -54,7 +61,7 @@ export function AdminShell() {
         <button type="button" onClick={() => setOpen(true)} style={{ background: 'transparent', color: 'var(--text)' }}>
           <Menu />
         </button>
-        <strong>Super Admin</strong>
+        <strong>{isSuper ? 'Super Admin' : 'Admin Portal'}</strong>
         <span style={{ width: 40 }} />
       </div>
       <div style={{ padding: 16, paddingBottom: 40 }}>
@@ -67,8 +74,17 @@ export function AdminShell() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span className="title-blue" style={{ fontSize: 18 }}>Lumo Admin</span>
-                <span style={{ background: 'var(--gold)', color: '#1a1200', borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
-                  SUPER
+                <span
+                  style={{
+                    background: isSuper ? 'var(--gold)' : 'var(--electric)',
+                    color: isSuper ? '#1a1200' : '#061018',
+                    borderRadius: 999,
+                    padding: '2px 8px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  {isSuper ? 'SUPER' : 'ADMIN'}
                 </span>
               </div>
               <button type="button" onClick={() => setOpen(false)} style={{ background: 'transparent', color: 'var(--muted)' }}>
@@ -79,7 +95,7 @@ export function AdminShell() {
             <div style={{ fontWeight: 700, fontSize: 20 }}>{admin.fullName}</div>
             <div style={{ color: 'var(--cyan)', marginBottom: 14 }}>{admin.id}</div>
             <nav style={{ flex: 1, overflow: 'auto' }}>
-              {MENU.map(({ to, label, Icon }) => (
+              {menu.map(({ to, label, Icon }) => (
                 <NavLink
                   key={to}
                   to={to}

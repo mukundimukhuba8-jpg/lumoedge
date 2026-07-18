@@ -19,6 +19,7 @@ export type EABot = {
   licenseKey: string;
   status: 'active' | 'paused';
   symbols: string[];
+  imageUrl: string;
 };
 
 export type LicenseSync = {
@@ -26,6 +27,7 @@ export type LicenseSync = {
   displayName?: string;
   mainText?: string;
   symbols?: string[];
+  imageUrl?: string;
 };
 
 type Session = {
@@ -37,12 +39,13 @@ type Session = {
 const KEY = 'ub-web/session-v2';
 
 const DEFAULT_BOT: EABot = {
-  name: 'UNLIMITEDBULLV1',
-  displayName: 'UNLIMITED BULL V1',
-  mainText: 'UNLIMITED POWER',
+  name: 'LUMOEDGE',
+  displayName: 'Lumo Edge',
+  mainText: 'LUMO EDGE',
   licenseKey: '',
   status: 'paused',
   symbols: ['XAUUSD'],
+  imageUrl: '',
 };
 
 type Ctx = {
@@ -120,6 +123,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             displayName,
             mainText: sync?.mainText ?? session.bot.mainText,
             symbols: sync?.symbols?.length ? sync.symbols : session.bot.symbols,
+            imageUrl: sync?.imageUrl ?? session.bot.imageUrl ?? '',
           },
         });
       },

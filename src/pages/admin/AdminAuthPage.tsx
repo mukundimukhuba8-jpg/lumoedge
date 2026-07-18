@@ -21,7 +21,9 @@ export function AdminAuthPage() {
   });
 
   useEffect(() => {
-    if (admin?.role === 'super') navigate('/admin/dashboard', { replace: true });
+    if (admin?.role === 'super' || admin?.role === 'admin') {
+      navigate('/admin/dashboard', { replace: true });
+    }
   }, [admin, navigate]);
 
   const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));

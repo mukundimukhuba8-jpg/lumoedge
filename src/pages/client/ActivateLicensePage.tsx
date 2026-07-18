@@ -7,7 +7,7 @@ import { useApp } from '../../context/AppContext';
 export function ActivateLicensePage() {
   const navigate = useNavigate();
   const { user, accessStatus, activateWithLicense } = useApp();
-  const { claimLicense, eas, profile } = useAdmin();
+  const { claimLicense } = useAdmin();
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
 
@@ -27,12 +27,13 @@ export function ActivateLicensePage() {
       setError(result.error);
       return;
     }
-    const ea = eas.find((item) => item.id === result.license.eaId);
-    activateWithLicense(result.license.key, {
-      name: ea?.name ?? result.license.eaName ?? profile.eaDisplayName,
-      displayName: ea?.name ?? result.license.eaName ?? profile.eaDisplayName,
-      mainText: profile.mainText,
-      symbols: ea?.symbols,
+    const lic = result.license;
+    activateWithLicense(lic.key, {
+      name: lic.eaName,
+      displayName: lic.eaName,
+      mainText: lic.mainText,
+      imageUrl: lic.eaImage,
+      symbols: lic.symbols,
     });
     navigate('/app');
   };

@@ -12,7 +12,8 @@ const ALL_SYMBOLS = [
 export function HomePage() {
   const navigate = useNavigate();
   const { bot, isPaused, togglePause, deleteBot, setSymbols, user, activateWithLicense } = useApp();
-  const { openPortal, claimLicense, eas, profile } = useAdmin();
+  const { openPortal, claimLicense } = useAdmin();
+  const eaImage = bot.imageUrl || '';
   const [symbolsOpen, setSymbolsOpen] = useState(false);
   const [licenseOpen, setLicenseOpen] = useState(false);
   const [localSymbols, setLocalSymbols] = useState(bot.symbols);
@@ -64,7 +65,11 @@ export function HomePage() {
             marginTop: 12,
           }}
         >
-          <img src="/bull-hero.jpg" alt="" style={{ width: '100%', display: 'block' }} />
+          <img
+            src={eaImage || '/bull-hero.jpg'}
+            alt={bot.displayName}
+            style={{ width: '100%', display: 'block', maxHeight: 360, objectFit: 'cover' }}
+          />
           <div
             style={{
               position: 'absolute',
@@ -88,11 +93,11 @@ export function HomePage() {
         <div style={{ textAlign: 'center', marginTop: 18 }}>
           <div style={{ color: 'var(--cyan)', fontFamily: 'var(--font-display)', fontSize: 22 }}>{title.top}</div>
           <img
-            src="/bull-avatar.jpg"
+            src={eaImage || '/bull-avatar.jpg'}
             alt=""
             width={54}
             height={54}
-            style={{ borderRadius: '50%', border: '2px solid var(--red)', margin: '8px 0' }}
+            style={{ borderRadius: '50%', border: '2px solid var(--red)', margin: '8px 0', objectFit: 'cover' }}
           />
           <div style={{ color: 'var(--pink)', fontFamily: 'var(--font-display)', fontSize: 22 }}>{title.bottom}</div>
         </div>
@@ -120,7 +125,7 @@ export function HomePage() {
         </div>
 
         <div className="pill" style={{ marginBottom: 14 }}>
-          <img src="/bull-avatar.jpg" width={36} height={36} style={{ borderRadius: '50%' }} alt="" />
+          <img src={eaImage || '/bull-avatar.jpg'} width={36} height={36} style={{ borderRadius: '50%', objectFit: 'cover' }} alt="" />
           <div>
             <div style={{ fontWeight: 700, letterSpacing: 1.2 }}>{bot.name}</div>
             <div style={{ color: isPaused ? 'var(--orange)' : 'var(--green)', fontWeight: 600 }}>
@@ -216,12 +221,13 @@ export function HomePage() {
                 alert(result.error);
                 return;
               }
-              const ea = eas.find((e) => e.id === result.license.eaId);
-              activateWithLicense(result.license.key, {
-                name: ea?.name ?? result.license.eaName ?? profile.eaDisplayName,
-                displayName: ea?.name ?? result.license.eaName ?? profile.eaDisplayName,
-                mainText: profile.mainText,
-                symbols: ea?.symbols,
+              const lic = result.license;
+              activateWithLicense(lic.key, {
+                name: lic.eaName,
+                displayName: lic.eaName,
+                mainText: lic.mainText,
+                imageUrl: lic.eaImage,
+                symbols: lic.symbols,
               });
               setLicenseOpen(false);
             }}
