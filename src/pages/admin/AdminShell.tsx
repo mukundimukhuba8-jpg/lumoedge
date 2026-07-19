@@ -16,6 +16,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
+import { EaBackdrop } from '../../components/EaBackdrop';
 import { useAdmin } from '../../context/AdminContext';
 
 type MenuRole = 'super' | 'admin';
@@ -41,7 +42,7 @@ const ALL_MENU: {
 ];
 
 export function AdminShell() {
-  const { admin, logout } = useAdmin();
+  const { admin, logout, profile } = useAdmin();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
@@ -77,8 +78,9 @@ export function AdminShell() {
                   </span>
                   <span
                     style={{
-                      background: isSuper ? 'var(--gold)' : 'var(--electric)',
-                      color: isSuper ? '#1a1200' : '#061018',
+                      background: 'transparent',
+                      color: isSuper ? 'var(--gold)' : 'var(--electric)',
+                      border: `1px solid ${isSuper ? 'var(--gold)' : 'var(--electric)'}`,
                       borderRadius: 999,
                       padding: '2px 8px',
                       fontSize: 11,
@@ -146,8 +148,8 @@ export function AdminShell() {
       : null;
 
   return (
-    <div className="app-shell admin-portal">
-      <div className="admin-portal-wash" aria-hidden />
+    <div className="app-shell">
+      <EaBackdrop src={profile.eaImage || '/bull-hero.jpg'} />
       <div className="admin-top">
         <button
           type="button"
