@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Home, Monitor, Pause, Play, ScanSearch, Settings, Signal, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
@@ -562,7 +563,8 @@ function Modal({
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  return (
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <div className="sheet-backdrop smooth-fade" onClick={onClose}>
       <div
         className="glow-card sheet-panel smooth-sheet"
@@ -576,6 +578,7 @@ function Modal({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Bot,
   Check,
@@ -155,8 +156,6 @@ export function InterfaceStyleModal({
     [],
   );
 
-  if (!open) return null;
-
   const setLayout = (layout: LayoutId) => onChange({ ...prefs, layout });
   const setAccent = (next: AccentId) => onChange({ ...prefs, accent: next });
   const setCustomBg = (customBg: CustomBgId) => onChange({ ...prefs, customBg });
@@ -164,7 +163,9 @@ export function InterfaceStyleModal({
     onChange({ ...prefs, effect: prefs.effect === id ? 'none' : id });
   };
 
-  return (
+  if (!open || typeof document === 'undefined') return null;
+
+  return createPortal(
     <div
       className="iface-backdrop smooth-fade"
       role="dialog"
@@ -372,6 +373,7 @@ export function InterfaceStyleModal({
           <Bot size={22} color="#061018" />
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
