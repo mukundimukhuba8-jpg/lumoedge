@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Bot,
@@ -18,7 +18,9 @@ import {
   accentHex,
   hexToRgb,
   loadInterfacePrefs,
+  subscribeInterfacePrefs,
 } from '../../lib/interfaceStyle';
+import { resolveCustomBackdrop } from '../../lib/mentorMedia';
 import {
   accountSummary,
   checkConnect,
@@ -83,11 +85,14 @@ function saveMt5(email: string, data: ClientMt5) {
 export function MetaTraderPage() {
   const navigate = useNavigate();
   const { bot, user } = useApp();
-  const prefs = useMemo(() => loadInterfacePrefs(), []);
+  const [prefs, setPrefs] = useState(() => loadInterfacePrefs());
+  useEffect(() => subscribeInterfacePrefs(() => setPrefs(loadInterfacePrefs())), []);
   const accent = accentHex(prefs.accent);
   const accentRgb = hexToRgb(accent);
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
   const eaImage = bot.imageUrl || '/bull-avatar.jpg';
+  const customBg = resolveCustomBackdrop(prefs.customBg, eaImage, bot.customMedia);
+  const pageBgUrl = customBg?.src || eaImage;
 
   const [form, setForm] = useState<ClientMt5>(() => loadMt5(user?.email));
   const [showPass, setShowPass] = useState(false);
@@ -268,9 +273,12 @@ export function MetaTraderPage() {
     setStatus('Disconnected');
   };
 
-  const bg = eaImage
-    ? `linear-gradient(180deg, rgba(6,8,14,0.28) 0%, rgba(6,8,14,0.4) 50%, rgba(6,8,14,0.55) 100%), url(${eaImage})`
-    : undefined;
+  const bg =
+    customBg?.kind === 'video'
+      ? undefined
+      : pageBgUrl
+        ? `linear-gradient(180deg, rgba(6,8,14,0.28) 0%, rgba(6,8,14,0.4) 50%, rgba(6,8,14,0.55) 100%), url(${pageBgUrl})`
+        : undefined;
 
   const brokerLink =
     form.site ||

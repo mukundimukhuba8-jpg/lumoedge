@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import {
   Cpu,
@@ -58,11 +59,102 @@ export function AdminShell() {
 
   const isSuper = admin.role === 'super';
 
+  const drawer =
+    open && typeof document !== 'undefined'
+      ? createPortal(
+          <div className="drawer-backdrop smooth-fade">
+            <aside className="drawer smooth-drawer">
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 16,
+                }}
+              >
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span className="title-blue" style={{ fontSize: 18 }}>
+                    Lumo Admin
+                  </span>
+                  <span
+                    style={{
+                      background: isSuper ? 'var(--gold)' : 'var(--electric)',
+                      color: isSuper ? '#1a1200' : '#061018',
+                      borderRadius: 999,
+                      padding: '2px 8px',
+                      fontSize: 11,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {isSuper ? 'SUPER' : 'MENTOR'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  style={{ background: 'transparent', color: 'var(--muted)' }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="muted" style={{ fontSize: 11, letterSpacing: 1.4 }}>
+                SIGNED IN AS
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>{admin.fullName}</div>
+              <div style={{ color: 'var(--electric)', marginBottom: 14 }}>{admin.id}</div>
+              {!isSuper ? (
+                <p className="muted" style={{ fontSize: 12, marginTop: 0, marginBottom: 12 }}>
+                  Your private mentor space — EAs, licenses, and stats are yours only.
+                </p>
+              ) : null}
+              <nav style={{ flex: 1, overflow: 'auto' }}>
+                {menu.map(({ to, label, Icon }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    onClick={() => setOpen(false)}
+                    className={({ isActive }) => `drawer-item${isActive ? ' active' : ''}`}
+                  >
+                    <Icon size={18} /> {label}
+                  </NavLink>
+                ))}
+              </nav>
+              <button
+                type="button"
+                className="drawer-item"
+                style={{
+                  color: 'var(--red)',
+                  borderTop: '1px solid rgba(255,255,255,0.08)',
+                  marginTop: 8,
+                }}
+                onClick={() => {
+                  logout();
+                  navigate('/');
+                }}
+              >
+                <LogOut size={18} /> Logout
+              </button>
+            </aside>
+            <button
+              type="button"
+              style={{ flex: 1, background: 'transparent', border: 0 }}
+              onClick={() => setOpen(false)}
+              aria-label="Close"
+            />
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
     <div className="app-shell">
       <EaBackdrop src={profile.eaImage || '/bull-hero.jpg'} />
       <div className="admin-top">
-        <button type="button" onClick={() => setOpen(true)} style={{ background: 'transparent', color: 'var(--text)' }}>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          style={{ background: 'transparent', color: 'var(--text)' }}
+        >
           <Menu />
         </button>
         <strong>{isSuper ? 'Super Admin' : 'Mentor Portal'}</strong>
@@ -71,65 +163,7 @@ export function AdminShell() {
       <div className="page-enter" style={{ padding: 16, paddingBottom: 40, position: 'relative', zIndex: 1 }}>
         <Outlet />
       </div>
-
-      {open ? (
-        <div className="drawer-backdrop smooth-fade">
-          <aside className="drawer smooth-drawer">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span className="title-blue" style={{ fontSize: 18 }}>Lumo Admin</span>
-                <span
-                  style={{
-                    background: isSuper ? 'var(--gold)' : 'var(--electric)',
-                    color: isSuper ? '#1a1200' : '#061018',
-                    borderRadius: 999,
-                    padding: '2px 8px',
-                    fontSize: 11,
-                    fontWeight: 700,
-                  }}
-                >
-                  {isSuper ? 'SUPER' : 'MENTOR'}
-                </span>
-              </div>
-              <button type="button" onClick={() => setOpen(false)} style={{ background: 'transparent', color: 'var(--muted)' }}>
-                <X size={20} />
-              </button>
-            </div>
-            <div className="muted" style={{ fontSize: 11, letterSpacing: 1.4 }}>SIGNED IN AS</div>
-            <div style={{ fontWeight: 700, fontSize: 20 }}>{admin.fullName}</div>
-            <div style={{ color: 'var(--electric)', marginBottom: 14 }}>{admin.id}</div>
-            {!isSuper ? (
-              <p className="muted" style={{ fontSize: 12, marginTop: 0, marginBottom: 12 }}>
-                Your private mentor space — EAs, licenses, and stats are yours only.
-              </p>
-            ) : null}
-            <nav style={{ flex: 1, overflow: 'auto' }}>
-              {menu.map(({ to, label, Icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  onClick={() => setOpen(false)}
-                  className={({ isActive }) => `drawer-item${isActive ? ' active' : ''}`}
-                >
-                  <Icon size={18} /> {label}
-                </NavLink>
-              ))}
-            </nav>
-            <button
-              type="button"
-              className="drawer-item"
-              style={{ color: 'var(--red)', borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 8 }}
-              onClick={() => {
-                logout();
-                navigate('/');
-              }}
-            >
-              <LogOut size={18} /> Logout
-            </button>
-          </aside>
-          <button type="button" style={{ flex: 1, background: 'transparent' }} onClick={() => setOpen(false)} aria-label="Close" />
-        </div>
-      ) : null}
+      {drawer}
     </div>
   );
 }
@@ -137,7 +171,7 @@ export function AdminShell() {
 export function Placeholder({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
-      <h2 className="title-blue" style={{ fontSize: 24 }}>{title}</h2>
+      <h2 className="title-blue" style={{ fontSize: 18 }}>{title}</h2>
       <p className="muted">{children}</p>
     </div>
   );

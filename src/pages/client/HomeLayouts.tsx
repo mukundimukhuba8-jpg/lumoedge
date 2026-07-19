@@ -12,10 +12,14 @@ import {
   Signal,
   Trash2,
 } from 'lucide-react';
+import type { MentorMediaKind } from '../../lib/mentorMedia';
 
 export type LayoutActions = {
   eaTitle: string;
   eaImage: string;
+  /** Selected Custom background (image/video URL) — falls back to eaImage */
+  backdropUrl?: string;
+  backdropKind?: MentorMediaKind;
   mainText: string;
   isPaused: boolean;
   accentRgb: string;
@@ -30,27 +34,73 @@ export type LayoutActions = {
   onAvatarTap: () => void;
 };
 
-function bgStyle(eaImage: string, accentRgb: string) {
-  const img = eaImage || '/bull-hero.jpg';
+function LayoutBackdrop({
+  url,
+  kind,
+  accentRgb,
+  children,
+  className,
+}: {
+  url: string;
+  kind: MentorMediaKind;
+  accentRgb: string;
+  children: ReactNode;
+  className: string;
+}) {
+  const img = url || '/bull-hero.jpg';
+  const isVideo = kind === 'video';
+  return (
+    <div
+      className={className}
+      style={{
+        minHeight: '100dvh',
+        position: 'relative',
+        padding: '16px 12px 0',
+        display: 'flex',
+        flexDirection: 'column',
+        color: 'var(--text)',
+        boxShadow: `inset 0 0 80px rgba(${accentRgb},0.08)`,
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+        background: isVideo
+          ? undefined
+          : `
+            linear-gradient(180deg, rgba(6,8,14,0.22) 0%, rgba(6,8,14,0.35) 45%, rgba(6,8,14,0.5) 100%),
+            url(${img})
+          `,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center top',
+      }}
+    >
+      {isVideo ? (
+        <>
+          <video
+            className="lay-bg-video"
+            src={img}
+            autoPlay
+            muted
+            loop
+            playsInline
+            aria-hidden
+          />
+          <div className="lay-bg-wash" aria-hidden />
+        </>
+      ) : null}
+      <div className="lay-bg-content">{children}</div>
+    </div>
+  );
+}
+
+function resolveBg(a: LayoutActions) {
   return {
-    minHeight: '100dvh',
-    backgroundImage: `
-      linear-gradient(180deg, rgba(6,8,14,0.22) 0%, rgba(6,8,14,0.35) 45%, rgba(6,8,14,0.5) 100%),
-      url(${img})
-    `,
-    backgroundSize: 'cover',
-    backgroundPosition: 'center top',
-    padding: '16px 12px 0',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    color: 'var(--text)',
-    boxShadow: `inset 0 0 80px rgba(${accentRgb},0.08)`,
-    boxSizing: 'border-box' as const,
+    url: a.backdropUrl || a.eaImage || '/bull-hero.jpg',
+    kind: a.backdropKind || 'image',
   };
 }
 
 /** Focus — vertical glass action list over full-bleed EA art */
 export function FocusLayout(a: LayoutActions) {
+  const bg = resolveBg(a);
   const rows: {
     key: string;
     label: string;
@@ -98,7 +148,7 @@ export function FocusLayout(a: LayoutActions) {
   ];
 
   return (
-    <div className="lay-focus" style={bgStyle(a.eaImage, a.accentRgb)}>
+    <LayoutBackdrop className="lay-focus" url={bg.url} kind={bg.kind} accentRgb={a.accentRgb}>
       <div className="lay-focus-hero">
         <button type="button" className="lay-avatar-lg" onClick={a.onAvatarTap}>
           <img src={a.eaImage || '/bull-avatar.jpg'} alt="" />
@@ -126,12 +176,13 @@ export function FocusLayout(a: LayoutActions) {
         onScanner={a.onScanner}
         onMetaTrader={a.onMetaTrader}
       />
-    </div>
+    </LayoutBackdrop>
   );
 }
 
-/** Terminal — mac-style exe window with CLI commands */
+/** Terminal — CLI window of executable actions */
 export function TerminalLayout(a: LayoutActions) {
+  const bg = resolveBg(a);
   const cmds: {
     key: string;
     cmd: string;
@@ -147,7 +198,7 @@ export function TerminalLayout(a: LayoutActions) {
   ];
 
   return (
-    <div className="lay-terminal" style={bgStyle(a.eaImage, a.accentRgb)}>
+    <LayoutBackdrop className="lay-terminal" url={bg.url} kind={bg.kind} accentRgb={a.accentRgb}>
       <div className="lay-term-window">
         <div className="lay-term-chrome">
           <span className="dot red" />
@@ -196,14 +247,15 @@ export function TerminalLayout(a: LayoutActions) {
         onScanner={a.onScanner}
         onMetaTrader={a.onMetaTrader}
       />
-    </div>
+    </LayoutBackdrop>
   );
 }
 
 /** Vortex — hex mesh + large avatar + circular action ring */
 export function VortexLayout(a: LayoutActions) {
+  const bg = resolveBg(a);
   return (
-    <div className="lay-vortex" style={bgStyle(a.eaImage, a.accentRgb)}>
+    <LayoutBackdrop className="lay-vortex" url={bg.url} kind={bg.kind} accentRgb={a.accentRgb}>
       <div className="lay-vortex-mesh" aria-hidden />
       <div className="lay-vortex-hero">
         <button type="button" className="lay-avatar-xl" onClick={a.onAvatarTap}>
@@ -237,7 +289,11 @@ export function VortexLayout(a: LayoutActions) {
             />
           }
         />
-        <VortexOrb label="CONNECT" onClick={a.onConnect} icon={<Plus size={22} />} />
+        <VortexOrb
+          label="CONNECT"
+          onClick={a.onConnect}
+          icon={<Plus size={22} />}
+        />
         <VortexOrb label="STYLE" onClick={a.onStyle} icon={<Box size={22} />} />
       </div>
 
@@ -246,7 +302,7 @@ export function VortexLayout(a: LayoutActions) {
         onScanner={a.onScanner}
         onMetaTrader={a.onMetaTrader}
       />
-    </div>
+    </LayoutBackdrop>
   );
 }
 
@@ -254,19 +310,19 @@ function VortexOrb({
   label,
   icon,
   onClick,
-  danger,
   large,
+  danger,
 }: {
   label: string;
   icon: ReactNode;
   onClick: () => void;
-  danger?: boolean;
   large?: boolean;
+  danger?: boolean;
 }) {
   return (
     <button
       type="button"
-      className={`lay-vortex-orb${danger ? ' danger' : ''}${large ? ' large' : ''}`}
+      className={`lay-vortex-orb${large ? ' large' : ''}${danger ? ' danger' : ''}`}
       onClick={onClick}
     >
       <span className="lay-vortex-circle">{icon}</span>
@@ -275,45 +331,30 @@ function VortexOrb({
   );
 }
 
-/** Floating pill dock — Home / Scanner / MetaTrader (matches reference layouts) */
 function LayoutDock({
   onHome,
   onScanner,
   onMetaTrader,
-  active = 'home',
 }: {
   onHome: () => void;
   onScanner: () => void;
   onMetaTrader: () => void;
-  active?: 'home' | 'scanner' | 'mt';
 }) {
   return (
     <nav className="lay-dock" aria-label="Main">
-      <button
-        type="button"
-        className={`lay-dock-item${active === 'home' ? ' active' : ''}`}
-        onClick={onHome}
-      >
+      <button type="button" className="lay-dock-item active" onClick={onHome}>
         <span className="lay-dock-ico">
           <Home size={20} />
         </span>
         <span>Home</span>
       </button>
-      <button
-        type="button"
-        className={`lay-dock-item${active === 'scanner' ? ' active' : ''}`}
-        onClick={onScanner}
-      >
+      <button type="button" className="lay-dock-item" onClick={onScanner}>
         <span className="lay-dock-ico">
           <ScanSearch size={20} />
         </span>
         <span>Scanner</span>
       </button>
-      <button
-        type="button"
-        className={`lay-dock-item${active === 'mt' ? ' active' : ''}`}
-        onClick={onMetaTrader}
-      >
+      <button type="button" className="lay-dock-item" onClick={onMetaTrader}>
         <span className="lay-dock-ico">
           <Monitor size={20} />
         </span>

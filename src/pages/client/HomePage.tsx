@@ -69,6 +69,9 @@ export function HomePage() {
     eaImage,
     bot.customMedia,
   );
+  /** Active platform background from Custom tab (or EA image fallback) */
+  const platformBgUrl = customResolved?.src || eaImage || '';
+  const platformBgKind = customResolved?.kind || 'image';
   const customBg =
     customResolved && customResolved.kind === 'image' ? customResolved.src : '';
 
@@ -204,6 +207,8 @@ export function HomePage() {
   const layoutActions = {
     eaTitle,
     eaImage,
+    backdropUrl: platformBgUrl,
+    backdropKind: platformBgKind,
     mainText: bot.mainText || eaTitle,
     isPaused,
     accentRgb,

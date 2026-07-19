@@ -168,7 +168,9 @@ export function InterfaceStyleModal({
 
   const setLayout = (layout: LayoutId) => onChange({ ...prefs, layout });
   const setAccent = (next: AccentId) => onChange({ ...prefs, accent: next });
-  const setCustomBg = (customBg: CustomBgId) => onChange({ ...prefs, customBg });
+  const setCustomBg = (customBg: CustomBgId) => {
+    onChange({ ...prefs, customBg });
+  };
   const toggleEffect = (id: Exclude<EffectId, 'none'>) => {
     onChange({ ...prefs, effect: prefs.effect === id ? 'none' : id });
   };
