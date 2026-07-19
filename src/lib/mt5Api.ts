@@ -1,6 +1,14 @@
-/** Client for MT5API RESTFul (proxied via /api/mt5 → https://66.23.225.158) */
+/**
+ * Client for MT5API RESTFul — Swagger: https://66.23.225.158/swagger/index.html
+ * Order: server proxy (/api/mt5) first, then direct browser call to the
+ * bridge (the MT5 host blocks datacenter IPs but allows real users).
+ */
 
-const BASE = '/api/mt5';
+const PROXY_BASE = '/api/mt5';
+const DIRECT_BASE = 'https://66.23.225.158';
+
+/** Remember which base worked so later calls are fast */
+let preferredBase: string | null = null;
 
 export type Mt5ServerResult = {
   name: string;
@@ -52,11 +60,15 @@ export type Mt5OpenedOrder = {
   [key: string]: unknown;
 };
 
-async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+): Promise<Response> {
   const ac = new AbortController();
-  const timer = window.setTimeout(() => ac.abort(), 10_000);
+  const timer = window.setTimeout(() => ac.abort(), timeoutMs);
   try {
-    return await fetch(`${BASE}${path}`, {
+    return await fetch(url, {
       ...init,
       signal: init?.signal ?? ac.signal,
       headers: {
@@ -67,6 +79,42 @@ async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+/** 502 from our proxy means the bridge blocked the datacenter IP */
+function isBridgeBlocked(res: Response): boolean {
+  return res.status === 502 || res.status === 504;
+}
+
+async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
+  const bases = preferredBase
+    ? [preferredBase, ...[PROXY_BASE, DIRECT_BASE].filter((b) => b !== preferredBase)]
+    : [PROXY_BASE, DIRECT_BASE];
+  let lastError: unknown = null;
+  for (const base of bases) {
+    try {
+      const res = await fetchWithTimeout(
+        `${base}${path}`,
+        init,
+        base === PROXY_BASE ? 12_000 : 10_000,
+      );
+      if (base === PROXY_BASE && isBridgeBlocked(res)) {
+        lastError = new Error('MT5 bridge unreachable from server');
+        continue; // try direct browser connection
+      }
+      preferredBase = base;
+      return res;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw new Error(
+    lastError instanceof Error && /certificate|Failed to fetch|network/i.test(lastError.message)
+      ? 'Cannot reach the broker bridge. Open https://66.23.225.158/swagger/index.html once in this browser, accept the security warning, then try again.'
+      : lastError instanceof Error
+        ? lastError.message
+        : 'MT5 bridge unreachable',
+  );
 }
 
 async function readBody(res: Response): Promise<unknown> {
