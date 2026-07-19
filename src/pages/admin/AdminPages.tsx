@@ -24,21 +24,34 @@ export function DashboardPage() {
   const { profile, stats, admin, eas, licenses } = useAdmin();
   const isSuper = admin?.role === 'super';
   const isEmpty = eas.length === 0 && licenses.length === 0;
+  const firstName = profile.firstName || admin?.fullName?.split(' ')[0] || 'Admin';
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div className="glow-card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
           <div>
-            <h2 style={{ margin: 0 }}>Welcome, {profile.firstName || admin?.fullName} {profile.lastName}</h2>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+            <h2 style={{ margin: 0 }}>Welcome, {firstName}</h2>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
               <span className="muted" style={{ fontSize: 11 }}>MENTOR ID</span>
               <span style={{ border: '1px solid var(--electric)', borderRadius: 999, padding: '3px 10px', color: 'var(--electric)', fontWeight: 700 }}>
                 {profile.mentorId || admin?.id}
               </span>
             </div>
           </div>
-          <span style={{ background: isSuper ? 'var(--gold)' : 'var(--electric)', color: isSuper ? '#1a1200' : '#061018', borderRadius: 999, padding: '4px 10px', fontWeight: 700, height: 'fit-content' }}>
-            {isSuper ? 'SUPER' : 'MENTOR'}
+          <span
+            style={{
+              background: isSuper ? 'rgba(168,85,247,0.22)' : 'rgba(59,130,246,0.2)',
+              color: isSuper ? '#e9d5ff' : 'var(--electric)',
+              border: `1px solid ${isSuper ? 'rgba(168,85,247,0.65)' : 'var(--electric)'}`,
+              borderRadius: 999,
+              padding: '4px 10px',
+              fontWeight: 700,
+              height: 'fit-content',
+              fontSize: 11,
+              letterSpacing: 0.4,
+            }}
+          >
+            {isSuper ? 'SUPER ADMIN' : 'MENTOR'}
           </span>
         </div>
       </div>
@@ -51,24 +64,56 @@ export function DashboardPage() {
         </div>
       ) : null}
       <div className="stat-grid">
-        <Stat value={String(stats.activeLicenses)} label="Active Licenses" color="var(--green)" />
-        <Stat
-          value={String(stats.pendingClients)}
-          label={isSuper ? 'Pending Approvals' : 'Assigned Keys'}
-          color="var(--orange)"
-        />
-        <Stat value={String(stats.deletedLicenses)} label="Revoked Keys" color="var(--red)" />
+        <Stat value={String(stats.activeLicenses)} label="Active Licenses" color="var(--electric)" />
         <Stat value={String(stats.totalClients)} label="Total Clients" color="var(--electric)" />
+        <Stat
+          value={String(isSuper ? stats.pendingClients : stats.activeLicenses)}
+          label={isSuper ? 'Pending Approvals' : 'Paid Clients'}
+          color="var(--green)"
+        />
+        <Stat
+          value={String(stats.deletedLicenses)}
+          label={isSuper ? 'Revoked Keys' : 'Revoked Keys'}
+          color="var(--pink)"
+        />
       </div>
       <div className="glow-card">
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <strong className="muted">LICENSE USAGE</strong>
-          <span style={{ color: 'var(--electric)' }}>{stats.activeLicenses} active / ∞ max</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <strong className="muted" style={{ letterSpacing: 1 }}>CHART SCANNER</strong>
+          <span
+            style={{
+              border: '1px solid var(--electric)',
+              color: 'var(--electric)',
+              borderRadius: 999,
+              padding: '3px 10px',
+              fontSize: 11,
+              fontWeight: 700,
+            }}
+          >
+            ADMIN TOOLS
+          </span>
         </div>
-        <div style={{ height: 10, borderRadius: 999, background: '#1b2438', margin: '10px 0' }}>
-          <div style={{ width: '100%', height: '100%', background: 'var(--electric)', borderRadius: 999 }} />
-        </div>
-        <div style={{ color: 'var(--green)', fontWeight: 600 }}>Unlimited clients — no cap on your account.</div>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          style={{ borderColor: 'rgba(59,130,246,0.55)' }}
+          onClick={() => {
+            try {
+              const keys = Object.keys(localStorage).filter((k) =>
+                k.toLowerCase().includes('scan'),
+              );
+              for (const k of keys) localStorage.removeItem(k);
+              alert('Scan limits cleared on this device.');
+            } catch {
+              alert('Could not clear scan limits on this device.');
+            }
+          }}
+        >
+          Reset All Scan Limits
+        </button>
+        <p className="muted" style={{ marginBottom: 0, marginTop: 10, fontSize: 12 }}>
+          Clears every user&apos;s daily scan count immediately.
+        </p>
       </div>
     </div>
   );
@@ -484,6 +529,8 @@ export function ProfilePage() {
       setImageError('Choose an image file (PNG, JPG, WEBP).');
       return;
     }
+    const previewUrl = URL.createObjectURL(file);
+    setForm((prev) => ({ ...prev, eaImage: previewUrl }));
     try {
       setSavingImage(true);
       const dataUrl = await compressImageFile(file, 640, 0.78);
@@ -494,7 +541,9 @@ export function ProfilePage() {
       updateProfile(next);
     } catch {
       setImageError('Could not process image. Try a smaller JPG/PNG.');
+      setForm((prev) => ({ ...prev, eaImage: profile.eaImage || '' }));
     } finally {
+      URL.revokeObjectURL(previewUrl);
       setSavingImage(false);
     }
   };
@@ -507,16 +556,23 @@ export function ProfilePage() {
       setMediaError(check.error);
       return;
     }
+    const previewUrl = URL.createObjectURL(file);
+    setForm((prev) => ({
+      ...prev,
+      customMedia: upsertMediaSlot(prev.customMedia, {
+        slot,
+        kind: check.kind,
+        url: previewUrl,
+      }),
+    }));
     try {
       setSavingSlot(slot);
       const key = mediaKey(admin.id, slot);
       let url = '';
       if (check.kind === 'video') {
-        // Binary upload — keeps quality and enables Range streaming playback
         ({ url } = await uploadMentorMediaFile(key, file));
       } else {
         const isBg = slot.startsWith('bg-');
-        // High-res for backgrounds; still light compress so sync stays fast
         const dataUrl = await compressImageFile(
           file,
           isBg ? 1920 : 1400,
@@ -532,7 +588,6 @@ export function ProfilePage() {
       const next = {
         ...form,
         customMedia,
-        // Keep classic EA image in sync with profile still images (clients show this)
         eaImage:
           (slot === 'profile-1' || slot === 'profile-2') && check.kind === 'image'
             ? url
@@ -542,7 +597,12 @@ export function ProfilePage() {
       updateProfile(next);
     } catch (e) {
       setMediaError(e instanceof Error ? e.message : 'Could not upload media.');
+      setForm((prev) => ({
+        ...prev,
+        customMedia: normalizeCustomMedia(profile.customMedia),
+      }));
     } finally {
+      URL.revokeObjectURL(previewUrl);
       setSavingSlot(null);
     }
   };
@@ -586,11 +646,21 @@ export function ProfilePage() {
         {form.eaImage ? (
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 10 }}>
             <img
+              key={form.eaImage}
               src={form.eaImage}
               alt="EA"
-              width={72}
-              height={72}
-              style={{ borderRadius: 16, objectFit: 'cover', border: '1px solid rgba(59,130,246,0.5)' }}
+              width={88}
+              height={88}
+              style={{
+                borderRadius: 16,
+                objectFit: 'cover',
+                border: '1px solid rgba(59,130,246,0.5)',
+                background: '#0e1220',
+                flexShrink: 0,
+              }}
+              onError={(e) => {
+                e.currentTarget.style.opacity = '0.35';
+              }}
             />
             <div>
               <div style={{ color: 'var(--green)', fontWeight: 700 }}>Saved — ready to sync</div>
@@ -690,20 +760,29 @@ function MediaSlotCard({
   onPick: (file: File | null) => void;
   onClear: () => void;
 }) {
+  const [broken, setBroken] = useState(false);
+  const showMedia = Boolean(item?.url) && !broken;
+
   return (
     <div className="media-slot-card">
       <div className="media-slot-preview">
-        {item?.kind === 'video' ? (
-          <video src={item.url} muted playsInline />
-        ) : item?.url ? (
-          <img src={item.url} alt="" />
+        {showMedia && item?.kind === 'video' ? (
+          <video key={item.url} src={item.url} muted playsInline controls={false} />
+        ) : showMedia && item?.url ? (
+          <img
+            key={item.url}
+            src={item.url}
+            alt=""
+            onError={() => setBroken(true)}
+            onLoad={() => setBroken(false)}
+          />
         ) : (
-          <span>Empty</span>
+          <span>{busy ? 'Saving…' : 'Empty'}</span>
         )}
       </div>
       <div className="media-slot-meta">
         <strong>{label}</strong>
-        <span className="muted">{item ? item.kind : 'image / video'}</span>
+        <span className="muted">{item && !broken ? item.kind : 'image / video'}</span>
         <label className="btn btn-ghost media-slot-upload">
           {busy ? 'Saving…' : item ? 'Replace' : 'Upload'}
           <input
@@ -712,13 +791,22 @@ function MediaSlotCard({
             disabled={busy}
             hidden
             onChange={(e) => {
+              setBroken(false);
               onPick(e.target.files?.[0] ?? null);
               e.target.value = '';
             }}
           />
         </label>
         {item ? (
-          <button type="button" className="btn btn-ghost" style={{ padding: '6px 10px' }} onClick={onClear}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ padding: '6px 10px' }}
+            onClick={() => {
+              setBroken(false);
+              onClear();
+            }}
+          >
             Clear
           </button>
         ) : null}

@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { NavLink, Navigate, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Cpu,
   CreditCard,
@@ -16,7 +16,6 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
-import { EaBackdrop } from '../../components/EaBackdrop';
 import { useAdmin } from '../../context/AdminContext';
 
 type MenuRole = 'super' | 'admin';
@@ -28,12 +27,10 @@ const ALL_MENU: {
   roles: MenuRole[];
 }[] = [
   { to: '/admin/dashboard', label: 'Dashboard', Icon: LayoutDashboard, roles: ['super', 'admin'] },
-  // Super-only platform tools
   { to: '/admin/approve', label: 'Approve Admins', Icon: UserPlus, roles: ['super'] },
   { to: '/admin/subscriptions', label: 'Subscriptions', Icon: CreditCard, roles: ['super'] },
   { to: '/admin/emails', label: 'Send Emails', Icon: Mail, roles: ['super'] },
   { to: '/admin/setup', label: 'Setup Methods', Icon: Settings2, roles: ['super'] },
-  // Mentor + Super shared tools (each sees only their own data)
   { to: '/admin/connect-ea', label: 'Connect EA', Icon: Monitor, roles: ['super', 'admin'] },
   { to: '/admin/orders', label: 'Open Orders', Icon: LineChart, roles: ['super', 'admin'] },
   { to: '/admin/licenses', label: 'Generate License', Icon: KeyRound, roles: ['super', 'admin'] },
@@ -41,9 +38,16 @@ const ALL_MENU: {
   { to: '/admin/profile', label: 'Profile Settings', Icon: UserCircle2, roles: ['super', 'admin'] },
 ];
 
+function titleForPath(pathname: string, isSuper: boolean): string {
+  const hit = ALL_MENU.find((m) => pathname.startsWith(m.to));
+  if (hit) return hit.label;
+  return isSuper ? 'Dashboard' : 'Mentor Portal';
+}
+
 export function AdminShell() {
-  const { admin, logout, profile } = useAdmin();
+  const { admin, logout } = useAdmin();
   const navigate = useNavigate();
+  const location = useLocation();
   const [open, setOpen] = useState(false);
 
   const menu = useMemo(() => {
@@ -58,6 +62,7 @@ export function AdminShell() {
   }
 
   const isSuper = admin.role === 'super';
+  const pageTitle = titleForPath(location.pathname, isSuper);
 
   const drawer =
     open && typeof document !== 'undefined'
@@ -148,20 +153,20 @@ export function AdminShell() {
       : null;
 
   return (
-    <div className="app-shell">
-      <EaBackdrop src={profile.eaImage || '/bull-hero.jpg'} />
+    <div className="app-shell admin-shell-dark">
       <div className="admin-top">
         <button
           type="button"
+          className="admin-menu-btn"
           onClick={() => setOpen(true)}
-          style={{ background: 'transparent', color: 'var(--text)' }}
+          aria-label="Open menu"
         >
-          <Menu />
+          <Menu size={20} />
         </button>
-        <strong>{isSuper ? 'Super Admin' : 'Mentor Portal'}</strong>
-        <span style={{ width: 40 }} />
+        <strong className="admin-top-title">{pageTitle}</strong>
+        <span style={{ width: 44 }} />
       </div>
-      <div className="page-enter" style={{ padding: 16, paddingBottom: 40, position: 'relative', zIndex: 1 }}>
+      <div className="page-enter admin-page-body">
         <Outlet />
       </div>
       {drawer}

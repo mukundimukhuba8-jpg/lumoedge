@@ -230,8 +230,66 @@ a {
   border-bottom: 1px solid rgba(59, 130, 246, 0.2);
   position: sticky;
   top: 0;
-  background: rgba(10, 14, 22, 0.42);
+  background: rgba(10, 14, 22, 0.92);
   z-index: 5;
+}
+
+/* Clean dark admin portal — no photo backdrop */
+.admin-shell-dark {
+  background: #0a0a0a !important;
+}
+
+.admin-shell-dark .admin-top {
+  background: #0c1018;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.22);
+}
+
+.admin-menu-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #121218;
+  color: var(--text);
+  border: 1.4px solid rgba(59, 130, 246, 0.45);
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.18);
+  padding: 0;
+}
+
+.admin-top-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.admin-page-body {
+  padding: 16px;
+  padding-bottom: 40px;
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+
+.admin-shell-dark .glow-card,
+.admin-shell-dark .stat-card {
+  background: #121218;
+  border: 1.5px solid rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.06), 0 0 22px rgba(59, 130, 246, 0.18);
+}
+
+.admin-shell-dark .media-slot-card {
+  background: #121218;
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.admin-shell-dark .media-slot-preview {
+  background: #0e1220;
+}
+
+.admin-shell-dark .drawer {
+  background: #0e1220;
+  border-right: 1px solid rgba(59, 130, 246, 0.35);
 }
 
 .home-page-fill {
