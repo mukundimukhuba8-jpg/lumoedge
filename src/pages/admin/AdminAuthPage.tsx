@@ -41,24 +41,19 @@ export function AdminAuthPage() {
         <X />
       </button>
 
-      <div
+      <img
+        src="/lumo-logo.png"
+        alt="Lumo Edge"
+        width={72}
+        height={72}
         style={{
-          width: 72,
-          height: 72,
           margin: '20px auto 14px',
           borderRadius: 18,
-          border: '2px solid var(--electric)',
-          display: 'grid',
-          placeItems: 'center',
-          boxShadow: '0 0 24px rgba(59,130,246,0.8)',
-          color: 'var(--electric)',
-          fontFamily: 'var(--font-body)',
-          fontSize: 34,
-          fontWeight: 700,
+          display: 'block',
+          background: '#fff',
+          boxShadow: '0 0 24px rgba(59,130,246,0.55)',
         }}
-      >
-        A
-      </div>
+      />
       <h1 className="title-blue" style={{ fontSize: 30, margin: 0 }}>
         Admin Portal
       </h1>

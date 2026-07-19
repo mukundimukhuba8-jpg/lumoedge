@@ -226,7 +226,7 @@ export function GenerateLicensePage() {
         {selected ? (
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
             <img
-              src={selected.imageUrl || profile.eaImage || '/bull-avatar.jpg'}
+              src={selected.imageUrl || profile.eaImage || '/lumo-logo.png'}
               alt=""
               width={48}
               height={48}

@@ -60,11 +60,11 @@ export function RegisterPage() {
         }}
       >
         <img
-          src="/bull-avatar.jpg"
+          src="/lumo-logo.png"
           alt="Lumo Edge"
           width={88}
           height={88}
-          style={{ borderRadius: 22, display: 'block' }}
+          style={{ borderRadius: 22, display: 'block', background: '#fff' }}
         />
       </button>
       <h1 className="title-blue" style={{ fontSize: 22, margin: '0 0 6px' }}>

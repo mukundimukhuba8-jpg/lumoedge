@@ -90,7 +90,7 @@ export function MetaTraderPage() {
   const accent = accentHex(prefs.accent);
   const accentRgb = hexToRgb(accent);
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
-  const eaImage = bot.imageUrl || '/bull-avatar.jpg';
+  const eaImage = bot.imageUrl || '/lumo-logo.png';
   const customBg = resolveCustomBackdrop(prefs.customBg, eaImage, bot.customMedia);
   const pageBgUrl = customBg?.src || eaImage;
 

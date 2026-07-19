@@ -261,7 +261,7 @@ export function HomePage() {
           }}
         >
           <img
-            src={eaImage || '/bull-avatar.jpg'}
+            src={eaImage || '/lumo-logo.png'}
             alt=""
             width={56}
             height={56}
@@ -384,7 +384,7 @@ export function HomePage() {
             </div>
 
             <div className="pill home-status-pill" style={{ marginBottom: 14 }}>
-              <img src={eaImage || '/bull-avatar.jpg'} width={36} height={36} style={{ borderRadius: '50%', objectFit: 'cover' }} alt="" />
+              <img src={eaImage || '/lumo-logo.png'} width={36} height={36} style={{ borderRadius: '50%', objectFit: 'cover' }} alt="" />
               <div>
                 <div style={{ fontWeight: 700, letterSpacing: 1.2 }}>{bot.name}</div>
                 <div style={{ color: 'var(--electric)', fontWeight: 600 }}>
@@ -539,7 +539,7 @@ export function HomePage() {
         <Modal title="EA Status" onClose={() => setEaInfoOpen(false)}>
           <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
             <img
-              src={eaImage || '/bull-avatar.jpg'}
+              src={eaImage || '/lumo-logo.png'}
               alt=""
               width={64}
               height={64}
@@ -580,7 +580,7 @@ export function HomePage() {
         onClose={() => setStyleOpen(false)}
         prefs={stylePrefs}
         onChange={updateStylePrefs}
-        avatarUrl={eaImage || '/bull-avatar.jpg'}
+        avatarUrl={eaImage || '/lumo-logo.png'}
         mentorBgUrl={eaImage}
         mentorMedia={bot.customMedia}
         onOpenScanner={() => {
