@@ -619,18 +619,25 @@ export function ProfilePage() {
   const [form, setForm] = useState(profile);
   const [imageError, setImageError] = useState('');
   const [savingImage, setSavingImage] = useState(false);
+  const [imageSavedMsg, setImageSavedMsg] = useState('');
 
   useEffect(() => {
     const raw = resolveProfileImage(profile.eaImage) || profile.eaImage;
-    const eaImage = displayImageSrc(raw) || (isRealImage(raw) && !raw.startsWith('img:') ? raw : '');
-    setForm({
-      ...profile,
-      eaImage,
+    const eaImage =
+      displayImageSrc(raw) ||
+      (isRealImage(raw) && !raw.startsWith('img:') ? raw : '');
+    setForm((prev) => {
+      // Keep a freshly uploaded preview if store still only has img: ref
+      if (!eaImage && prev.eaImage && prev.eaImage.startsWith('data:')) {
+        return { ...profile, eaImage: prev.eaImage };
+      }
+      return { ...profile, eaImage };
     });
   }, [profile]);
 
   const onPickImage = async (file: File | null) => {
     setImageError('');
+    setImageSavedMsg('');
     if (!file || !admin?.id) return;
     if (!file.type.startsWith('image/')) {
       setImageError('Choose an image file (PNG, JPG, WEBP).');
@@ -643,21 +650,21 @@ export function ProfilePage() {
       const dataUrl = await compressImageFile(file, 480, 0.72);
       const imageId = `profile-${admin.id}`;
       const url = await publishEaImage(imageId, dataUrl);
-      const stored = url || dataUrl;
-      setForm((prev) => {
-        const next = {
-          ...prev,
-          eaImage: stored.startsWith('img:') ? dataUrl : stored,
-        };
-        updateProfile({
-          ...next,
-          eaImage: stored.startsWith('img:') ? stored : stored || dataUrl,
-        });
-        return next;
+      const stored = url?.startsWith('img:') ? url : url || `img:${imageId}`;
+      setForm((prev) => ({ ...prev, eaImage: dataUrl }));
+      await updateProfile({
+        ...form,
+        eaImage: stored.startsWith('img:') ? stored : dataUrl,
       });
+      setImageSavedMsg(
+        'Saved — synced to all your license keys and licensed clients.',
+      );
     } catch {
       setImageError('Could not save image. Try a smaller JPG/PNG.');
-      setForm((prev) => ({ ...prev, eaImage: isRealImage(profile.eaImage) ? profile.eaImage : '' }));
+      setForm((prev) => ({
+        ...prev,
+        eaImage: isRealImage(profile.eaImage) ? displayImageSrc(profile.eaImage) || profile.eaImage : '',
+      }));
     } finally {
       URL.revokeObjectURL(previewUrl);
       setSavingImage(false);
@@ -677,24 +684,29 @@ export function ProfilePage() {
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>Branding</h3>
         <p className="muted" style={{ marginTop: 0 }}>
-          Optional EA image for licensed clients. EAs stay without a picture until you upload one here.
+          Upload once — it syncs to every license key and client home (no need to regenerate keys).
         </p>
         <div className="field"><label>EA Name (Displayed on App)</label><input value={form.eaDisplayName} onChange={(e) => setForm({ ...form, eaDisplayName: e.target.value })} /></div>
         <div className="field"><label>Main Text (Top of Home Page)</label><input value={form.mainText} onChange={(e) => setForm({ ...form, mainText: e.target.value })} /></div>
         <div className="field">
-          <label>EA Image (optional)</label>
+          <label>EA Image</label>
           <input
             type="file"
             accept="image/*"
             onChange={(e) => onPickImage(e.target.files?.[0] ?? null)}
           />
         </div>
-        {savingImage ? <p className="muted">Saving image…</p> : null}
-        {isRealImage(form.eaImage) ? (
+        {savingImage ? <p className="muted">Saving & syncing to licenses…</p> : null}
+        {imageSavedMsg ? (
+          <p style={{ color: 'var(--green)', fontWeight: 700, margin: '6px 0' }}>
+            {imageSavedMsg}
+          </p>
+        ) : null}
+        {form.eaImage && (form.eaImage.startsWith('data:') || form.eaImage.startsWith('http') || form.eaImage.startsWith('blob:') || displayImageSrc(form.eaImage)) ? (
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 10 }}>
             <img
               key={form.eaImage}
-              src={form.eaImage}
+              src={displayImageSrc(form.eaImage) || form.eaImage}
               alt="EA"
               width={88}
               height={88}
@@ -710,7 +722,9 @@ export function ProfilePage() {
               }}
             />
             <div>
-              <div style={{ color: 'var(--green)', fontWeight: 700 }}>Saved</div>
+              <div style={{ color: 'var(--green)', fontWeight: 700 }}>
+                {imageSavedMsg ? 'Synced' : 'Ready'}
+              </div>
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -718,7 +732,8 @@ export function ProfilePage() {
                 onClick={() => {
                   const next = { ...form, eaImage: '' };
                   setForm(next);
-                  updateProfile(next);
+                  setImageSavedMsg('');
+                  void updateProfile(next);
                 }}
               >
                 Remove image
@@ -726,7 +741,7 @@ export function ProfilePage() {
             </div>
           </div>
         ) : (
-          <p className="muted">No picture uploaded — nothing will show on EAs or client home.</p>
+          <p className="muted">No picture uploaded yet.</p>
         )}
         {imageError ? <p className="error">{imageError}</p> : null}
       </div>
@@ -735,8 +750,9 @@ export function ProfilePage() {
         className="btn btn-blue"
         type="button"
         onClick={() => {
-          updateProfile(form);
-          alert('Profile updated');
+          void updateProfile(form).then(() => {
+            alert('Profile updated — branding synced to license keys & clients');
+          });
         }}
       >
         Update Profile

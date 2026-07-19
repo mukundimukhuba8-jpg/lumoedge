@@ -71,12 +71,63 @@ export async function pingMt5(): Promise<boolean> {
 export async function searchBrokers(company: string): Promise<Mt5Company[]> {
   const q = company.trim();
   if (q.length < 2) return [];
-  const res = await mt5Fetch(`/Search?company=${encodeURIComponent(q)}`);
-  const data = await readBody(res);
-  if (!res.ok) {
-    throw new Error(typeof data === 'string' ? data : 'Broker search failed');
+  try {
+    const res = await mt5Fetch(`/Search?company=${encodeURIComponent(q)}`);
+    const data = await readBody(res);
+    if (!res.ok) {
+      throw new Error(typeof data === 'string' ? data : 'Broker search failed');
+    }
+    const list = Array.isArray(data) ? (data as Mt5Company[]) : [];
+    if (list.length) return list;
+  } catch (err) {
+    // Fall through to local known brokers when MT5 bridge is down
+    console.warn('[mt5] search failed, using offline list', err);
   }
-  return Array.isArray(data) ? (data as Mt5Company[]) : [];
+  return offlineBrokerMatches(q);
+}
+
+/** Known brokers when the live MT5 search bridge is unreachable */
+function offlineBrokerMatches(q: string): Mt5Company[] {
+  const known: Mt5Company[] = [
+    {
+      company: 'Razor Markets',
+      results: [
+        { name: 'RazorMarkets-Live', site: 'https://razormarkets.co.za' },
+        { name: 'RazorMarkets-Demo', site: 'https://razormarkets.co.za' },
+      ],
+    },
+    {
+      company: 'IC Markets',
+      results: [
+        { name: 'ICMarketsSC-MT5', site: 'https://www.icmarkets.com' },
+        { name: 'ICMarketsSC-Demo', site: 'https://www.icmarkets.com' },
+      ],
+    },
+    {
+      company: 'Exness',
+      results: [
+        { name: 'Exness-MT5Real', site: 'https://www.exness.com' },
+        { name: 'Exness-MT5Trial', site: 'https://www.exness.com' },
+      ],
+    },
+    {
+      company: 'XM',
+      results: [
+        { name: 'XMGlobal-MT5', site: 'https://www.xm.com' },
+        { name: 'XMGlobal-MT5 2', site: 'https://www.xm.com' },
+      ],
+    },
+    {
+      company: 'FTMO',
+      results: [{ name: 'FTMO-Server', site: 'https://ftmo.com' }],
+    },
+  ];
+  const needle = q.toLowerCase();
+  return known.filter(
+    (c) =>
+      c.company.toLowerCase().includes(needle) ||
+      c.results.some((r) => r.name.toLowerCase().includes(needle)),
+  );
 }
 
 /**

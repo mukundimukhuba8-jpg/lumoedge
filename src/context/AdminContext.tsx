@@ -45,7 +45,7 @@ import {
   upsertVault,
   type VaultLicense,
 } from '../lib/storage';
-import { firebaseSaveImage } from '../lib/firebaseDb';
+import { firebaseFetchImage, firebaseSaveImage } from '../lib/firebaseDb';
 
 export type AdminRole = 'super' | 'admin' | 'pending';
 
@@ -251,7 +251,7 @@ async function syncPortalBrandingToClients(
           bot: {
             ...bot,
             licenseKey: lic.key,
-            imageUrl: displayImage || String(bot.imageUrl || ''),
+            imageUrl: imageRef || String(bot.imageUrl || ''),
             displayName: lic.eaName || String(bot.displayName || ''),
             name: String(lic.eaName || bot.name || '')
               .replace(/\s+/g, '')
@@ -635,7 +635,7 @@ type Ctx = {
   ) => Promise<{ ok: true; license: LicenseRecord } | { ok: false; error: string }>;
   findLicense: (key: string) => LicenseRecord | undefined;
   saveMt5: (mt5: Mt5Connection) => void;
-  updateProfile: (patch: Partial<AdminProfile>) => void;
+  updateProfile: (patch: Partial<AdminProfile>) => Promise<void>;
   executeOrder: (order: Omit<CopyOrder, 'id' | 'copiedTo'>) => CopyOrder;
   stats: {
     activeLicenses: number;
@@ -1609,7 +1609,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           if (!v || v.includes('lumo-logo') || v.startsWith('blob:')) continue;
           if (v.startsWith('img:')) {
             const id = v.slice(4);
-            const embedded = remoteImages[id] || getEaImage(id) || getEaImage(v);
+            let embedded = remoteImages[id] || getEaImage(id) || getEaImage(v);
+            if (!embedded) {
+              embedded = await firebaseFetchImage(id);
+              if (embedded) saveEaImage(id, embedded);
+            }
             if (embedded) {
               resolvedImage = embedded;
               break;
@@ -1639,8 +1643,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           }
         }
         // Last resort: dedicated Firebase images map for this mentor
-        if (!resolvedImage && profileAdminId && remoteImages[`profile-${profileAdminId}`]) {
-          resolvedImage = remoteImages[`profile-${profileAdminId}`];
+        if (!resolvedImage && profileAdminId) {
+          resolvedImage =
+            remoteImages[`profile-${profileAdminId}`] ||
+            (await firebaseFetchImage(`profile-${profileAdminId}`));
+          if (resolvedImage) {
+            saveEaImage(`profile-${profileAdminId}`, resolvedImage);
+          }
         }
         const resolvedName =
           license.eaName || ownerEa?.name || ownerWs?.profile.eaDisplayName || 'Lumo Edge';
@@ -1748,8 +1757,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         patchWorkspace(adminId, (ws) => ({ ...ws, mt5 }));
       },
       updateProfile: (patch) => {
-        if (!adminId) return;
-        void (async () => {
+        if (!adminId) return Promise.resolve();
+        return (async () => {
           let imagePatch = patch.eaImage;
           let displayBytes = '';
           if (imagePatch && imagePatch.startsWith('blob:')) {

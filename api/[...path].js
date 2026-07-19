@@ -324,6 +324,12 @@ async function readBody(req) {
   }
 }
 
+async function readRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
 function mirrorClientToSuper(db, entry) {
   const sid = 'LM-004821';
   db.store = db.store || { workspaces: {} };
@@ -618,6 +624,203 @@ export default async function handler(req, res) {
         await saveDb(db, sha);
       }
       send(res, 200, { ok: true });
+      return;
+    }
+
+    // Chart Scanner — OpenAI vision (same behavior as local server.mjs)
+    if (pathname === '/api/scan' && req.method === 'POST') {
+      const body = await readBody(req);
+      const image = String(body.image || '');
+      if (!image.startsWith('data:image/')) {
+        send(res, 400, { ok: false, accuracy: 0, error: 'image data URL required' });
+        return;
+      }
+
+      const CHART_SCAN_API_KEY =
+        process.env.CHART_SCAN_API_KEY ||
+        process.env.OPENAI_API_KEY ||
+        '';
+      const CHART_SCAN_API_URL =
+        process.env.CHART_SCAN_API_URL ||
+        'https://api.openai.com/v1/chat/completions';
+      const CHART_SCAN_MODEL = process.env.CHART_SCAN_MODEL || 'gpt-4o';
+
+      if (!CHART_SCAN_API_KEY) {
+        const accuracy = 70 + Math.floor(Math.random() * 21);
+        const demoSymbols = ['XAUUSD', 'EURUSD', 'GBPUSD', 'NAS100', 'BTCUSD'];
+        const symbol = demoSymbols[Math.floor(Math.random() * demoSymbols.length)];
+        const direction = Math.random() > 0.5 ? 'buy' : 'sell';
+        send(res, 200, {
+          ok: true,
+          demo: true,
+          accuracy,
+          symbol,
+          timeframe: 'M15',
+          direction,
+          summary: 'Demo mode — add CHART_SCAN_API_KEY on Vercel for live AI scans.',
+        });
+        return;
+      }
+
+      const prompt =
+        'You analyze MT5 / trading chart screenshots.\n' +
+        'CRITICAL RULES FOR SYMBOL:\n' +
+        '- Read the EXACT trading symbol text shown on the chart UI (title bar, market watch, or chart header).\n' +
+        '- Do NOT guess, invent, or substitute a different pair (never default to XAUUSD/EURUSD unless that text is clearly visible).\n' +
+        '- If the symbol text is not clearly readable on the image, set symbol to null and symbol_visible to false.\n' +
+        '- Copy the symbol characters as shown (e.g. XAUUSD, EURUSD.r, NAS100, BTCUSD).\n' +
+        'Also read timeframe only if visible (M1,M5,M15,H1,H4,D1, etc), else null.\n' +
+        'Decide direction buy or sell from the chart structure only.\n' +
+        'accuracy_percent must be an integer from 70 to 90.\n' +
+        'Reply ONLY compact JSON:\n' +
+        '{"symbol":"EXACT_OR_null","symbol_visible":true,"timeframe":"M15_or_null","direction":"buy|sell","accuracy_percent":78,"summary":"one short sentence"}';
+
+      const upstream = await fetch(CHART_SCAN_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${CHART_SCAN_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: CHART_SCAN_MODEL,
+          temperature: 0,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: prompt },
+                { type: 'image_url', image_url: { url: image, detail: 'high' } },
+              ],
+            },
+          ],
+        }),
+      });
+
+      const raw = await upstream.text();
+      if (!upstream.ok) {
+        send(res, 502, {
+          ok: false,
+          accuracy: 0,
+          error: `Scan API ${upstream.status}: ${raw.slice(0, 240)}`,
+        });
+        return;
+      }
+
+      let parsed = {};
+      try {
+        const outer = JSON.parse(raw);
+        const content =
+          outer?.choices?.[0]?.message?.content ||
+          outer?.output_text ||
+          outer?.content ||
+          '';
+        const match =
+          String(content).match(/\{[\s\S]*\}/) ||
+          String(raw).match(/\{[\s\S]*\}/);
+        parsed = match ? JSON.parse(match[0]) : {};
+      } catch {
+        parsed = {};
+      }
+
+      const symbolVisible = parsed.symbol_visible !== false;
+      let symbol = parsed.symbol == null ? '' : String(parsed.symbol).trim();
+      if (
+        !symbolVisible ||
+        !symbol ||
+        /null|unknown|n\/a|none|guess/i.test(symbol)
+      ) {
+        send(res, 422, {
+          ok: false,
+          accuracy: 0,
+          error:
+            'Could not read the symbol from this chart. Upload a clearer MT5 screenshot showing the pair name.',
+        });
+        return;
+      }
+      symbol = symbol.replace(/\s+/g, '').toUpperCase();
+
+      let accuracy = Number(parsed.accuracy_percent ?? parsed.accuracy ?? 0);
+      if (!Number.isFinite(accuracy) || accuracy < 70 || accuracy > 90) {
+        accuracy = 70 + Math.floor(Math.random() * 21);
+      }
+      const rawDir = String(parsed.direction || parsed.side || '').toLowerCase();
+      if (!rawDir.includes('sell') && !rawDir.includes('buy')) {
+        send(res, 422, {
+          ok: false,
+          accuracy: 0,
+          error: 'Could not determine BUY/SELL from this chart. Try another screenshot.',
+        });
+        return;
+      }
+      const direction = rawDir.includes('sell') ? 'sell' : 'buy';
+      const timeframeRaw = parsed.timeframe == null ? '' : String(parsed.timeframe).trim();
+      const timeframe =
+        !timeframeRaw || /null|unknown|n\/a|none/i.test(timeframeRaw)
+          ? undefined
+          : timeframeRaw;
+
+      send(res, 200, {
+        ok: true,
+        demo: false,
+        accuracy: Math.round(accuracy),
+        symbol,
+        timeframe,
+        direction,
+        summary: parsed.summary || `Scan for ${symbol}`,
+      });
+      return;
+    }
+
+    if (pathname === '/api/scan/status' && req.method === 'GET') {
+      send(res, 200, {
+        configured: Boolean(
+          process.env.CHART_SCAN_API_KEY || process.env.OPENAI_API_KEY,
+        ),
+        model: process.env.CHART_SCAN_MODEL || 'gpt-4o',
+        url: process.env.CHART_SCAN_API_URL || 'https://api.openai.com/v1/chat/completions',
+      });
+      return;
+    }
+
+    // Proxy → MT5API RESTFul (broker search, ConnectEx, account, trading)
+    if (pathname.startsWith('/api/mt5')) {
+      const MT5_API_BASE = (
+        process.env.MT5_API_BASE || 'http://66.23.225.158'
+      ).replace(/\/$/, '');
+      const targetPath = pathname === '/api/mt5' ? '/' : pathname.slice('/api/mt5'.length);
+      const targetUrl = `${MT5_API_BASE}${targetPath}${url.search}`;
+      const method = req.method || 'GET';
+      const body =
+        method === 'GET' || method === 'HEAD' ? undefined : await readRawBody(req);
+      const headers = {
+        Accept: req.headers.accept || 'application/json, text/plain, */*',
+      };
+      if (req.headers['content-type']) {
+        headers['Content-Type'] = req.headers['content-type'];
+      }
+      try {
+        const upstream = await fetch(targetUrl, {
+          method,
+          headers,
+          body,
+        });
+        const buf = Buffer.from(await upstream.arrayBuffer());
+        const ct = upstream.headers.get('content-type') || 'application/json';
+        res.statusCode = upstream.status;
+        res.setHeader('Content-Type', ct);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,PUT,POST,OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.end(buf);
+      } catch (err) {
+        send(res, 502, {
+          error:
+            err instanceof Error
+              ? `MT5 bridge unreachable: ${err.message}`
+              : 'MT5 bridge unreachable',
+        });
+      }
       return;
     }
 

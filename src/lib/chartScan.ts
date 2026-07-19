@@ -93,7 +93,20 @@ export async function runChartScan(imageDataUrl: string): Promise<ScanApiResult>
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: imageDataUrl }),
     });
-    const data = (await res.json()) as ScanApiResult;
+    const text = await res.text();
+    let data: ScanApiResult;
+    try {
+      data = JSON.parse(text) as ScanApiResult;
+    } catch {
+      return {
+        ok: false,
+        accuracy: 0,
+        error:
+          res.status === 404
+            ? 'Chart Scanner API not deployed yet. Redeploy the latest build.'
+            : `Scan failed (${res.status})`,
+      };
+    }
     if (!res.ok) {
       return {
         ok: false,
