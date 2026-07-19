@@ -394,12 +394,6 @@ export function HomePage() {
               </button>
             </div>
 
-            <p style={{ textAlign: 'center', color: 'var(--electric)', marginTop: 12, fontWeight: 600 }}>
-              Trading: {bot.symbols.join(' · ')}
-            </p>
-            <p className="muted" style={{ textAlign: 'center', marginTop: 4 }}>
-              {bot.licenseKey ? `License: ${bot.licenseKey}` : 'No license connected'}
-            </p>
           </div>
 
           <nav className="lay-dock" aria-label="Main">
