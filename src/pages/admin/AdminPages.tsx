@@ -77,7 +77,7 @@ export function DashboardPage() {
 function Stat({ value, label, color }: { value: string; label: string; color: string }) {
   return (
     <div className="stat-card">
-      <div style={{ color, fontFamily: 'var(--font-body)', fontSize: 28, fontWeight: 700 }}>{value}</div>
+      <div style={{ color, fontFamily: 'var(--font-body)', fontSize: 18, fontWeight: 700 }}>{value}</div>
       <div className="muted">{label}</div>
     </div>
   );
@@ -294,7 +294,7 @@ export function GenerateLicensePage() {
             }}
           >
             <div className="muted">Latest key</div>
-            <strong style={{ color: 'var(--green)', fontSize: 22, letterSpacing: 1 }}>
+            <strong style={{ color: 'var(--green)', fontSize: 15, letterSpacing: 0.5 }}>
               {lastKey}
             </strong>
             <button
@@ -719,7 +719,7 @@ export function ApproveAdminsPage() {
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div>
-        <h2 className="title-blue" style={{ fontSize: 24, margin: 0 }}>Approve Admins</h2>
+        <h2 className="title-blue" style={{ fontSize: 17, margin: 0 }}>Approve Admins</h2>
         <p className="muted">Pending requests and admins already approved. Each admin gets their own empty portal.</p>
       </div>
 
@@ -774,7 +774,7 @@ export function SubscriptionsPage() {
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div>
-        <h2 className="title-blue" style={{ fontSize: 24, margin: 0 }}>Subscriptions</h2>
+        <h2 className="title-blue" style={{ fontSize: 17, margin: 0 }}>Subscriptions</h2>
         <p className="muted">
           New Lumo Edge registrations land here (saved on server — survives new preview links). Approve to unlock payment.
         </p>
