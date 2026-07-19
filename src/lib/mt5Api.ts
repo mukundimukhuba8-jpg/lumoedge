@@ -1,0 +1,142 @@
+/** Client for MT5API RESTFul (proxied via /api/mt5 → http://66.23.225.158) */
+
+const BASE = '/api/mt5';
+
+export type Mt5ServerResult = {
+  name: string;
+  logo_url?: string;
+  site?: string;
+  access?: string[];
+};
+
+export type Mt5Company = {
+  company: string;
+  results: Mt5ServerResult[];
+};
+
+export type Mt5AccountSummary = {
+  balance?: number;
+  credit?: number;
+  profit?: number;
+  equity?: number;
+  margin?: number;
+  freeMargin?: number;
+  marginLevel?: number;
+  leverage?: number;
+  currency?: string;
+};
+
+export type Mt5AccountDetails = {
+  login?: number;
+  type?: string;
+  userName?: string;
+  balance?: number;
+  leverage?: number;
+  email?: string;
+  [key: string]: unknown;
+};
+
+async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: {
+      Accept: 'application/json, text/plain, */*',
+      ...(init?.headers || {}),
+    },
+  });
+  return res;
+}
+
+async function readBody(res: Response): Promise<unknown> {
+  const text = await res.text();
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return trimmed;
+  }
+}
+
+export async function pingMt5(): Promise<boolean> {
+  try {
+    const res = await mt5Fetch('/Ping');
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Search existing broker companies / MT5 server names */
+export async function searchBrokers(company: string): Promise<Mt5Company[]> {
+  const q = company.trim();
+  if (q.length < 2) return [];
+  const res = await mt5Fetch(`/Search?company=${encodeURIComponent(q)}`);
+  const data = await readBody(res);
+  if (!res.ok) {
+    throw new Error(typeof data === 'string' ? data : 'Broker search failed');
+  }
+  return Array.isArray(data) ? (data as Mt5Company[]) : [];
+}
+
+/**
+ * Connect using MT5 terminal server name (e.g. RazorMarkets-Live).
+ * Returns session token for further /Account* calls.
+ */
+export async function connectEx(input: {
+  user: string | number;
+  password: string;
+  server: string;
+}): Promise<string> {
+  const params = new URLSearchParams({
+    user: String(input.user).trim(),
+    password: input.password,
+    server: input.server.trim(),
+  });
+  const res = await mt5Fetch(`/ConnectEx?${params.toString()}`);
+  const data = await readBody(res);
+  if (!res.ok) {
+    throw new Error(
+      typeof data === 'string'
+        ? data
+        : `Connect failed (${res.status})`,
+    );
+  }
+  const token = typeof data === 'string' ? data.trim() : String(data ?? '').trim();
+  if (!token || /error|fail|invalid/i.test(token)) {
+    throw new Error(token || 'Connect failed — no session token returned');
+  }
+  return token.replace(/^"|"$/g, '');
+}
+
+export async function checkConnect(id: string): Promise<boolean> {
+  const res = await mt5Fetch(`/CheckConnect?id=${encodeURIComponent(id)}`);
+  const data = await readBody(res);
+  return res.ok && String(data).toUpperCase().includes('OK');
+}
+
+export async function disconnectMt5(id: string): Promise<void> {
+  const res = await mt5Fetch(`/Disconnect?id=${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    const data = await readBody(res);
+    throw new Error(typeof data === 'string' ? data : 'Disconnect failed');
+  }
+}
+
+export async function accountSummary(id: string): Promise<Mt5AccountSummary> {
+  const res = await mt5Fetch(`/AccountSummary?id=${encodeURIComponent(id)}`);
+  const data = await readBody(res);
+  if (!res.ok) {
+    throw new Error(typeof data === 'string' ? data : 'AccountSummary failed');
+  }
+  return (data && typeof data === 'object' ? data : {}) as Mt5AccountSummary;
+}
+
+export async function accountDetails(id: string): Promise<Mt5AccountDetails> {
+  const res = await mt5Fetch(`/AccountDetails?id=${encodeURIComponent(id)}`);
+  const data = await readBody(res);
+  if (!res.ok) {
+    throw new Error(typeof data === 'string' ? data : 'AccountDetails failed');
+  }
+  return (data && typeof data === 'object' ? data : {}) as Mt5AccountDetails;
+}

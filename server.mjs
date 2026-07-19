@@ -8,6 +8,8 @@ const DIST = path.join(__dirname, 'dist');
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT || 4174);
+/** MT5API RESTFul — https://66.23.225.158/swagger/index.html */
+const MT5_API_BASE = (process.env.MT5_API_BASE || 'http://66.23.225.158').replace(/\/$/, '');
 
 const emptyDb = () => ({
   auth: { admins: [], admin: null },
@@ -256,6 +258,43 @@ const server = http.createServer(async (req, res) => {
       db.vault = Array.isArray(body) ? body : body.vault || db.vault;
       writeDb(db);
       sendJson(res, 200, db.vault);
+      return;
+    }
+
+    // Proxy → MT5API RESTFul (broker search, ConnectEx, account, trading)
+    if (pathname.startsWith('/api/mt5')) {
+      const targetPath = pathname === '/api/mt5' ? '/' : pathname.slice('/api/mt5'.length);
+      const targetUrl = `${MT5_API_BASE}${targetPath}${url.search}`;
+      const method = req.method || 'GET';
+      /** @type {Buffer[]} */
+      const chunks = [];
+      await new Promise((resolve, reject) => {
+        req.on('data', (c) => chunks.push(c));
+        req.on('end', resolve);
+        req.on('error', reject);
+      });
+      const rawBody = Buffer.concat(chunks);
+      const headers = {
+        Accept: req.headers.accept || 'application/json, text/plain, */*',
+      };
+      if (req.headers['content-type']) {
+        headers['Content-Type'] = req.headers['content-type'];
+      }
+      const upstream = await fetch(targetUrl, {
+        method,
+        headers,
+        body: method === 'GET' || method === 'HEAD' ? undefined : rawBody,
+      });
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      const ct = upstream.headers.get('content-type') || 'application/json';
+      res.writeHead(upstream.status, {
+        'Content-Type': ct,
+        'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      });
+      res.end(buf);
       return;
     }
 
