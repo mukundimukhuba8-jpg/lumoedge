@@ -16,6 +16,11 @@ import {
   pushDb,
 } from '../lib/remote';
 import {
+  findPrepaidClient,
+  isPrepaidEmail,
+  PREPAID_CLIENTS,
+} from '../lib/prepaidClients';
+import {
   emptyCustomMedia,
   normalizeCustomMedia,
   type MentorMediaItem,
@@ -429,13 +434,49 @@ type Ctx = {
   };
 };
 
+function prepaidAsClientRequests(): ClientRequest[] {
+  const now = new Date().toISOString();
+  return PREPAID_CLIENTS.map((c, i) => ({
+    id: `cli-prepaid-${String(i + 1).padStart(4, '0')}`,
+    email: c.email.toLowerCase(),
+    firstName: c.firstName,
+    lastName: c.lastName,
+    status: 'approved' as const,
+    createdAt: now,
+    notifiedAt: now,
+    paymentClaimed: true,
+    paymentClaimedAt: now,
+  }));
+}
+
+function mergeClientLists(...lists: ClientRequest[][]): ClientRequest[] {
+  const byEmail = new Map<string, ClientRequest>();
+  for (const list of lists) {
+    for (const c of list) {
+      const email = c.email.toLowerCase();
+      const prev = byEmail.get(email);
+      if (!prev) {
+        byEmail.set(email, { ...c, email });
+        continue;
+      }
+      const rank = (x: ClientRequest) =>
+        (x.status === 'approved' ? 2 : x.status === 'pending' ? 1 : 0) +
+        (x.paymentClaimed ? 1 : 0);
+      byEmail.set(email, rank(c) >= rank(prev) ? { ...prev, ...c, email } : prev);
+    }
+  }
+  return [...byEmail.values()].sort((a, b) =>
+    (b.paymentClaimedAt || b.createdAt).localeCompare(a.paymentClaimedAt || a.createdAt),
+  );
+}
+
 const AdminContext = createContext<Ctx | null>(null);
 const IMAGE_STORE = 'ub-web/ea-images-v1';
 
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(() => migrateAuth());
   const [store, setStore] = useState<StoreState>(() => migrateStore(migrateAuth().admins));
-  const [clients, setClients] = useState<ClientRequest[]>([]);
+  const [clients, setClients] = useState<ClientRequest[]>(() => prepaidAsClientRequests());
   const [booting, setBooting] = useState(true);
 
   // Hydrate from disk-backed API so data survives new preview links
@@ -485,7 +526,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           saveJSON(IMAGE_STORE, db.images);
         }
         if (Array.isArray(db.clients)) {
-          setClients(db.clients as ClientRequest[]);
+          const merged = mergeClientLists(
+            prepaidAsClientRequests(),
+            db.clients as ClientRequest[],
+          );
+          setClients(merged);
+          // Ensure prepaid list is mirrored on the shared DB when possible
+          void pushDb({ clients: merged }).catch(() => undefined);
+        } else {
+          const prepaid = prepaidAsClientRequests();
+          setClients(prepaid);
+          void pushDb({ clients: prepaid }).catch(() => undefined);
         }
       }
       setBooting(false);
@@ -500,7 +551,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     if (booting) return;
     const tick = async () => {
       const list = await fetchClients();
-      if (list) setClients(list as ClientRequest[]);
+      if (list) {
+        setClients(mergeClientLists(prepaidAsClientRequests(), list as ClientRequest[]));
+      }
     };
     void tick();
     const id = window.setInterval(tick, 2500);
@@ -665,30 +718,70 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       clientRequests: isSuper ? clients : [],
       submitClientRegistration: (input) => {
         const email = input.email.trim().toLowerCase();
+        const prepaid = findPrepaidClient(email);
         const existing =
           clients.find((c) => c.email === email) ||
           Object.values(store.workspaces)
             .flatMap((ws) => ws.clientRequests)
             .find((c) => c.email === email);
+
+        const asPaid = Boolean(prepaid || isPrepaidEmail(email));
         if (existing) {
-          setClients((prev) =>
-            prev.some((c) => c.id === existing.id) ? prev : [existing, ...prev],
-          );
+          const upgraded: ClientRequest = asPaid
+            ? {
+                ...existing,
+                firstName: input.firstName.trim() || existing.firstName,
+                lastName: input.lastName.trim() || existing.lastName,
+                status: 'approved',
+                paymentClaimed: true,
+                paymentClaimedAt: existing.paymentClaimedAt || new Date().toISOString(),
+              }
+            : existing;
+          setClients((prev) => {
+            const without = prev.filter((c) => c.email !== email);
+            return [upgraded, ...without];
+          });
           void postClient({
             email,
-            firstName: existing.firstName,
-            lastName: existing.lastName,
-          }).catch(() => undefined);
-          return existing;
+            firstName: upgraded.firstName,
+            lastName: upgraded.lastName,
+          })
+            .then(async (serverEntry) => {
+              if (asPaid) {
+                await patchClient(serverEntry.id || upgraded.id, {
+                  status: 'approved',
+                  paymentClaimed: true,
+                  paymentClaimedAt: upgraded.paymentClaimedAt,
+                }).catch(() => undefined);
+              }
+              setClients((prev) =>
+                mergeClientLists(prev, [
+                  {
+                    ...(serverEntry as ClientRequest),
+                    ...(asPaid
+                      ? {
+                          status: 'approved' as const,
+                          paymentClaimed: true,
+                          paymentClaimedAt: upgraded.paymentClaimedAt,
+                        }
+                      : null),
+                  } as ClientRequest,
+                ]),
+              );
+            })
+            .catch(() => undefined);
+          return upgraded;
         }
         const entry: ClientRequest = {
           id: `cli-${Date.now()}`,
           email,
-          firstName: input.firstName.trim(),
-          lastName: input.lastName.trim(),
-          status: 'pending',
+          firstName: input.firstName.trim() || prepaid?.firstName || 'Client',
+          lastName: input.lastName.trim() || prepaid?.lastName || '',
+          status: asPaid ? 'approved' : 'pending',
           createdAt: new Date().toISOString(),
           notifiedAt: new Date().toISOString(),
+          paymentClaimed: asPaid,
+          paymentClaimedAt: asPaid ? new Date().toISOString() : undefined,
         };
         setClients((prev) => [entry, ...prev.filter((c) => c.email !== email)]);
         const sid = SUPER_ADMIN.user.id;
@@ -705,7 +798,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             ...store.workspaces,
             [sid]: {
               ...superWs,
-              clientRequests: [entry, ...superWs.clientRequests],
+              clientRequests: [entry, ...superWs.clientRequests.filter((c) => c.email !== email)],
             },
           },
         });
@@ -714,10 +807,29 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           firstName: entry.firstName,
           lastName: entry.lastName,
         })
-          .then((serverEntry) => {
+          .then(async (serverEntry) => {
+            if (asPaid) {
+              await patchClient(serverEntry.id || entry.id, {
+                status: 'approved',
+                paymentClaimed: true,
+                paymentClaimedAt: entry.paymentClaimedAt,
+              }).catch(() => undefined);
+            }
             setClients((prev) => {
               const without = prev.filter((c) => c.email !== email);
-              return [serverEntry as ClientRequest, ...without];
+              return [
+                {
+                  ...(serverEntry as ClientRequest),
+                  ...(asPaid
+                    ? {
+                        status: 'approved' as const,
+                        paymentClaimed: true,
+                        paymentClaimedAt: entry.paymentClaimedAt,
+                      }
+                    : null),
+                } as ClientRequest,
+                ...without,
+              ];
             });
           })
           .catch(() => undefined);
@@ -760,6 +872,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       },
       claimClientPayment: async (email) => {
         const normalized = email.trim().toLowerCase();
+        const prepaid = findPrepaidClient(normalized);
         let current =
           clients.find((c) => c.email.toLowerCase() === normalized) ||
           Object.values(store.workspaces)
@@ -770,17 +883,31 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           try {
             current = (await postClient({
               email: normalized,
-              firstName: normalized.split('@')[0] || 'Client',
-              lastName: 'User',
+              firstName: prepaid?.firstName || normalized.split('@')[0] || 'Client',
+              lastName: prepaid?.lastName || 'User',
             })) as ClientRequest;
           } catch {
-            return null;
+            if (prepaid) {
+              current = {
+                id: `cli-prepaid-local-${Date.now()}`,
+                email: normalized,
+                firstName: prepaid.firstName,
+                lastName: prepaid.lastName,
+                status: 'approved',
+                createdAt: new Date().toISOString(),
+                paymentClaimed: true,
+              };
+            } else {
+              return null;
+            }
           }
         }
 
         const claimedAt = new Date().toISOString();
+        const autoApprove = Boolean(prepaid || isPrepaidEmail(normalized) || current.status === 'approved');
         const updated: ClientRequest = {
           ...current,
+          status: autoApprove ? 'approved' : current.status,
           paymentClaimed: true,
           paymentClaimedAt: claimedAt,
         };
@@ -798,11 +925,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }));
         try {
           const server = await patchClient(current.id, {
+            status: autoApprove ? 'approved' : undefined,
             paymentClaimed: true,
             paymentClaimedAt: claimedAt,
           });
           if (server) {
-            const merged = { ...updated, ...server } as ClientRequest;
+            const merged = { ...updated, ...server, status: autoApprove ? 'approved' : server.status } as ClientRequest;
             setClients((prev) => {
               const without = prev.filter((c) => c.email.toLowerCase() !== normalized);
               return [merged, ...without];

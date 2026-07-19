@@ -4,14 +4,23 @@ import { CreditCard } from 'lucide-react';
 import { SubscriptionPaymentInfo } from '../../components/SubscriptionPaymentInfo';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
+import { isPrepaidEmail } from '../../lib/prepaidClients';
 
 export function WaitingApprovalPage() {
   const navigate = useNavigate();
-  const { user, setAccessStatus, accessStatus } = useApp();
+  const { user, setAccessStatus, accessStatus, markPaid } = useApp();
   const { getClientByEmail, claimClientPayment } = useAdmin();
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState<'ok' | 'warn' | 'err'>('warn');
+
+  const goToLicense = () => {
+    if (accessStatus === 'pending' || accessStatus === 'approved') {
+      setAccessStatus('approved');
+    }
+    markPaid();
+    navigate('/activate', { replace: true });
+  };
 
   useEffect(() => {
     if (!user) {
@@ -20,7 +29,9 @@ export function WaitingApprovalPage() {
     }
     const tick = () => {
       const client = getClientByEmail(user.email);
-      if (client?.status === 'approved') {
+      // Only auto-advance after approval when already past payment claim,
+      // or when Super Admin approved a non-prepaid pending user.
+      if (client?.status === 'approved' && client.paymentClaimed && !isPrepaidEmail(user.email)) {
         if (accessStatus === 'pending') setAccessStatus('approved');
         navigate('/activate', { replace: true });
       }
@@ -36,18 +47,22 @@ export function WaitingApprovalPage() {
     setMessage('');
     try {
       const client = getClientByEmail(user.email);
-      if (client?.status === 'approved') {
-        if (accessStatus === 'pending') setAccessStatus('approved');
-        navigate('/activate', { replace: true });
-        return;
-      }
-      if (client?.status === 'rejected') {
+      const prepaid = isPrepaidEmail(user.email);
+
+      if (client?.status === 'rejected' && !prepaid) {
         setMessageTone('err');
         setMessage('Your registration was rejected. Contact lumoedge08@gmail.com.');
         return;
       }
 
       const claimed = await claimClientPayment(user.email);
+
+      // Prepaid list + approved clients go straight to license key
+      if (prepaid || claimed?.status === 'approved' || client?.status === 'approved') {
+        goToLicense();
+        return;
+      }
+
       const subject = encodeURIComponent('Lumo Edge — Payment proof / pending approval');
       const body = encodeURIComponent(
         `I have paid the Lumo Edge subscription (R600).\n\n` +
@@ -70,7 +85,10 @@ export function WaitingApprovalPage() {
   };
 
   const client = user ? getClientByEmail(user.email) : undefined;
-  const status = (client?.status ?? 'pending').toUpperCase();
+  const prepaid = user ? isPrepaidEmail(user.email) : false;
+  const status = prepaid
+    ? 'PAID'
+    : (client?.status ?? 'pending').toUpperCase();
   const paidPending = Boolean(client?.paymentClaimed) && status === 'PENDING';
 
   return (
@@ -108,9 +126,11 @@ export function WaitingApprovalPage() {
             gap: 6,
             padding: '5px 10px',
             borderRadius: 999,
-            border: '1px solid rgba(245,158,11,0.4)',
-            background: 'rgba(245,158,11,0.1)',
-            color: 'var(--orange)',
+            border: prepaid
+              ? '1px solid rgba(57,255,20,0.4)'
+              : '1px solid rgba(245,158,11,0.4)',
+            background: prepaid ? 'rgba(57,255,20,0.1)' : 'rgba(245,158,11,0.1)',
+            color: prepaid ? 'var(--green)' : 'var(--orange)',
             fontSize: 11,
             fontWeight: 700,
             letterSpacing: '0.04em',
@@ -118,6 +138,7 @@ export function WaitingApprovalPage() {
         >
           STATUS: {status}
           {paidPending ? ' · PAYMENT SENT' : ''}
+          {prepaid ? ' · PRE-APPROVED' : ''}
         </div>
       </div>
 
@@ -147,6 +168,22 @@ export function WaitingApprovalPage() {
         </div>
       ) : null}
 
+      {prepaid ? (
+        <div
+          className="glow-card"
+          style={{
+            marginTop: 16,
+            borderColor: 'rgba(57,255,20,0.4)',
+            background: 'rgba(57,255,20,0.1)',
+            color: '#86efac',
+            fontWeight: 650,
+            lineHeight: 1.5,
+          }}
+        >
+          Your payment is already on file. Tap I&apos;ve Paid to continue to your license key.
+        </div>
+      ) : null}
+
       <button
         type="button"
         className="btn btn-blue"
@@ -160,10 +197,12 @@ export function WaitingApprovalPage() {
         disabled={checking}
         onClick={() => void onPaidCheck()}
       >
-        {checking ? 'Saving…' : "I've Paid"}
+        {checking ? 'Saving…' : prepaid ? "I've Paid — Continue" : "I've Paid"}
       </button>
       <p className="muted" style={{ marginTop: 12, fontSize: 12, textAlign: 'center' }}>
-        After Super Admin approval, the next page asks for your license key.
+        {prepaid
+          ? 'Next step: enter your license key from your admin.'
+          : 'After Super Admin approval, the next page asks for your license key.'}
       </p>
     </div>
   );
