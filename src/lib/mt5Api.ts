@@ -36,6 +36,22 @@ export type Mt5AccountDetails = {
   [key: string]: unknown;
 };
 
+export type Mt5OpenedOrder = {
+  ticket?: number;
+  symbol?: string;
+  orderType?: string;
+  type?: string;
+  lots?: number;
+  volume?: number;
+  openPrice?: number;
+  closePrice?: number;
+  profit?: number;
+  swap?: number;
+  openTime?: string;
+  comment?: string;
+  [key: string]: unknown;
+};
+
 async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
   const ac = new AbortController();
   const timer = window.setTimeout(() => ac.abort(), 10_000);
@@ -231,6 +247,16 @@ export async function accountDetails(id: string): Promise<Mt5AccountDetails> {
     throw new Error(typeof data === 'string' ? data : 'AccountDetails failed');
   }
   return (data && typeof data === 'object' ? data : {}) as Mt5AccountDetails;
+}
+
+/** Open positions / orders for the connected account */
+export async function openedOrders(id: string): Promise<Mt5OpenedOrder[]> {
+  const res = await mt5Fetch(`/OpenedOrders?id=${encodeURIComponent(id)}`);
+  const data = await readBody(res);
+  if (!res.ok) {
+    throw new Error(typeof data === 'string' ? data : 'OpenedOrders failed');
+  }
+  return Array.isArray(data) ? (data as Mt5OpenedOrder[]) : [];
 }
 
 export type Mt5OrderOperation = 'Buy' | 'Sell';

@@ -22,15 +22,26 @@ import {
 } from '../../lib/interfaceStyle';
 import { resolveCustomBackdrop } from '../../lib/mentorMedia';
 import {
+  accountDetails,
   accountSummary,
-  checkConnect,
   connectEx,
   disconnectMt5,
+  openedOrders,
   searchBrokers,
+  type Mt5AccountDetails,
   type Mt5AccountSummary,
   type Mt5Company,
+  type Mt5OpenedOrder,
   type Mt5ServerResult,
 } from '../../lib/mt5Api';
+import {
+  clearMt5Session,
+  saveMt5Session,
+  startMt5KeepAlive,
+  stopMt5KeepAlive,
+  subscribeMt5Status,
+  type Mt5SessionInfo,
+} from '../../lib/mt5Session';
 import { loadJSON, saveJSON } from '../../lib/storage';
 
 type ClientMt5 = {
@@ -107,6 +118,9 @@ export function MetaTraderPage() {
   const [connecting, setConnecting] = useState(false);
   const [status, setStatus] = useState('');
   const [summary, setSummary] = useState<Mt5AccountSummary | null>(null);
+  const [details, setDetails] = useState<Mt5AccountDetails | null>(null);
+  const [positions, setPositions] = useState<Mt5OpenedOrder[]>([]);
+  const [conn, setConn] = useState<Mt5SessionInfo | null>(null);
   const searchTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -122,13 +136,49 @@ export function MetaTraderPage() {
   useEffect(() => {
     const saved = loadMt5(user?.email);
     setForm(saved);
-    if (saved.connected && saved.token) {
-      void refreshAccount(saved.token);
-    }
     // Prefill Razor servers from live API
     void runSearch('Razor', false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
+
+  // Live connection status — keep-alive pings + auto-reconnect in mt5Session
+  useEffect(() => {
+    if (!user?.email) return;
+    const unsub = subscribeMt5Status(user.email, (info) => {
+      setConn(info);
+      if (info.state === 'connected' && info.token) {
+        setForm((prev) =>
+          prev.connected && prev.token === info.token
+            ? prev
+            : { ...prev, connected: true, token: info.token },
+        );
+        void refreshAccount(info.token);
+      }
+      if (info.state === 'disconnected') {
+        setSummary(null);
+        setPositions([]);
+        setForm((prev) =>
+          prev.connected ? { ...prev, connected: false, token: '' } : prev,
+        );
+      }
+    });
+    startMt5KeepAlive(user.email);
+    return () => {
+      unsub();
+      stopMt5KeepAlive(user.email);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.email]);
+
+  // Refresh balance/equity/positions every 20s while connected
+  useEffect(() => {
+    if (conn?.state !== 'connected' || !conn.token) return;
+    const id = window.setInterval(() => {
+      void refreshAccount(conn.token);
+    }, 20_000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conn?.state, conn?.token]);
 
   const persist = (next: ClientMt5) => {
     setForm(next);
@@ -200,17 +250,16 @@ export function MetaTraderPage() {
 
   const refreshAccount = async (token: string) => {
     try {
-      const ok = await checkConnect(token);
-      if (!ok) {
-        persist({ ...form, connected: false, token: '' });
-        setSummary(null);
-        setStatus('Session expired — connect again');
-        return;
-      }
-      const s = await accountSummary(token);
-      setSummary(s);
+      const [s, d, p] = await Promise.allSettled([
+        accountSummary(token),
+        accountDetails(token),
+        openedOrders(token),
+      ]);
+      if (s.status === 'fulfilled') setSummary(s.value);
+      if (d.status === 'fulfilled') setDetails(d.value);
+      if (p.status === 'fulfilled') setPositions(p.value);
     } catch {
-      // keep UI connected; summary optional
+      // keep-alive loop handles dead sessions
     }
   };
 
@@ -238,13 +287,18 @@ export function MetaTraderPage() {
         password: '',
       };
       persist(next);
-      setStatus('Connected');
-      try {
-        const s = await accountSummary(token);
-        setSummary(s);
-      } catch {
-        setSummary(null);
+      // Save encrypted credentials so keep-alive can auto-reconnect
+      if (user?.email) {
+        await saveMt5Session(user.email, {
+          server: form.server.trim(),
+          login: form.login.trim(),
+          token,
+          password: form.password,
+        });
+        startMt5KeepAlive(user.email);
       }
+      setStatus('Connected');
+      void refreshAccount(token);
     } catch (e) {
       setStatus(e instanceof Error ? e.message : 'Connection failed');
       alert(e instanceof Error ? e.message : 'Connection failed');
@@ -264,6 +318,7 @@ export function MetaTraderPage() {
         // still clear local
       }
     }
+    if (user?.email) clearMt5Session(user.email);
     persist({
       ...form,
       connected: false,
@@ -271,8 +326,25 @@ export function MetaTraderPage() {
       password: '',
     });
     setSummary(null);
+    setPositions([]);
+    setDetails(null);
     setStatus('Disconnected');
   };
+
+  const connLabel =
+    conn?.state === 'connected'
+      ? 'Connected'
+      : conn?.state === 'reconnecting'
+        ? 'Reconnecting…'
+        : conn?.state === 'connecting'
+          ? 'Checking…'
+          : 'Disconnected';
+  const connColor =
+    conn?.state === 'connected'
+      ? '#34d399'
+      : conn?.state === 'reconnecting' || conn?.state === 'connecting'
+        ? '#fbbf24'
+        : '#f87171';
 
   const bg =
     customBg?.kind === 'video'
@@ -323,10 +395,36 @@ export function MetaTraderPage() {
           {form.connected ? (
             <div className="mt5-connected">
               <div className="mt5-connected-box">
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginBottom: 6,
+                  }}
+                >
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      background: connColor,
+                      boxShadow: `0 0 8px ${connColor}`,
+                      display: 'inline-block',
+                    }}
+                  />
+                  <strong style={{ color: connColor }}>{connLabel}</strong>
+                </div>
                 <strong>MT5 account connected</strong>
                 <div className="muted" style={{ marginTop: 6, fontSize: 13 }}>
-                  · {form.login} on {form.server}
+                  Account {details?.login ?? form.login} · {form.server}
                 </div>
+                {details?.userName ? (
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    {String(details.userName)}
+                  </div>
+                ) : null}
                 {summary ? (
                   <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.5 }}>
                     <div>
@@ -338,13 +436,19 @@ export function MetaTraderPage() {
                     </div>
                     <div className="muted">
                       Equity {summary.equity?.toFixed?.(2) ?? '—'} · Profit{' '}
-                      {summary.profit?.toFixed?.(2) ?? '—'} · Leverage 1:
+                      {summary.profit?.toFixed?.(2) ?? '—'} · Free margin{' '}
+                      {summary.freeMargin?.toFixed?.(2) ?? '—'} · Leverage 1:
                       {summary.leverage ?? '—'}
                     </div>
                   </div>
                 ) : null}
+                {conn?.lastError ? (
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#fbbf24' }}>
+                    {conn.lastError}
+                  </div>
+                ) : null}
                 <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.4 }}>
-                  Use the red button above to unlink this broker
+                  Auto-reconnect is on — use the red button above to unlink
                 </div>
               </div>
               {eaImage ? (
@@ -518,6 +622,58 @@ export function MetaTraderPage() {
             </>
           )}
         </div>
+
+        {form.connected && positions.length ? (
+          <div className="mt5-card" style={{ marginTop: 12 }}>
+            <h2 className="mt5-card-title">Open Positions ({positions.length})</h2>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {positions.slice(0, 10).map((p, i) => {
+                const profit = Number(p.profit ?? 0);
+                const side = String(p.orderType || p.type || '').toUpperCase();
+                return (
+                  <div
+                    key={String(p.ticket ?? i)}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '8px 10px',
+                      borderRadius: 10,
+                      background: 'rgba(10,14,24,0.55)',
+                      border: '1px solid rgba(59,130,246,0.25)',
+                      fontSize: 13,
+                    }}
+                  >
+                    <div>
+                      <strong>{String(p.symbol || '—')}</strong>{' '}
+                      <span
+                        style={{
+                          color: side.includes('SELL') ? '#f87171' : '#34d399',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {side || '—'}
+                      </span>
+                      <div className="muted" style={{ fontSize: 11 }}>
+                        #{String(p.ticket ?? '—')} · {Number(p.lots ?? p.volume ?? 0)} lots
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        color: profit >= 0 ? '#34d399' : '#f87171',
+                      }}
+                    >
+                      {profit >= 0 ? '+' : ''}
+                      {profit.toFixed(2)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
 
         <button
           type="button"

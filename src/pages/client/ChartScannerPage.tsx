@@ -36,6 +36,7 @@ import {
   checkConnect,
   orderSend,
 } from '../../lib/mt5Api';
+import { getMt5Token } from '../../lib/mt5Session';
 import { loadJSON } from '../../lib/storage';
 
 type RevealPhase = 'idle' | 'scanning' | 'symbol' | 'direction' | 'accuracy';
@@ -50,6 +51,9 @@ type ClientMt5Saved = {
 
 function loadClientMt5Token(email: string | undefined): string {
   if (!email) return '';
+  // Prefer live keep-alive session token (auto-reconnect refreshes it)
+  const live = getMt5Token(email);
+  if (live) return live;
   const all = loadJSON<Record<string, ClientMt5Saved>>(MT5_KEY, {});
   const saved = all[email.toLowerCase()];
   if (!saved?.connected) return '';
