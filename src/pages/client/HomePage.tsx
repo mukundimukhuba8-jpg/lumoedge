@@ -31,7 +31,6 @@ export function HomePage() {
   const [symbolsOpen, setSymbolsOpen] = useState(false);
   const [licenseOpen, setLicenseOpen] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
-  const [scannerOpen, setScannerOpen] = useState(false);
   const [stylePrefs, setStylePrefs] = useState<InterfacePrefs>(() => loadInterfacePrefs());
   const [localSymbols, setLocalSymbols] = useState(bot.symbols);
   const [licenseKey, setLicenseKey] = useState(bot.licenseKey);
@@ -183,7 +182,7 @@ export function HomePage() {
     onDelete: confirmDelete,
     onHomeTap,
     onMetaTrader: () => navigate('/app/metatrader'),
-    onScanner: () => setScannerOpen(true),
+    onScanner: () => navigate('/app/scanner'),
     onAvatarTap: () => setEaInfoOpen(true),
   };
 
@@ -401,7 +400,11 @@ export function HomePage() {
               <span className="lay-dock-ico"><Home size={20} /></span>
               <span>Home</span>
             </button>
-            <button type="button" className="lay-dock-item" onClick={() => setScannerOpen(true)}>
+            <button
+              type="button"
+              className="lay-dock-item"
+              onClick={() => navigate('/app/scanner')}
+            >
               <span className="lay-dock-ico"><ScanSearch size={20} /></span>
               <span>Scanner</span>
             </button>
@@ -543,33 +546,9 @@ export function HomePage() {
         mentorBgUrl={eaImage}
         onOpenScanner={() => {
           setStyleOpen(false);
-          setScannerOpen(true);
+          navigate('/app/scanner');
         }}
       />
-
-      {scannerOpen ? (
-        <Modal title="Chart Scanner" onClose={() => setScannerOpen(false)}>
-          <p className="muted" style={{ marginTop: 0 }}>
-            AI-powered chart analysis &amp; auto trade. Upload a chart screenshot to scan setups.
-          </p>
-          <div
-            style={{
-              border: '1.5px dashed rgba(59,130,246,0.45)',
-              borderRadius: 16,
-              padding: 28,
-              textAlign: 'center',
-              color: 'var(--electric)',
-              marginBottom: 14,
-              background: 'rgba(59,130,246,0.06)',
-            }}
-          >
-            Scanner ready — full AI scan ships next.
-          </div>
-          <button className="btn btn-blue" type="button" onClick={() => setScannerOpen(false)}>
-            Close
-          </button>
-        </Modal>
-      ) : null}
     </div>
   );
 }

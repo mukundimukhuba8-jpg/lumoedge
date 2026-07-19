@@ -15,6 +15,7 @@ import {
 } from './pages/admin/AdminPages';
 import { AdminShell } from './pages/admin/AdminShell';
 import { ActivateLicensePage } from './pages/client/ActivateLicensePage';
+import { ChartScannerPage } from './pages/client/ChartScannerPage';
 import { HomePage } from './pages/client/HomePage';
 import { MetaTraderPage } from './pages/client/MetaTraderPage';
 import { RegisterPage } from './pages/client/RegisterPage';
@@ -76,6 +77,14 @@ export default function App() {
           element={
             <ClientAppGate>
               <MetaTraderPage />
+            </ClientAppGate>
+          }
+        />
+        <Route
+          path="/app/scanner"
+          element={
+            <ClientAppGate>
+              <ChartScannerPage />
             </ClientAppGate>
           }
         />

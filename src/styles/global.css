@@ -1609,3 +1609,322 @@ a {
 @keyframes mt5-spin {
   to { transform: rotate(360deg); }
 }
+
+/* —— Chart Scanner —— */
+.scan-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.scan-page {
+  flex: 1;
+  padding: 14px 16px 12px;
+  position: relative;
+  overflow: auto;
+}
+
+.scan-header {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.scan-x {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--glass-border);
+}
+
+.scan-title {
+  margin: 0;
+  text-align: center;
+  font-size: 26px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.scan-title .accent {
+  color: var(--electric);
+}
+
+.scan-ai {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--cyan);
+}
+
+.scan-ai-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(103, 232, 249, 0.15);
+  border: 1px solid rgba(103, 232, 249, 0.45);
+  color: var(--cyan);
+}
+
+.scan-card {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
+  border: 1.4px solid var(--glass-border);
+  border-radius: 18px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  box-shadow: inset 0 1px 0 var(--glass-shine), 0 8px 24px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+}
+
+.scan-count {
+  text-align: center;
+  font-weight: 600;
+}
+
+.scan-count strong {
+  color: var(--electric);
+  font-size: 18px;
+}
+
+.scan-info {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.scan-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.scan-mini-label {
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.scan-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.scan-stepper button {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--electric);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  display: grid;
+  place-items: center;
+}
+
+.scan-stepper strong {
+  font-size: 22px;
+}
+
+.scan-lot {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 800;
+  text-align: center;
+  outline: none;
+}
+
+.scan-auto {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.scan-toggle {
+  width: 52px;
+  height: 30px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  position: relative;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.scan-toggle span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.scan-toggle.on {
+  background: rgba(59, 130, 246, 0.35);
+  border-color: var(--electric);
+}
+
+.scan-toggle.on span {
+  transform: translateX(22px);
+  background: var(--electric);
+}
+
+.scan-stage {
+  text-align: center;
+  padding: 10px 0 6px;
+}
+
+.scan-radar {
+  width: 110px;
+  height: 110px;
+  margin: 8px auto 14px;
+  border-radius: 50%;
+  border: 2px dashed rgba(59, 130, 246, 0.45);
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at center, rgba(59, 130, 246, 0.18), transparent 65%);
+  box-shadow: 0 0 30px rgba(56, 189, 248, 0.15);
+}
+
+.scan-radar.active {
+  animation: scan-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes scan-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.06); opacity: 0.85; }
+}
+
+.scan-upload-label {
+  color: var(--electric);
+  font-weight: 800;
+  margin: 0 0 12px;
+}
+
+.scan-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.scan-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 12px;
+  border-radius: 16px;
+  border: 1.6px dashed rgba(59, 130, 246, 0.55);
+  background: rgba(59, 130, 246, 0.08);
+  color: var(--electric);
+  font-weight: 800;
+}
+
+.scan-action:disabled {
+  opacity: 0.45;
+}
+
+.scan-hint {
+  margin: 12px 0 4px;
+  font-size: 12px;
+}
+
+.scan-result {
+  margin-top: 8px;
+}
+
+.scan-accuracy {
+  font-size: 42px;
+  font-weight: 800;
+  color: var(--electric);
+  line-height: 1.1;
+  margin: 4px 0 8px;
+}
+
+.scan-accuracy-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.scan-accuracy-bar > div {
+  height: 100%;
+  background: linear-gradient(90deg, var(--cyan), var(--electric));
+  border-radius: 999px;
+  transition: width 0.05s linear;
+}
+
+.scan-preview {
+  width: 100%;
+  margin-top: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--glass-border);
+  max-height: 220px;
+  object-fit: cover;
+  display: block;
+}
+
+.scan-history {
+  margin-top: 8px;
+  margin-bottom: 56px;
+}
+
+.scan-history-title {
+  font-weight: 800;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.scan-history-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.scan-history-item {
+  position: relative;
+  padding: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  background: transparent;
+}
+
+.scan-history-item img {
+  width: 100%;
+  height: 84px;
+  object-fit: cover;
+  display: block;
+}
+
+.scan-history-item span {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--electric);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 999px;
+}

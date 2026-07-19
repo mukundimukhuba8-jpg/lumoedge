@@ -526,7 +526,7 @@ export function MetaTraderPage() {
         <button
           type="button"
           className="lay-dock-item"
-          onClick={() => alert('Open Chart Scanner from Home → Style → Chart Scanner')}
+          onClick={() => navigate('/app/scanner')}
         >
           <span className="lay-dock-ico">
             <ScanSearch size={20} />
