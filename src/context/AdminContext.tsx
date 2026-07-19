@@ -1148,7 +1148,21 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
 
         // Always refresh vault from server before validating
-        const remote = await fetchDb();
+        let remote = await fetchDb();
+        // Fallback: read committed cloud DB directly (works when Vercel memory is empty)
+        if (!remote?.vault?.length) {
+          try {
+            const rawRes = await fetch(
+              `https://raw.githubusercontent.com/mukundimukhuba8-jpg/lumoedge/main/cloud-data/db.json?t=${Date.now()}`,
+              { cache: 'no-store' },
+            );
+            if (rawRes.ok) {
+              remote = (await rawRes.json()) as Awaited<ReturnType<typeof fetchDb>>;
+            }
+          } catch {
+            // ignore
+          }
+        }
         if (remote) {
           if (Array.isArray(remote.revokedKeys)) {
             saveRevokedKeysLocal([

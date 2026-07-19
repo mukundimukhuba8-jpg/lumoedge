@@ -43,10 +43,22 @@ export function keyFingerprint(key: string) {
   return key.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+/** Map look-alike chars so phone OCR / font mix-ups still match */
+export function canonicalKeyFingerprint(key: string) {
+  return keyFingerprint(key)
+    .replace(/S/g, '5')
+    .replace(/B/g, '8')
+    .replace(/Z/g, '2')
+    .replace(/8/g, '6'); // 8 and 6 often confused on mobile screens
+}
+
 export function keysMatch(a: string, b: string) {
   const fa = keyFingerprint(a);
   const fb = keyFingerprint(b);
-  return Boolean(fa && fb && fa === fb);
+  if (fa && fb && fa === fb) return true;
+  const ca = canonicalKeyFingerprint(a);
+  const cb = canonicalKeyFingerprint(b);
+  return Boolean(ca && cb && ca === cb);
 }
 
 export function normalizeLicenseKey(key: string) {
@@ -124,7 +136,7 @@ export function upsertVault(entry: VaultLicense) {
 export function findInVault(key: string): VaultLicense | undefined {
   const fp = keyFingerprint(key);
   if (!fp || fp === 'LUMO') return undefined;
-  return loadVault().find((e) => keyFingerprint(e.key) === fp);
+  return loadVault().find((e) => keysMatch(e.key, key));
 }
 
 /** Permanently remove a key from the vault (not soft-delete). */

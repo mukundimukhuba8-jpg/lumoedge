@@ -6,8 +6,37 @@
   "store": {
     "workspaces": {
       "LM-004821": {
-        "eas": [],
-        "licenses": [],
+        "eas": [
+          {
+            "id": "ea-seed-1",
+            "name": "UNLIMITED BULLv1",
+            "symbols": [
+              "XAUUSD"
+            ],
+            "lotSize": 0.01,
+            "direction": "both",
+            "imageUrl": ""
+          }
+        ],
+        "licenses": [
+          {
+            "id": "lic-seed-mukundi-1",
+            "key": "LUMO-6CLG-U5YM-7NCP",
+            "eaId": "ea-seed-1",
+            "eaName": "UNLIMITED BULLv1",
+            "eaImage": "",
+            "mainText": "LUMO EDGE",
+            "symbols": [
+              "XAUUSD"
+            ],
+            "customMedia": [],
+            "ownerAdminId": "LM-004821",
+            "clientName": "Mukundi",
+            "clientEmail": "mukundimukhuba8@gmail.com",
+            "duration": "1 Year",
+            "status": "active"
+          }
+        ],
         "clientRequests": [
           {
             "id": "cli-prepaid-0001",
@@ -2613,7 +2642,25 @@
       }
     }
   },
-  "vault": [],
+  "vault": [
+    {
+      "id": "lic-seed-mukundi-1",
+      "key": "LUMO-6CLG-U5YM-7NCP",
+      "email": "mukundimukhuba8@gmail.com",
+      "clientName": "Mukundi",
+      "eaName": "UNLIMITED BULLv1",
+      "mainText": "LUMO EDGE",
+      "symbols": [
+        "XAUUSD"
+      ],
+      "eaImage": "",
+      "customMedia": [],
+      "duration": "1 Year",
+      "ownerAdminId": "LM-004821",
+      "eaId": "ea-seed-1",
+      "status": "active"
+    }
+  ],
   "images": {},
   "clients": [
     {

@@ -55,34 +55,58 @@ function clone(v) {
 
 let memoryDb = emptyDb();
 
+async function loadFromGitHubRaw() {
+  const rawRes = await fetch(
+    `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/${PATH}?t=${Date.now()}`,
+    { cache: 'no-store' },
+  );
+  if (!rawRes.ok) return null;
+  const raw = await rawRes.text();
+  return normalizeDb(JSON.parse(raw || '{}'));
+}
+
 async function loadDb() {
   const t = token();
+  // Prefer durable GitHub file — works on Vercel even without a write token
+  try {
+    const fromRaw = await loadFromGitHubRaw();
+    if (fromRaw) {
+      memoryDb = clone(fromRaw);
+      if (!t) {
+        return { db: clone(memoryDb), sha: null, backend: 'github-raw' };
+      }
+    }
+  } catch {
+    // continue to API / memory
+  }
+
+  if (!t) {
+    return { db: clone(memoryDb), sha: null, backend: memoryDb.vault?.length ? 'github-raw' : 'memory' };
+  }
+
   const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}`;
   try {
     const res = await fetch(url, { headers: ghHeaders() });
     if (res.status === 404) {
-      if (!t) {
-        const rawRes = await fetch(
-          `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/${PATH}?t=${Date.now()}`,
-        );
-        if (rawRes.ok) {
-          memoryDb = normalizeDb(JSON.parse((await rawRes.text()) || '{}'));
-          return { db: clone(memoryDb), sha: null, backend: 'github-raw' };
-        }
-      }
-      return { db: emptyDb(), sha: null, backend: t ? 'github' : 'memory' };
+      return { db: memoryDb.clients?.length ? clone(memoryDb) : emptyDb(), sha: null, backend: 'github' };
     }
     if (!res.ok) {
-      if (!t) return { db: clone(memoryDb), sha: null, backend: 'memory' };
+      if (memoryDb.vault?.length || memoryDb.clients?.length) {
+        return { db: clone(memoryDb), sha: null, backend: 'github-raw' };
+      }
       throw new Error(`GitHub read failed ${res.status}`);
     }
     const data = await res.json();
     const raw = Buffer.from(String(data.content || '').replace(/\n/g, ''), 'base64').toString(
       'utf8',
     );
-    return { db: normalizeDb(JSON.parse(raw || '{}')), sha: data.sha, backend: 'github' };
+    const db = normalizeDb(JSON.parse(raw || '{}'));
+    memoryDb = clone(db);
+    return { db, sha: data.sha, backend: 'github' };
   } catch (err) {
-    if (!t) return { db: clone(memoryDb), sha: null, backend: 'memory' };
+    if (memoryDb.vault?.length || memoryDb.clients?.length) {
+      return { db: clone(memoryDb), sha: null, backend: 'github-raw' };
+    }
     throw err;
   }
 }
