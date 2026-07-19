@@ -76,10 +76,26 @@ export function ChartScannerPage() {
   );
   const [status, setStatus] = useState('');
   const [tradeStatus, setTradeStatus] = useState('');
+  const [aiLive, setAiLive] = useState<boolean | null>(null);
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const uploadRef = useRef<HTMLInputElement | null>(null);
   const animRef = useRef<number | null>(null);
   const scanning = phase === 'scanning';
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch('/api/scan/status')
+      .then((r) => r.json())
+      .then((data: { configured?: boolean }) => {
+        if (!cancelled) setAiLive(Boolean(data?.configured));
+      })
+      .catch(() => {
+        if (!cancelled) setAiLive(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const executeMt5Trades = async (item: ScanHistoryItem) => {
     const token = loadClientMt5Token(user?.email);
@@ -272,7 +288,9 @@ export function ChartScannerPage() {
             <span className="scan-ai-dot">
               <Bot size={16} />
             </span>
-            <span>AI Active</span>
+            <span>
+              {aiLive == null ? 'Checking…' : aiLive ? 'AI Live' : 'Demo mode'}
+            </span>
           </div>
         </header>
 
@@ -283,9 +301,35 @@ export function ChartScannerPage() {
           </strong>
         </div>
 
+        {aiLive === false ? (
+          <div
+            className="scan-card"
+            style={{
+              borderColor: 'rgba(248,113,113,0.55)',
+              color: '#fecaca',
+              fontSize: 13,
+              lineHeight: 1.45,
+            }}
+          >
+            <strong style={{ color: '#fff' }}>Demo assistance only</strong>
+            <div style={{ marginTop: 6 }}>
+              OpenAI key is not on the live server yet. In Vercel → Settings →
+              Environment Variables, add{' '}
+              <code style={{ color: '#fff' }}>CHART_SCAN_API_KEY</code> for{' '}
+              <strong>Production</strong>, then Redeploy. Confirm at{' '}
+              <code style={{ color: '#fff' }}>/api/scan/status</code> shows{' '}
+              <code style={{ color: '#fff' }}>configured: true</code>.
+            </div>
+          </div>
+        ) : null}
+
         <div className="scan-card scan-info">
           <Sparkles size={18} color="var(--electric)" />
-          <span>AI auto-detects symbol &amp; timeframe directly from your chart image.</span>
+          <span>
+            {aiLive
+              ? 'AI reads the exact symbol & timeframe from your chart image.'
+              : 'Demo picks a random symbol until CHART_SCAN_API_KEY is set on Vercel.'}
+          </span>
         </div>
 
         <div className="scan-row">
