@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { CreditCard } from 'lucide-react';
 import { SubscriptionPaymentInfo } from '../../components/SubscriptionPaymentInfo';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
@@ -28,7 +29,7 @@ export function WaitingApprovalPage() {
     return () => window.clearInterval(id);
   }, [user, getClientByEmail, navigate, setAccessStatus, accessStatus]);
 
-  const onCheckStatus = () => {
+  const onPaidCheck = () => {
     if (!user) return;
     setChecking(true);
     setMessage('');
@@ -41,50 +42,88 @@ export function WaitingApprovalPage() {
     if (client?.status === 'rejected') {
       setMessage('Your registration was rejected. Contact Super Admin.');
     } else {
-      setMessage('Still pending approval. Pay the subscription above, then check again.');
+      setMessage(
+        'Payment received note: still waiting for Super Admin approval. After approval you will enter your license key.',
+      );
     }
     window.setTimeout(() => setChecking(false), 400);
   };
 
   const client = user ? getClientByEmail(user.email) : undefined;
+  const status = (client?.status ?? 'pending').toUpperCase();
 
   return (
-    <div className="page" style={{ textAlign: 'center', paddingTop: 64 }}>
-      <h1 className="title-blue" style={{ fontSize: 18 }}>
-        Waiting for approval
-      </h1>
-      <p className="muted" style={{ marginTop: 12, lineHeight: 1.5 }}>
-        Your registration was sent to Super Admin
-        <br />
-        <strong style={{ color: 'var(--electric)' }}>mukundimukhuba8@gmail.com</strong>
-      </p>
-      <div className="glow-card" style={{ marginTop: 24, textAlign: 'left' }}>
-        <div className="muted">Account</div>
-        <strong>
-          {user?.firstName} {user?.lastName}
-        </strong>
-        <div className="muted">{user?.email}</div>
-        <div style={{ marginTop: 12, color: 'var(--orange)', fontWeight: 700 }}>
-          Status: {(client?.status ?? 'pending').toUpperCase()}
+    <div className="page" style={{ paddingTop: 36, paddingBottom: 28 }}>
+      <div style={{ textAlign: 'center' }}>
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            margin: '0 auto 14px',
+            borderRadius: 16,
+            border: '1.5px solid rgba(59,130,246,0.85)',
+            display: 'grid',
+            placeItems: 'center',
+            boxShadow: '0 0 28px rgba(59,130,246,0.55)',
+            background: 'rgba(14,18,32,0.9)',
+          }}
+        >
+          <CreditCard color="#3b82f6" size={28} />
+        </div>
+        <h1
+          className="title-blue"
+          style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em', margin: 0 }}
+        >
+          Payment Required
+        </h1>
+        <p className="muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 13 }}>
+          One-time payment to activate your Lumo Edge access.
+        </p>
+        <div
+          style={{
+            marginTop: 12,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '5px 10px',
+            borderRadius: 999,
+            border: '1px solid rgba(245,158,11,0.4)',
+            background: 'rgba(245,158,11,0.1)',
+            color: 'var(--orange)',
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+          }}
+        >
+          STATUS: {status}
         </div>
       </div>
-      <SubscriptionPaymentInfo />
+
+      <SubscriptionPaymentInfo referenceEmail={user?.email} />
+
       {message ? (
-        <p className="muted" style={{ marginTop: 16, lineHeight: 1.5 }}>
+        <p className="muted" style={{ marginTop: 14, lineHeight: 1.5, textAlign: 'center' }}>
           {message}
         </p>
       ) : null}
+
       <button
         type="button"
         className="btn btn-blue"
-        style={{ marginTop: 20 }}
+        style={{
+          marginTop: 18,
+          borderRadius: 999,
+          padding: '13px 16px',
+          fontSize: 14,
+          fontWeight: 700,
+        }}
         disabled={checking}
-        onClick={onCheckStatus}
+        onClick={onPaidCheck}
       >
-        {checking ? 'Checking…' : 'Check status'}
+        {checking ? 'Checking…' : "I've Paid"}
       </button>
-      <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
-        After approval you will enter your license key on the next page.
+      <p className="muted" style={{ marginTop: 12, fontSize: 12, textAlign: 'center' }}>
+        After approval, the next page asks for your license key.
       </p>
     </div>
   );
