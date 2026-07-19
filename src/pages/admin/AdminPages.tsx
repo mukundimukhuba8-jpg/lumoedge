@@ -988,7 +988,7 @@ export function SubscriptionsPage() {
       </div>
 
       <div className="glow-card" style={{ boxShadow: 'none', borderColor: 'rgba(255,255,255,0.08)' }}>
-        <h3 style={{ marginTop: 0 }}>Approved — ready for payment / license</h3>
+        <h3 style={{ marginTop: 0 }}>Approved — paid / ready for license</h3>
         {approved.length === 0 ? (
           <p className="muted">No approved clients yet.</p>
         ) : (
@@ -998,6 +998,11 @@ export function SubscriptionsPage() {
                 {c.firstName} {c.lastName}
               </strong>
               <div className="muted">{c.email}</div>
+              {c.paymentClaimed ? (
+                <div style={{ color: 'var(--green)', fontWeight: 700, fontSize: 12, marginTop: 4 }}>
+                  PAID
+                </div>
+              ) : null}
               <button
                 className="btn btn-ghost"
                 type="button"
