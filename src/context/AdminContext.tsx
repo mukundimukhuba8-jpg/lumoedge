@@ -1413,7 +1413,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           }
           const resolvedPatch = {
             ...patch,
-            eaImage: imagePatch ?? patch.eaImage ?? '',
+            eaImage: (imagePatch || patch.eaImage || '') as string,
           };
           if (resolvedPatch.eaImage) {
             saveEaImage(`profile-${adminId}`, resolvedPatch.eaImage);
@@ -1422,6 +1422,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             const nextProfile: AdminProfile = {
               ...ws.profile,
               ...resolvedPatch,
+              eaImage: resolvedPatch.eaImage || ws.profile.eaImage || '',
               customMedia: normalizeCustomMedia(
                 resolvedPatch.customMedia !== undefined
                   ? resolvedPatch.customMedia
