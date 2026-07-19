@@ -325,9 +325,17 @@ const server = http.createServer(async (req, res) => {
       }
 
       const prompt =
-        'You are a trading chart analyst. From this MT5 chart screenshot, detect symbol and timeframe if visible, ' +
-        'decide trade direction as buy or sell, and estimate setup confidence as accuracy_percent between 70 and 90. ' +
-        'Reply ONLY compact JSON: {"symbol":"...","timeframe":"...","direction":"buy|sell","accuracy_percent":78,"summary":"one short sentence"}';
+        'You analyze MT5 / trading chart screenshots.\n' +
+        'CRITICAL RULES FOR SYMBOL:\n' +
+        '- Read the EXACT trading symbol text shown on the chart UI (title bar, market watch, or chart header).\n' +
+        '- Do NOT guess, invent, or substitute a different pair (never default to XAUUSD/EURUSD unless that text is clearly visible).\n' +
+        '- If the symbol text is not clearly readable on the image, set symbol to null and symbol_visible to false.\n' +
+        '- Copy the symbol characters as shown (e.g. XAUUSD, EURUSD.r, NAS100, BTCUSD).\n' +
+        'Also read timeframe only if visible (M1,M5,M15,H1,H4,D1, etc), else null.\n' +
+        'Decide direction buy or sell from the chart structure only.\n' +
+        'accuracy_percent must be an integer from 70 to 90.\n' +
+        'Reply ONLY compact JSON:\n' +
+        '{"symbol":"EXACT_OR_null","symbol_visible":true,"timeframe":"M15_or_null","direction":"buy|sell","accuracy_percent":78,"summary":"one short sentence"}';
 
       const upstream = await fetch(CHART_SCAN_API_URL, {
         method: 'POST',
@@ -337,13 +345,13 @@ const server = http.createServer(async (req, res) => {
         },
         body: JSON.stringify({
           model: CHART_SCAN_MODEL,
-          temperature: 0.2,
+          temperature: 0,
           messages: [
             {
               role: 'user',
               content: [
                 { type: 'text', text: prompt },
-                { type: 'image_url', image_url: { url: image } },
+                { type: 'image_url', image_url: { url: image, detail: 'high' } },
               ],
             },
           ],
@@ -376,27 +384,52 @@ const server = http.createServer(async (req, res) => {
         parsed = {};
       }
 
+      const symbolVisible = parsed.symbol_visible !== false;
+      let symbol = parsed.symbol == null ? '' : String(parsed.symbol).trim();
+      if (
+        !symbolVisible ||
+        !symbol ||
+        /null|unknown|n\/a|none|guess/i.test(symbol)
+      ) {
+        sendJson(res, 422, {
+          ok: false,
+          accuracy: 0,
+          error:
+            'Could not read the symbol from this chart. Upload a clearer MT5 screenshot showing the pair name.',
+        });
+        return;
+      }
+      // Normalize common chart formatting but keep the same instrument
+      symbol = symbol.replace(/\s+/g, '').toUpperCase();
+
       let accuracy = Number(parsed.accuracy_percent ?? parsed.accuracy ?? 0);
       if (!Number.isFinite(accuracy) || accuracy < 70 || accuracy > 90) {
         accuracy = 70 + Math.floor(Math.random() * 21);
       }
       const rawDir = String(parsed.direction || parsed.side || '').toLowerCase();
-      const direction = rawDir.includes('sell')
-        ? 'sell'
-        : rawDir.includes('buy')
-          ? 'buy'
-          : Math.random() > 0.5
-            ? 'buy'
-            : 'sell';
+      if (!rawDir.includes('sell') && !rawDir.includes('buy')) {
+        sendJson(res, 422, {
+          ok: false,
+          accuracy: 0,
+          error: 'Could not determine BUY/SELL from this chart. Try another screenshot.',
+        });
+        return;
+      }
+      const direction = rawDir.includes('sell') ? 'sell' : 'buy';
+      const timeframeRaw = parsed.timeframe == null ? '' : String(parsed.timeframe).trim();
+      const timeframe =
+        !timeframeRaw || /null|unknown|n\/a|none/i.test(timeframeRaw)
+          ? undefined
+          : timeframeRaw;
 
       sendJson(res, 200, {
         ok: true,
         demo: false,
         accuracy: Math.round(accuracy),
-        symbol: parsed.symbol || undefined,
-        timeframe: parsed.timeframe || undefined,
+        symbol,
+        timeframe,
         direction,
-        summary: parsed.summary || 'Chart scan complete.',
+        summary: parsed.summary || `Scan for ${symbol}`,
       });
       return;
     }
