@@ -1,6 +1,6 @@
 /** Mentor Custom media — 2 profile + 3 background slots (image/video only). */
 
-import { firebaseUploadDataUrl, firebaseUploadFile } from './firebaseDb';
+import { firebaseUploadDataUrl, firebaseUploadFile, firebaseSaveImage } from './firebaseDb';
 import { isFirebaseConfigured } from './firebase';
 
 export type MentorMediaSlotId =
@@ -113,14 +113,16 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-/** Upload data URL — Firebase Storage first, then /api fallbacks. */
+/** Upload data URL — Firebase Storage / RTDB first, then /api fallbacks. */
 export async function uploadMentorMedia(
   key: string,
   dataUrl: string,
 ): Promise<{ url: string }> {
   if (isFirebaseConfigured()) {
-    const url = await firebaseUploadDataUrl(`media/${key}`, dataUrl);
-    if (url) return { url };
+    const hosted = await firebaseUploadDataUrl(`media/${key}`, dataUrl);
+    if (hosted) return { url: hosted };
+    const saved = await firebaseSaveImage(key, dataUrl);
+    if (saved) return { url: dataUrl };
   }
 
   const health = await fetch('/api/health')

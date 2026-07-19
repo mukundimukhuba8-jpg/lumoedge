@@ -46,6 +46,7 @@ import {
   upsertVault,
   type VaultLicense,
 } from '../lib/storage';
+import { firebaseSaveImage } from '../lib/firebaseDb';
 
 export type AdminRole = 'super' | 'admin' | 'pending';
 
@@ -1369,7 +1370,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             (m.slot === 'profile-1' || m.slot === 'profile-2') &&
             m.kind === 'image' &&
             m.url &&
-            !String(m.url).includes('lumo-logo'),
+            !String(m.url).includes('lumo-logo') &&
+            !String(m.url).startsWith('blob:'),
         )?.url;
         const candidateImages = [
           license.eaImage,
@@ -1384,8 +1386,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         let resolvedImage = '';
         for (const c of candidateImages) {
           const v = String(c || '').trim();
-          if (!v || v.includes('lumo-logo')) continue;
-          // Skip bare /api/images refs that were never uploaded (would 404 → fake logo)
+          if (!v || v.includes('lumo-logo') || v.startsWith('blob:')) continue;
+          if (v.startsWith('img:')) {
+            const id = v.slice(4);
+            const embedded = remoteImages[id] || getEaImage(id) || getEaImage(v);
+            if (embedded) {
+              resolvedImage = embedded;
+              break;
+            }
+            continue;
+          }
           if (v.startsWith('/api/images/')) {
             const imgKey = decodeURIComponent(v.replace('/api/images/', '').split('?')[0]);
             const embedded = remoteImages[imgKey] || getEaImage(imgKey);
@@ -1393,9 +1403,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               resolvedImage = embedded;
               break;
             }
-            // Keep URL only if we know the blob exists in the remote images map
             if (remoteImages[imgKey]) {
-              resolvedImage = v;
+              resolvedImage = remoteImages[imgKey];
               break;
             }
             continue;
@@ -1408,6 +1417,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             resolvedImage = v;
             break;
           }
+        }
+        // Last resort: dedicated Firebase images map for this mentor
+        if (!resolvedImage && profileAdminId && remoteImages[`profile-${profileAdminId}`]) {
+          resolvedImage = remoteImages[`profile-${profileAdminId}`];
         }
         const resolvedName =
           license.eaName || ownerEa?.name || ownerWs?.profile.eaDisplayName || 'Lumo Edge';
@@ -1518,24 +1531,60 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         if (!adminId) return;
         void (async () => {
           let imagePatch = patch.eaImage;
-          // Prefer stable /api/images URL so clients can load the same asset
+          if (imagePatch && imagePatch.startsWith('blob:')) {
+            // Ignore temporary object URLs — wait for real upload result
+            imagePatch = undefined;
+          }
           if (imagePatch && imagePatch.startsWith('data:')) {
             imagePatch = await publishEaImage(`profile-${adminId}`, imagePatch);
           } else if (imagePatch) {
             saveEaImage(`profile-${adminId}`, imagePatch);
+            if (imagePatch.startsWith('data:')) {
+              await firebaseSaveImage(`profile-${adminId}`, imagePatch);
+            }
           }
           const resolvedPatch = {
             ...patch,
             eaImage: (imagePatch || patch.eaImage || '') as string,
           };
-          if (resolvedPatch.eaImage) {
+          // Never persist blob: previews into the shared DB
+          if (String(resolvedPatch.eaImage || '').startsWith('blob:')) {
+            resolvedPatch.eaImage = '';
+          }
+          if (resolvedPatch.eaImage?.startsWith('data:')) {
+            saveEaImage(`profile-${adminId}`, resolvedPatch.eaImage);
+            await firebaseSaveImage(`profile-${adminId}`, resolvedPatch.eaImage);
+          } else if (resolvedPatch.eaImage) {
             saveEaImage(`profile-${adminId}`, resolvedPatch.eaImage);
           }
+
+          // Resolve custom media data URLs into durable copies
+          if (resolvedPatch.customMedia) {
+            const nextMedia = [];
+            for (const item of normalizeCustomMedia(resolvedPatch.customMedia)) {
+              if (item.url.startsWith('blob:')) continue;
+              if (item.url.startsWith('data:')) {
+                const mediaKeyId = `${adminId}-${item.slot}`;
+                await firebaseSaveImage(mediaKeyId, item.url);
+                saveEaImage(mediaKeyId, item.url);
+                nextMedia.push({ ...item, url: item.url });
+              } else {
+                nextMedia.push(item);
+              }
+            }
+            resolvedPatch.customMedia = nextMedia;
+          }
+
           patchWorkspace(adminId, (ws) => {
             const nextProfile: AdminProfile = {
               ...ws.profile,
               ...resolvedPatch,
-              eaImage: resolvedPatch.eaImage || ws.profile.eaImage || '',
+              eaImage:
+                resolvedPatch.eaImage ||
+                (String(ws.profile.eaImage || '').startsWith('blob:')
+                  ? ''
+                  : ws.profile.eaImage) ||
+                '',
               customMedia: normalizeCustomMedia(
                 resolvedPatch.customMedia !== undefined
                   ? resolvedPatch.customMedia

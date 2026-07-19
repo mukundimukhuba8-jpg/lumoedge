@@ -533,14 +533,18 @@ export function ProfilePage() {
     setForm((prev) => ({ ...prev, eaImage: previewUrl }));
     try {
       setSavingImage(true);
-      const dataUrl = await compressImageFile(file, 640, 0.78);
+      // Keep under ~100KB so Firebase Realtime Database accepts the write
+      const dataUrl = await compressImageFile(file, 480, 0.72);
       const imageId = `profile-${admin.id}`;
       const url = await publishEaImage(imageId, dataUrl);
-      const next = { ...form, eaImage: url || dataUrl };
-      setForm(next);
-      updateProfile(next);
+      const finalUrl = url || dataUrl;
+      setForm((prev) => {
+        const next = { ...prev, eaImage: finalUrl };
+        updateProfile(next);
+        return next;
+      });
     } catch {
-      setImageError('Could not process image. Try a smaller JPG/PNG.');
+      setImageError('Could not save image. Try a smaller JPG/PNG.');
       setForm((prev) => ({ ...prev, eaImage: profile.eaImage || '' }));
     } finally {
       URL.revokeObjectURL(previewUrl);
@@ -575,26 +579,30 @@ export function ProfilePage() {
         const isBg = slot.startsWith('bg-');
         const dataUrl = await compressImageFile(
           file,
-          isBg ? 1920 : 1400,
-          isBg ? 0.92 : 0.88,
+          isBg ? 1280 : 480,
+          isBg ? 0.85 : 0.72,
         );
         ({ url } = await uploadMentorMedia(key, dataUrl));
       }
-      const customMedia = upsertMediaSlot(form.customMedia, {
-        slot,
-        kind: check.kind,
-        url,
+      setForm((prev) => {
+        const customMedia = upsertMediaSlot(prev.customMedia, {
+          slot,
+          kind: check.kind,
+          url,
+        });
+        const next = {
+          ...prev,
+          customMedia,
+          eaImage:
+            (slot === 'profile-1' || slot === 'profile-2') && check.kind === 'image'
+              ? url
+              : prev.eaImage.startsWith('blob:')
+                ? url
+                : prev.eaImage,
+        };
+        updateProfile(next);
+        return next;
       });
-      const next = {
-        ...form,
-        customMedia,
-        eaImage:
-          (slot === 'profile-1' || slot === 'profile-2') && check.kind === 'image'
-            ? url
-            : form.eaImage,
-      };
-      setForm(next);
-      updateProfile(next);
     } catch (e) {
       setMediaError(e instanceof Error ? e.message : 'Could not upload media.');
       setForm((prev) => ({

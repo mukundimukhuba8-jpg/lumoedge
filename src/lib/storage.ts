@@ -1,5 +1,10 @@
 import type { MentorMediaItem } from './mentorMedia';
-import { firebaseUploadDataUrl } from './firebaseDb';
+import {
+  firebaseFetchImage,
+  firebaseSaveImage,
+  firebaseUploadDataUrl,
+  isFirebaseImageRef,
+} from './firebaseDb';
 import { isFirebaseConfigured } from './firebase';
 
 export function loadJSON<T>(key: string, fallback: T): T {
@@ -225,15 +230,26 @@ export function saveEaImage(id: string, dataUrl: string) {
   }
 }
 
-/** Upload profile/EA image and return a stable public URL for client cards */
+/** Upload profile/EA image — Firebase Storage, else RTDB images map, else data URL */
 export async function publishEaImage(id: string, dataUrl: string): Promise<string> {
   if (!id || !dataUrl) return '';
   saveEaImage(id, dataUrl);
 
-  // Prefer Firebase Storage — durable HTTPS URL for every client device
   if (isFirebaseConfigured()) {
-    const url = await firebaseUploadDataUrl(`images/${id}.jpg`, dataUrl);
-    if (url) return url;
+    const hosted = await firebaseUploadDataUrl(`images/${id}.jpg`, dataUrl);
+    if (hosted) {
+      saveEaImage(id, hosted);
+      void pushDbImages(id, hosted);
+      return hosted;
+    }
+    const refId = await firebaseSaveImage(id, dataUrl);
+    if (refId) {
+      saveEaImage(id, dataUrl);
+      saveEaImage(refId, dataUrl);
+      void pushDbImages(id, dataUrl);
+      // Return data URL so <img> works immediately; RTDB also has a copy
+      return dataUrl;
+    }
   }
 
   try {
@@ -252,15 +268,62 @@ export async function publishEaImage(id: string, dataUrl: string): Promise<strin
   } catch {
     // fall through
   }
-  // Embed compressed data URL so home cards always show the photo
   return dataUrl;
+}
+
+async function pushDbImages(id: string, dataUrl: string) {
+  try {
+    await fetch('/api/db', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ images: { [id]: dataUrl } }),
+    });
+  } catch {
+    // ignore
+  }
+  try {
+    const { firebasePushDb } = await import('./firebaseDb');
+    await firebasePushDb({ images: { [id]: dataUrl } });
+  } catch {
+    // ignore
+  }
+}
+
+/** Resolve img: refs / API paths / data URLs to something <img> can display */
+export async function resolveDisplayImage(value: string): Promise<string> {
+  const v = String(value || '').trim();
+  if (!v) return '';
+  if (v.startsWith('data:') || v.startsWith('blob:') || v.startsWith('http')) return v;
+  if (isFirebaseImageRef(v) || v.startsWith('img:')) {
+    const id = v.replace(/^img:/, '');
+    const fromLocal = getEaImage(id) || getEaImage(`img:${id}`);
+    if (fromLocal) return fromLocal;
+    const fromFb = await firebaseFetchImage(id);
+    if (fromFb) {
+      saveEaImage(id, fromFb);
+      return fromFb;
+    }
+  }
+  if (v.startsWith('/api/images/')) {
+    try {
+      const res = await fetch(v);
+      if (res.ok) {
+        const blob = await res.blob();
+        return URL.createObjectURL(blob);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return v.startsWith('/') ? v : '';
 }
 
 export function getEaImage(id: string): string {
   if (!id) return '';
   try {
     const all = loadJSON<Record<string, string>>(IMAGE_STORE, {});
-    return all[id] || '';
+    const key = id.replace(/^img:/, '');
+    return all[id] || all[key] || all[`img:${key}`] || '';
   } catch {
     return '';
   }

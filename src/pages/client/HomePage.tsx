@@ -38,10 +38,36 @@ export function HomePage() {
     refreshBranding,
   } = useApp();
   const { openPortal, claimLicense } = useAdmin();
-  // Real mentor profile only — never the default app robot logo
+  // Profile circles vs hero cover — both use mentor branding when available
   const profileAvatar = resolveProfileImage(bot.imageUrl, bot.customMedia);
-  const eaImage = profileAvatar || bot.imageUrl || '';
-  const heroImage = profileAvatar || bot.imageUrl || '/bull-hero.jpg';
+  const coverImage = (() => {
+    const raw = String(bot.imageUrl || '').trim();
+    if (raw && !raw.includes('lumo-logo') && !raw.startsWith('blob:')) return raw;
+    return profileAvatar || '';
+  })();
+  const [displayCover, setDisplayCover] = useState(coverImage || '/bull-hero.jpg');
+  const [displayAvatar, setDisplayAvatar] = useState(profileAvatar);
+  const eaImage = coverImage;
+  const heroImage = displayCover || '/bull-hero.jpg';
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { resolveDisplayImage } = await import('../../lib/storage');
+      const cover = coverImage
+        ? (await resolveDisplayImage(coverImage)) || coverImage
+        : '';
+      const avatar = profileAvatar
+        ? (await resolveDisplayImage(profileAvatar)) || profileAvatar
+        : '';
+      if (cancelled) return;
+      setDisplayCover(cover || '/bull-hero.jpg');
+      setDisplayAvatar(avatar);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [coverImage, profileAvatar]);
   const [symbolsOpen, setSymbolsOpen] = useState(false);
   const [licenseOpen, setLicenseOpen] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
@@ -215,7 +241,7 @@ export function HomePage() {
 
   const layoutActions = {
     eaTitle,
-    eaImage: profileAvatar || eaImage,
+    eaImage: displayAvatar || eaImage,
     backdropUrl: platformBgUrl,
     backdropKind: platformBgKind,
     mainText: bot.mainText || eaTitle,
@@ -242,7 +268,7 @@ export function HomePage() {
       {fxClass ? <div className={`iface-fx ${fxClass}`} aria-hidden /> : null}
 
       {/* Floating profile avatar — only when mentor uploaded a real photo */}
-      {stylePrefs.layout !== 'vortex' && profileAvatar ? (
+      {stylePrefs.layout !== 'vortex' && displayAvatar ? (
         <button
           type="button"
           ref={floatRef}
@@ -270,7 +296,7 @@ export function HomePage() {
           }}
         >
           <img
-            src={profileAvatar}
+            src={displayAvatar}
             alt=""
             width={56}
             height={56}
@@ -357,9 +383,9 @@ export function HomePage() {
             </div>
 
             <div className="pill home-status-pill">
-              {profileAvatar ? (
+              {displayAvatar ? (
                 <img
-                  src={profileAvatar}
+                  src={displayAvatar}
                   width={36}
                   height={36}
                   style={{ borderRadius: '50%', objectFit: 'cover' }}
@@ -538,9 +564,9 @@ export function HomePage() {
       {eaInfoOpen ? (
         <Modal title="EA Status" onClose={() => setEaInfoOpen(false)}>
           <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
-            {profileAvatar ? (
+            {displayAvatar ? (
               <img
-                src={profileAvatar}
+                src={displayAvatar}
                 alt=""
                 width={64}
                 height={64}
@@ -582,7 +608,7 @@ export function HomePage() {
         onClose={() => setStyleOpen(false)}
         prefs={stylePrefs}
         onChange={updateStylePrefs}
-        avatarUrl={profileAvatar || ''}
+        avatarUrl={displayAvatar || ''}
         mentorBgUrl={heroImage}
         mentorMedia={bot.customMedia}
         onOpenScanner={() => {

@@ -427,6 +427,39 @@ export async function firebaseUploadDataUrl(
   }
 }
 
+/** Durable image store in Realtime Database (works even when Storage is not enabled). */
+export async function firebaseSaveImage(
+  id: string,
+  dataUrl: string,
+): Promise<string | null> {
+  if (!isFirebaseConfigured() || !id || !dataUrl) return null;
+  try {
+    const key = id.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
+    await set(ref(getFirebaseDb(), `${ROOT}/images/${key}`), dataUrl);
+    // Also mirror into the images map via a light merge write
+    return `img:${key}`;
+  } catch (err) {
+    console.warn('[firebase] saveImage failed', err);
+    return null;
+  }
+}
+
+export async function firebaseFetchImage(id: string): Promise<string> {
+  if (!isFirebaseConfigured() || !id) return '';
+  try {
+    const key = id.replace(/^img:/, '').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const snap = await get(ref(getFirebaseDb(), `${ROOT}/images/${key}`));
+    const val = snap.exists() ? snap.val() : '';
+    return typeof val === 'string' ? val : '';
+  } catch {
+    return '';
+  }
+}
+
+export function isFirebaseImageRef(value: string | undefined): boolean {
+  return Boolean(value && String(value).startsWith('img:'));
+}
+
 export async function firebaseHealthy(): Promise<boolean> {
   if (!isFirebaseConfigured()) return false;
   try {
