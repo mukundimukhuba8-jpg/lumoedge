@@ -226,7 +226,7 @@ async function syncPortalBrandingToClients(
     });
   }
 
-  // Update live client sessions so home refreshes without re-activating the key
+    // Update live client sessions so home refreshes without re-activating the key
   try {
     const db = await fetchDb();
     const sessions = {
@@ -244,13 +244,14 @@ async function syncPortalBrandingToClients(
         const bot = ((prev as { bot?: Record<string, unknown> }).bot ||
           {}) as Record<string, unknown>;
         const key = String(bot.licenseKey || '');
+        // Match by license key when present; otherwise still push branding to assigned email
         if (key && !keysMatch(key, lic.key)) continue;
         sessions[email] = {
           ...prev,
           accessStatus: 'licensed',
           bot: {
             ...bot,
-            licenseKey: lic.key,
+            licenseKey: key || lic.key,
             imageUrl: imageRef || String(bot.imageUrl || ''),
             displayName: lic.eaName || String(bot.displayName || ''),
             name: String(lic.eaName || bot.name || '')

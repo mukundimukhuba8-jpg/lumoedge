@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Copy, Plus, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { resolveProfileImage } from '../../lib/mentorMedia';
-import { compressImageFile, getEaImage, publishEaImage } from '../../lib/storage';
+import { compressImageFile, getEaImage } from '../../lib/storage';
 import { Placeholder } from './AdminShell';
 
 function isRealImage(url?: string): boolean {
@@ -623,15 +623,19 @@ export function ProfilePage() {
 
   useEffect(() => {
     const raw = resolveProfileImage(profile.eaImage) || profile.eaImage;
-    const eaImage =
+    const resolved =
       displayImageSrc(raw) ||
-      (isRealImage(raw) && !raw.startsWith('img:') ? raw : '');
+      (isRealImage(raw) && !String(raw).startsWith('img:') ? String(raw) : '');
     setForm((prev) => {
-      // Keep a freshly uploaded preview if store still only has img: ref
-      if (!eaImage && prev.eaImage && prev.eaImage.startsWith('data:')) {
-        return { ...profile, eaImage: prev.eaImage };
-      }
-      return { ...profile, eaImage };
+      // Keep local preview while remote store only has img: / empty ref
+      const keepPreview =
+        prev.eaImage &&
+        (prev.eaImage.startsWith('data:') || prev.eaImage.startsWith('blob:')) &&
+        (!resolved || resolved.startsWith('img:'));
+      return {
+        ...profile,
+        eaImage: keepPreview ? prev.eaImage : resolved || prev.eaImage || '',
+      };
     });
   }, [profile]);
 
@@ -648,22 +652,28 @@ export function ProfilePage() {
     try {
       setSavingImage(true);
       const dataUrl = await compressImageFile(file, 480, 0.72);
-      const imageId = `profile-${admin.id}`;
-      const url = await publishEaImage(imageId, dataUrl);
-      const stored = url?.startsWith('img:') ? url : url || `img:${imageId}`;
+      // Show the compressed image immediately so upload never looks like it "vanished"
       setForm((prev) => ({ ...prev, eaImage: dataUrl }));
+      // Pass data URL into updateProfile so Firebase + every existing license get the bytes
       await updateProfile({
         ...form,
-        eaImage: stored.startsWith('img:') ? stored : dataUrl,
+        eaImage: dataUrl,
       });
+      setForm((prev) => ({ ...prev, eaImage: dataUrl }));
       setImageSavedMsg(
         'Saved — synced to all your license keys and licensed clients.',
       );
-    } catch {
-      setImageError('Could not save image. Try a smaller JPG/PNG.');
+    } catch (err) {
+      setImageError(
+        err instanceof Error
+          ? err.message
+          : 'Could not save image. Try a smaller JPG/PNG.',
+      );
       setForm((prev) => ({
         ...prev,
-        eaImage: isRealImage(profile.eaImage) ? displayImageSrc(profile.eaImage) || profile.eaImage : '',
+        eaImage: isRealImage(profile.eaImage)
+          ? displayImageSrc(profile.eaImage) || profile.eaImage
+          : '',
       }));
     } finally {
       URL.revokeObjectURL(previewUrl);
