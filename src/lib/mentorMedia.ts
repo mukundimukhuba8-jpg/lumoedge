@@ -110,45 +110,92 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-/** Upload data URL to server media store; returns a stable URL path. */
+/** Upload data URL — uses /api/images (Vercel) with /api/media fallback (local). */
 export async function uploadMentorMedia(
   key: string,
   dataUrl: string,
 ): Promise<{ url: string }> {
-  const res = await fetch('/api/media', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, dataUrl }),
-  });
-  if (!res.ok) {
+  const health = await fetch('/api/health')
+    .then((r) => r.json())
+    .catch(() => null as { durable?: boolean } | null);
+
+  // Primary: shared images store (works on Vercel + local)
+  try {
+    const res = await fetch(`/api/images/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataUrl }),
+    });
+    if (res.ok) {
+      // Only use API URL when durable — otherwise return data URL so clients see the image
+      if (health?.durable) {
+        const data = (await res.json()) as { url?: string };
+        return { url: data.url || `/api/images/${encodeURIComponent(key)}` };
+      }
+      return { url: dataUrl };
+    }
+  } catch {
+    // try media endpoint next
+  }
+
+  try {
+    const res = await fetch('/api/media', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, dataUrl }),
+    });
+    if (res.ok) {
+      if (health?.durable) {
+        const data = (await res.json()) as { url: string };
+        if (data.url) return data;
+      }
+      return { url: dataUrl };
+    }
     const err = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new Error(err?.error || 'Upload failed');
+  } catch (e) {
+    if (e instanceof Error && e.message !== 'Upload failed') {
+      // last resort: keep local data URL so the portal still shows the asset
+      return { url: dataUrl };
+    }
+    throw e instanceof Error ? e : new Error('Upload failed');
   }
-  const data = (await res.json()) as { url: string };
-  if (!data.url) throw new Error('Upload failed');
-  return data;
 }
 
-/** Upload original File as binary (needed for videos — browsers need Range streaming). */
+/** Upload original File (videos prefer binary; images fall back to data URL). */
 export async function uploadMentorMediaFile(
   key: string,
   file: File,
 ): Promise<{ url: string; mime: string }> {
-  const res = await fetch('/api/media/binary', {
-    method: 'POST',
-    headers: {
-      'Content-Type': file.type || 'application/octet-stream',
-      'X-Media-Key': key,
-    },
-    body: file,
-  });
-  if (!res.ok) {
-    const err = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(err?.error || 'Upload failed');
+  const mime = file.type || 'application/octet-stream';
+
+  // Try local binary media endpoint first (Range streaming for video)
+  try {
+    const res = await fetch('/api/media/binary', {
+      method: 'POST',
+      headers: {
+        'Content-Type': mime,
+        'X-Media-Key': key,
+      },
+      body: file,
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { url: string; mime?: string };
+      if (data.url) return { url: data.url, mime: data.mime || mime };
+    }
+  } catch {
+    // fall through to data-URL path (Vercel)
   }
-  const data = (await res.json()) as { url: string; mime?: string };
-  if (!data.url) throw new Error('Upload failed');
-  return { url: data.url, mime: data.mime || file.type };
+
+  // Vercel / serverless: store as data URL in images DB (keep under ~2.5MB)
+  if (file.size > 2_500_000) {
+    throw new Error(
+      'File too large for cloud upload (max ~2.5 MB). Use a shorter MP4 or compress the image.',
+    );
+  }
+  const dataUrl = await fileToDataUrl(file);
+  const { url } = await uploadMentorMedia(key, dataUrl);
+  return { url, mime };
 }
 
 export async function deleteMentorMedia(key: string): Promise<void> {
@@ -156,6 +203,15 @@ export async function deleteMentorMedia(key: string): Promise<void> {
     await fetch(`/api/media/${encodeURIComponent(key)}`, { method: 'DELETE' });
   } catch {
     // offline / static host
+  }
+  try {
+    await fetch(`/api/images/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }),
+    });
+  } catch {
+    // ignore
   }
 }
 

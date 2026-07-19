@@ -271,6 +271,12 @@ export function HomePage() {
             width={56}
             height={56}
             draggable={false}
+            onError={(e) => {
+              const el = e.currentTarget;
+              if (el.dataset.fallback === '1') return;
+              el.dataset.fallback = '1';
+              el.src = '/lumo-logo.png';
+            }}
             style={{
               width: '100%',
               height: '100%',
@@ -294,6 +300,7 @@ export function HomePage() {
 
       {!specialLayout ? (
         <div
+          className="home-shell"
           style={{
             minHeight: '100dvh',
             display: 'flex',
@@ -302,9 +309,11 @@ export function HomePage() {
           }}
         >
           <div
-            className="page"
+            className="page home-page-fill"
             style={{
               flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
               paddingBottom: 8,
               backgroundImage: customBg
                 ? `linear-gradient(rgba(10,10,16,0.28), rgba(10,10,16,0.45)), url(${customBg})`
@@ -322,6 +331,7 @@ export function HomePage() {
                 fontWeight: 700,
                 letterSpacing: 1,
                 marginTop: 8,
+                flexShrink: 0,
               }}
             >
               {bot.mainText}
@@ -335,13 +345,30 @@ export function HomePage() {
                 border: `1px solid rgba(${accentRgb},0.4)`,
                 position: 'relative',
                 marginTop: 12,
+                flex: 1,
+                minHeight: 240,
+                display: 'flex',
+                background: '#0e1220',
               }}
             >
               <img
                 className="home-hero"
                 src={eaImage || '/bull-hero.jpg'}
                 alt={bot.displayName}
-                style={{ width: '100%', display: 'block', maxHeight: 360, objectFit: 'cover' }}
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  if (el.dataset.fallback === '1') return;
+                  el.dataset.fallback = '1';
+                  el.src = '/bull-hero.jpg';
+                }}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  minHeight: 240,
+                  display: 'block',
+                  objectFit: 'cover',
+                  flex: 1,
+                }}
               />
               <div
                 style={{
@@ -368,12 +395,13 @@ export function HomePage() {
                 fontSize: 13,
                 letterSpacing: 0.5,
                 margin: '8px 0 6px',
+                flexShrink: 0,
               }}
             >
               powered by LUMOEDGE
             </p>
 
-            <div className="neon-action" style={{ marginTop: 0 }}>
+            <div className="neon-action" style={{ marginTop: 0, flexShrink: 0 }}>
               <button type="button" onClick={confirmDelete}>
                 <span className="circle-btn"><Trash2 size={22} /></span>
                 DELETE
@@ -388,8 +416,20 @@ export function HomePage() {
               </button>
             </div>
 
-            <div className="pill home-status-pill" style={{ marginBottom: 14 }}>
-              <img src={eaImage || '/lumo-logo.png'} width={36} height={36} style={{ borderRadius: '50%', objectFit: 'cover' }} alt="" />
+            <div className="pill home-status-pill" style={{ marginBottom: 14, flexShrink: 0 }}>
+              <img
+                src={eaImage || '/lumo-logo.png'}
+                width={36}
+                height={36}
+                style={{ borderRadius: '50%', objectFit: 'cover' }}
+                alt=""
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  if (el.dataset.fallback === '1') return;
+                  el.dataset.fallback = '1';
+                  el.src = '/lumo-logo.png';
+                }}
+              />
               <div>
                 <div style={{ fontWeight: 700, letterSpacing: 1.2 }}>{bot.name}</div>
                 <div style={{ color: 'var(--electric)', fontWeight: 600 }}>
@@ -398,7 +438,7 @@ export function HomePage() {
               </div>
             </div>
 
-            <div className="pill" style={{ marginBottom: 0 }}>
+            <div className="pill" style={{ marginBottom: 0, flexShrink: 0 }}>
               <button
                 type="button"
                 onClick={() => setLicenseOpen(true)}

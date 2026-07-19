@@ -228,19 +228,23 @@ export async function publishEaImage(id: string, dataUrl: string): Promise<strin
   if (!id || !dataUrl) return '';
   saveEaImage(id, dataUrl);
   try {
+    const health = await fetch('/api/health')
+      .then((r) => r.json())
+      .catch(() => null as { durable?: boolean } | null);
     const res = await fetch(imagePublicUrl(id), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ dataUrl }),
     });
-    if (res.ok) {
+    // Only expose /api/images URL when storage is durable — otherwise clients get broken images
+    if (res.ok && health?.durable) {
       const body = (await res.json()) as { url?: string };
       return body.url || imagePublicUrl(id);
     }
   } catch {
     // fall through
   }
-  // Data-URL fallback (same device / when API write is unavailable)
+  // Embed compressed data URL so home cards always show the photo
   return dataUrl;
 }
 

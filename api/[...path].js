@@ -551,6 +551,76 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Mentor media aliases → same durable images store (fixes Vercel "Not found")
+    if (pathname === '/api/media' && req.method === 'POST') {
+      const body = await readBody(req);
+      const key = String(body.key || '')
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .slice(0, 120);
+      const dataUrl = String(body.dataUrl || '');
+      if (!key || !dataUrl.startsWith('data:')) {
+        send(res, 400, { error: 'key and dataUrl required' });
+        return;
+      }
+      if (dataUrl.length > 3_500_000) {
+        send(res, 413, { error: 'File too large for cloud upload' });
+        return;
+      }
+      const { db, sha } = await loadDb();
+      db.images = { ...(db.images || {}), [key]: dataUrl };
+      await saveDb(db, sha);
+      send(res, 200, { ok: true, url: `/api/images/${encodeURIComponent(key)}`, key });
+      return;
+    }
+
+    if (pathname === '/api/media/binary' && req.method === 'POST') {
+      send(res, 501, {
+        error: 'Binary media upload is not available on this host. Use a compressed image under 2.5 MB.',
+      });
+      return;
+    }
+
+    if (pathname.startsWith('/api/media/') && (req.method === 'GET' || req.method === 'HEAD')) {
+      const raw = decodeURIComponent(pathname.replace('/api/media/', '')).trim();
+      const key = raw.replace(/\.[a-z0-9]+$/i, '');
+      const { db } = await loadDb();
+      const dataUrl = db.images?.[key] || db.images?.[raw];
+      if (!dataUrl || !String(dataUrl).startsWith('data:')) {
+        send(res, 404, { error: 'Media not found' });
+        return;
+      }
+      const m = /^data:([^;]+);base64,(.+)$/s.exec(String(dataUrl));
+      if (!m) {
+        send(res, 404, { error: 'Invalid media' });
+        return;
+      }
+      const buf = Buffer.from(m[2], 'base64');
+      res.statusCode = 200;
+      res.setHeader('Content-Type', m[1] || 'application/octet-stream');
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      if (req.method === 'HEAD') {
+        res.setHeader('Content-Length', String(buf.length));
+        res.end();
+        return;
+      }
+      res.end(buf);
+      return;
+    }
+
+    if (pathname.startsWith('/api/media/') && req.method === 'DELETE') {
+      const key = decodeURIComponent(pathname.replace('/api/media/', '')).trim();
+      const { db, sha } = await loadDb();
+      if (db.images?.[key]) {
+        const next = { ...(db.images || {}) };
+        delete next[key];
+        db.images = next;
+        await saveDb(db, sha);
+      }
+      send(res, 200, { ok: true });
+      return;
+    }
+
     send(res, 404, { error: 'Not found', path: pathname });
   } catch (err) {
     send(res, 500, {

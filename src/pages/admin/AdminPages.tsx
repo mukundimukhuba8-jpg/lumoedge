@@ -20,73 +20,12 @@ import {
 import { compressImageFile, publishEaImage } from '../../lib/storage';
 import { Placeholder } from './AdminShell';
 
-function DbStatusBanner({ superOnly }: { superOnly?: boolean }) {
-  const { admin } = useAdmin();
-  const [info, setInfo] = useState<{ ok: boolean; durable: boolean; backend?: string } | null>(
-    null,
-  );
-  useEffect(() => {
-    if (superOnly && admin?.role !== 'super') return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch('/api/health');
-        const data = await r.json();
-        if (!cancelled) setInfo({ ok: Boolean(data.ok), durable: Boolean(data.durable), backend: data.backend });
-      } catch {
-        if (!cancelled) setInfo({ ok: false, durable: false });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [admin?.role, superOnly]);
-
-  if (!info) return null;
-  if (info.ok && info.durable) {
-    return (
-      <div
-        className="glow-card"
-        style={{
-          borderColor: 'rgba(57,255,20,0.35)',
-          background: 'rgba(57,255,20,0.08)',
-          color: '#86efac',
-          fontSize: 12,
-          fontWeight: 650,
-        }}
-      >
-        Shared database online ({info.backend}). Registrations, mentor signups, and I&apos;ve Paid
-        sync for Super Admin.
-      </div>
-    );
-  }
-  return (
-    <div
-      className="glow-card"
-      style={{
-        borderColor: 'rgba(245,158,11,0.55)',
-        background: 'rgba(245,158,11,0.12)',
-        color: '#fbbf24',
-        fontSize: 12.5,
-        lineHeight: 1.5,
-        fontWeight: 650,
-      }}
-    >
-      Shared database is not durable yet on Vercel. Add environment variable{' '}
-      <strong>LUMO_DATA_TOKEN</strong> (GitHub classic PAT with repo scope) in Vercel → Project →
-      Settings → Environment Variables → Production, then Redeploy. Until then Super Admin will not
-      see other users&apos; registrations.
-    </div>
-  );
-}
-
 export function DashboardPage() {
   const { profile, stats, admin, eas, licenses } = useAdmin();
   const isSuper = admin?.role === 'super';
   const isEmpty = eas.length === 0 && licenses.length === 0;
   return (
     <div style={{ display: 'grid', gap: 14 }}>
-      {isSuper ? <DbStatusBanner superOnly /> : null}
       <div className="glow-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
           <div>
@@ -593,9 +532,11 @@ export function ProfilePage() {
       const next = {
         ...form,
         customMedia,
-        // Keep classic EA image in sync with first profile still image
+        // Keep classic EA image in sync with profile still images (clients show this)
         eaImage:
-          slot === 'profile-1' && check.kind === 'image' ? url : form.eaImage,
+          (slot === 'profile-1' || slot === 'profile-2') && check.kind === 'image'
+            ? url
+            : form.eaImage,
       };
       setForm(next);
       updateProfile(next);
@@ -904,7 +845,6 @@ export function SubscriptionsPage() {
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
-      <DbStatusBanner superOnly />
       <div>
         <h2 className="title-blue" style={{ fontSize: 17, margin: 0 }}>Subscriptions</h2>
         <p className="muted">
