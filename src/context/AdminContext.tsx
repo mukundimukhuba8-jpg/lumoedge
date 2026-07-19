@@ -62,6 +62,8 @@ export type ClientRequest = {
   status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
   notifiedAt?: string;
+  paymentClaimed?: boolean;
+  paymentClaimedAt?: string;
 };
 
 export type ManagedEA = {
@@ -395,6 +397,7 @@ type Ctx = {
   approveClient: (id: string) => void;
   rejectClient: (id: string) => void;
   deleteClient: (id: string) => void;
+  claimClientPayment: (email: string) => Promise<ClientRequest | null>;
   getClientByEmail: (email: string) => ClientRequest | undefined;
   eas: ManagedEA[];
   licenses: LicenseRecord[];
@@ -754,6 +757,62 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ...ws,
           clientRequests: ws.clientRequests.filter((c) => c.id !== id),
         }));
+      },
+      claimClientPayment: async (email) => {
+        const normalized = email.trim().toLowerCase();
+        let current =
+          clients.find((c) => c.email.toLowerCase() === normalized) ||
+          Object.values(store.workspaces)
+            .flatMap((ws) => ws.clientRequests)
+            .find((c) => c.email.toLowerCase() === normalized);
+
+        if (!current) {
+          try {
+            current = (await postClient({
+              email: normalized,
+              firstName: normalized.split('@')[0] || 'Client',
+              lastName: 'User',
+            })) as ClientRequest;
+          } catch {
+            return null;
+          }
+        }
+
+        const claimedAt = new Date().toISOString();
+        const updated: ClientRequest = {
+          ...current,
+          paymentClaimed: true,
+          paymentClaimedAt: claimedAt,
+        };
+        setClients((prev) => {
+          const without = prev.filter((c) => c.email.toLowerCase() !== normalized);
+          return [updated, ...without];
+        });
+        const sid = SUPER_ADMIN.user.id;
+        patchWorkspace(sid, (ws) => ({
+          ...ws,
+          clientRequests: [
+            updated,
+            ...ws.clientRequests.filter((c) => c.email.toLowerCase() !== normalized),
+          ],
+        }));
+        try {
+          const server = await patchClient(current.id, {
+            paymentClaimed: true,
+            paymentClaimedAt: claimedAt,
+          });
+          if (server) {
+            const merged = { ...updated, ...server } as ClientRequest;
+            setClients((prev) => {
+              const without = prev.filter((c) => c.email.toLowerCase() !== normalized);
+              return [merged, ...without];
+            });
+            return merged;
+          }
+        } catch {
+          // local claim still visible to this device
+        }
+        return updated;
       },
       getClientByEmail: (email) => {
         const normalized = email.trim().toLowerCase();

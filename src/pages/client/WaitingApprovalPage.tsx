@@ -8,9 +8,10 @@ import { useApp } from '../../context/AppContext';
 export function WaitingApprovalPage() {
   const navigate = useNavigate();
   const { user, setAccessStatus, accessStatus } = useApp();
-  const { getClientByEmail } = useAdmin();
+  const { getClientByEmail, claimClientPayment } = useAdmin();
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState('');
+  const [messageTone, setMessageTone] = useState<'ok' | 'warn' | 'err'>('warn');
 
   useEffect(() => {
     if (!user) {
@@ -29,28 +30,48 @@ export function WaitingApprovalPage() {
     return () => window.clearInterval(id);
   }, [user, getClientByEmail, navigate, setAccessStatus, accessStatus]);
 
-  const onPaidCheck = () => {
-    if (!user) return;
+  const onPaidCheck = async () => {
+    if (!user || checking) return;
     setChecking(true);
     setMessage('');
-    const client = getClientByEmail(user.email);
-    if (client?.status === 'approved') {
-      if (accessStatus === 'pending') setAccessStatus('approved');
-      navigate('/activate', { replace: true });
-      return;
-    }
-    if (client?.status === 'rejected') {
-      setMessage('Your registration was rejected. Contact Super Admin.');
-    } else {
-      setMessage(
-        'Payment received note: still waiting for Super Admin approval. After approval you will enter your license key.',
+    try {
+      const client = getClientByEmail(user.email);
+      if (client?.status === 'approved') {
+        if (accessStatus === 'pending') setAccessStatus('approved');
+        navigate('/activate', { replace: true });
+        return;
+      }
+      if (client?.status === 'rejected') {
+        setMessageTone('err');
+        setMessage('Your registration was rejected. Contact lumoedge08@gmail.com.');
+        return;
+      }
+
+      const claimed = await claimClientPayment(user.email);
+      const subject = encodeURIComponent('Lumo Edge — Payment proof / pending approval');
+      const body = encodeURIComponent(
+        `I have paid the Lumo Edge subscription (R600).\n\n` +
+          `Name: ${user.firstName} ${user.lastName}\n` +
+          `Email: ${user.email}\n` +
+          `Status: PENDING approval\n\n` +
+          `Please approve my subscription in Super Admin → Subscriptions.`,
       );
+      window.open(`mailto:lumoedge08@gmail.com?subject=${subject}&body=${body}`, '_blank');
+
+      setMessageTone('ok');
+      setMessage(
+        claimed?.paymentClaimed
+          ? 'Payment marked as sent. Your subscription is PENDING — Super Admin must approve it. After approval you will enter your license key.'
+          : 'Payment notice saved on this device. Your subscription is still PENDING approval by Super Admin.',
+      );
+    } finally {
+      window.setTimeout(() => setChecking(false), 400);
     }
-    window.setTimeout(() => setChecking(false), 400);
   };
 
   const client = user ? getClientByEmail(user.email) : undefined;
   const status = (client?.status ?? 'pending').toUpperCase();
+  const paidPending = Boolean(client?.paymentClaimed) && status === 'PENDING';
 
   return (
     <div className="page" style={{ paddingTop: 36, paddingBottom: 28 }}>
@@ -96,15 +117,34 @@ export function WaitingApprovalPage() {
           }}
         >
           STATUS: {status}
+          {paidPending ? ' · PAYMENT SENT' : ''}
         </div>
       </div>
 
       <SubscriptionPaymentInfo referenceEmail={user?.email} />
 
-      {message ? (
-        <p className="muted" style={{ marginTop: 14, lineHeight: 1.5, textAlign: 'center' }}>
-          {message}
-        </p>
+      {message || paidPending ? (
+        <div
+          className="glow-card"
+          style={{
+            marginTop: 16,
+            textAlign: 'left',
+            borderColor:
+              messageTone === 'err'
+                ? 'rgba(225,29,46,0.45)'
+                : 'rgba(245,158,11,0.55)',
+            background:
+              messageTone === 'err'
+                ? 'rgba(225,29,46,0.12)'
+                : 'rgba(245,158,11,0.14)',
+            color: messageTone === 'err' ? '#fca5a5' : '#fbbf24',
+            fontWeight: 650,
+            lineHeight: 1.5,
+          }}
+        >
+          {message ||
+            'You already marked payment as sent. Waiting for Super Admin to approve your pending subscription.'}
+        </div>
       ) : null}
 
       <button
@@ -118,12 +158,12 @@ export function WaitingApprovalPage() {
           fontWeight: 700,
         }}
         disabled={checking}
-        onClick={onPaidCheck}
+        onClick={() => void onPaidCheck()}
       >
-        {checking ? 'Checking…' : "I've Paid"}
+        {checking ? 'Saving…' : "I've Paid"}
       </button>
       <p className="muted" style={{ marginTop: 12, fontSize: 12, textAlign: 'center' }}>
-        After approval, the next page asks for your license key.
+        After Super Admin approval, the next page asks for your license key.
       </p>
     </div>
   );

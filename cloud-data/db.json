@@ -1,0 +1,10 @@
+{
+  "auth": { "admins": [], "admin": null },
+  "store": { "workspaces": {} },
+  "vault": [],
+  "images": {},
+  "clients": [],
+  "sessions": {},
+  "revokedKeys": [],
+  "updatedAt": "2026-07-19T00:00:00.000Z"
+}

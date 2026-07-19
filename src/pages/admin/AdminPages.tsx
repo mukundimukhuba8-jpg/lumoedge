@@ -826,8 +826,12 @@ export function SubscriptionsPage() {
     if (!query) return true;
     return `${c.firstName} ${c.lastName} ${c.email}`.toLowerCase().includes(query);
   };
-  const pending = clientRequests.filter((c) => c.status === 'pending').filter(match);
+  const pending = clientRequests
+    .filter((c) => c.status === 'pending')
+    .filter(match)
+    .sort((a, b) => Number(Boolean(b.paymentClaimed)) - Number(Boolean(a.paymentClaimed)));
   const approved = clientRequests.filter((c) => c.status === 'approved').filter(match);
+  const paidPending = pending.filter((c) => c.paymentClaimed).length;
 
   const onDelete = (id: string, email: string) => {
     if (!confirm(`Delete ${email}? This removes them from the queue.`)) return;
@@ -839,7 +843,8 @@ export function SubscriptionsPage() {
       <div>
         <h2 className="title-blue" style={{ fontSize: 17, margin: 0 }}>Subscriptions</h2>
         <p className="muted">
-          New Lumo Edge registrations land here (saved on server — survives new preview links). Approve to unlock payment.
+          New Lumo Edge registrations land here (saved on server). Approve after you
+          confirm payment proof at lumoedge08@gmail.com.
         </p>
       </div>
 
@@ -854,6 +859,7 @@ export function SubscriptionsPage() {
 
       <div className="stat-grid">
         <Stat value={String(stats.pendingClients)} label="Awaiting approval" color="var(--orange)" />
+        <Stat value={String(paidPending)} label="Marked I've Paid" color="var(--electric)" />
         <Stat value={String(approved.length)} label="Approved clients" color="var(--green)" />
       </div>
 
@@ -877,6 +883,25 @@ export function SubscriptionsPage() {
               <div className="muted">
                 Registered {new Date(c.createdAt).toLocaleString()}
               </div>
+              {c.paymentClaimed ? (
+                <div
+                  style={{
+                    marginTop: 8,
+                    color: 'var(--orange)',
+                    fontWeight: 700,
+                    fontSize: 12,
+                  }}
+                >
+                  PAYMENT SENT — pending your approval
+                  {c.paymentClaimedAt
+                    ? ` · ${new Date(c.paymentClaimedAt).toLocaleString()}`
+                    : ''}
+                </div>
+              ) : (
+                <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                  Waiting for client to pay / tap I&apos;ve Paid
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                 <button
                   className="btn btn-blue"

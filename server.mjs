@@ -2,7 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-
+import { handleApi } from './api/_lib/handlers.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Load local .env into process.env (does not override existing env) */
@@ -300,155 +300,17 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    if (pathname === '/api/health') {
-      sendJson(res, 200, { ok: true, updatedAt: readDb().updatedAt });
-      return;
-    }
-
-    if (pathname === '/api/db' && req.method === 'GET') {
-      sendJson(res, 200, readDb());
-      return;
-    }
-
-    if (pathname === '/api/db' && req.method === 'PUT') {
-      const body = await readBody(req);
-      const current = readDb();
-      const next = writeDb({
-        ...current,
-        ...body,
-        // deep-ish merge for known maps
-        auth: { ...current.auth, ...(body.auth || {}) },
-        store: {
-          workspaces: {
-            ...(current.store?.workspaces || {}),
-            ...(body.store?.workspaces || {}),
-          },
-        },
-        vault: Array.isArray(body.vault) ? body.vault : current.vault,
-        images: { ...current.images, ...(body.images || {}) },
-        clients: Array.isArray(body.clients) ? body.clients : current.clients,
-        sessions: { ...current.sessions, ...(body.sessions || {}) },
-        revokedKeys: Array.isArray(body.revokedKeys)
-          ? [...new Set([...(current.revokedKeys || []), ...body.revokedKeys])]
-          : current.revokedKeys || [],
-      });
-      sendJson(res, 200, next);
-      return;
-    }
-
-    if (pathname === '/api/clients' && req.method === 'GET') {
-      sendJson(res, 200, readDb().clients || []);
-      return;
-    }
-
-    if (pathname === '/api/clients' && req.method === 'POST') {
-      const body = await readBody(req);
-      const db = readDb();
-      const email = String(body.email || '')
-        .trim()
-        .toLowerCase();
-      if (!email || !body.firstName || !body.lastName) {
-        sendJson(res, 400, { error: 'email, firstName, lastName required' });
-        return;
-      }
-      const existing = (db.clients || []).find((c) => c.email === email);
-      if (existing) {
-        sendJson(res, 200, existing);
-        return;
-      }
-      const entry = {
-        id: `cli-${Date.now()}`,
-        email,
-        firstName: String(body.firstName).trim(),
-        lastName: String(body.lastName).trim(),
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        notifiedAt: new Date().toISOString(),
-      };
-      db.clients = [entry, ...(db.clients || [])];
-      // also mirror into super admin workspace for older UI paths
-      const sid = 'LM-004821';
-      db.store = db.store || { workspaces: {} };
-      db.store.workspaces = db.store.workspaces || {};
-      const ws = db.store.workspaces[sid] || {
-        eas: [],
-        licenses: [],
-        clientRequests: [],
-        mt5: {},
-        profile: {},
-        orders: [],
-      };
-      ws.clientRequests = [entry, ...(ws.clientRequests || [])];
-      db.store.workspaces[sid] = ws;
-      writeDb(db);
-      sendJson(res, 201, entry);
-      return;
-    }
-
-    if (pathname.startsWith('/api/clients/') && req.method === 'PATCH') {
-      const id = pathname.replace('/api/clients/', '');
-      const body = await readBody(req);
-      const db = readDb();
-      db.clients = (db.clients || []).map((c) =>
-        c.id === id ? { ...c, ...body, id: c.id, email: c.email } : c,
-      );
-      const sid = 'LM-004821';
-      const ws = db.store?.workspaces?.[sid];
-      if (ws) {
-        ws.clientRequests = (ws.clientRequests || []).map((c) =>
-          c.id === id ? { ...c, ...body, id: c.id, email: c.email } : c,
-        );
-      }
-      writeDb(db);
-      const updated = db.clients.find((c) => c.id === id);
-      sendJson(res, 200, updated || null);
-      return;
-    }
-
-    if (pathname.startsWith('/api/clients/') && req.method === 'DELETE') {
-      const id = pathname.replace('/api/clients/', '');
-      const db = readDb();
-      const before = (db.clients || []).length;
-      db.clients = (db.clients || []).filter((c) => c.id !== id);
-      const sid = 'LM-004821';
-      const ws = db.store?.workspaces?.[sid];
-      if (ws) {
-        ws.clientRequests = (ws.clientRequests || []).filter((c) => c.id !== id);
-      }
-      writeDb(db);
-      sendJson(res, 200, { ok: true, removed: before - (db.clients || []).length });
-      return;
-    }
-
-    if (pathname.startsWith('/api/sessions/') && req.method === 'GET') {
-      const email = decodeURIComponent(pathname.replace('/api/sessions/', '')).toLowerCase();
-      const session = readDb().sessions?.[email] || null;
-      sendJson(res, 200, session);
-      return;
-    }
-
-    if (pathname.startsWith('/api/sessions/') && req.method === 'PUT') {
-      const email = decodeURIComponent(pathname.replace('/api/sessions/', '')).toLowerCase();
-      const body = await readBody(req);
-      const db = readDb();
-      db.sessions = { ...(db.sessions || {}), [email]: body };
-      writeDb(db);
-      sendJson(res, 200, body);
-      return;
-    }
-
-    if (pathname === '/api/vault' && req.method === 'GET') {
-      sendJson(res, 200, readDb().vault || []);
-      return;
-    }
-
-    if (pathname === '/api/vault' && req.method === 'PUT') {
-      const body = await readBody(req);
-      const db = readDb();
-      db.vault = Array.isArray(body) ? body : body.vault || db.vault;
-      writeDb(db);
-      sendJson(res, 200, db.vault);
-      return;
+    // Shared durable API (local file here; GitHub-backed on Vercel)
+    if (
+      pathname === '/api/health' ||
+      pathname === '/api/db' ||
+      pathname === '/api/clients' ||
+      pathname.startsWith('/api/clients/') ||
+      pathname.startsWith('/api/sessions/') ||
+      pathname === '/api/vault'
+    ) {
+      const handled = await handleApi(req, res, pathname);
+      if (handled) return;
     }
 
     // Mentor custom media (images / videos) — stored as files, not in db.json

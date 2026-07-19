@@ -13,6 +13,8 @@ export type RemoteDb = {
     status: 'pending' | 'approved' | 'rejected';
     createdAt: string;
     notifiedAt?: string;
+    paymentClaimed?: boolean;
+    paymentClaimedAt?: string;
   }>;
   sessions: Record<string, unknown>;
   revokedKeys?: string[];
@@ -73,7 +75,11 @@ export async function postClient(input: {
 
 export async function patchClient(
   id: string,
-  patch: { status?: 'pending' | 'approved' | 'rejected' },
+  patch: {
+    status?: 'pending' | 'approved' | 'rejected';
+    paymentClaimed?: boolean;
+    paymentClaimedAt?: string;
+  },
 ) {
   return req<RemoteDb['clients'][number] | null>(`/api/clients/${id}`, {
     method: 'PATCH',
