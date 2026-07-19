@@ -148,7 +148,11 @@ export function FocusLayout(a: LayoutActions) {
     <LayoutBackdrop className="lay-focus" url={bg.url} kind={bg.kind} accentRgb={a.accentRgb}>
       <div className="lay-focus-hero">
         <button type="button" className="lay-avatar-lg" onClick={a.onAvatarTap}>
-          <img src={a.eaImage || '/lumo-logo.png'} alt="" />
+          {a.eaImage && !a.eaImage.includes('lumo-logo') ? (
+            <img src={a.eaImage} alt="" />
+          ) : (
+            <span className="lay-avatar-empty" aria-hidden />
+          )}
         </button>
         <h1 className="lay-title">{a.eaTitle || a.mainText || 'LUMO EDGE'}</h1>
       </div>
@@ -206,7 +210,11 @@ export function TerminalLayout(a: LayoutActions) {
 
         <div className="lay-term-id">
           <button type="button" className="lay-avatar-sm" onClick={a.onAvatarTap}>
-            <img src={a.eaImage || '/lumo-logo.png'} alt="" />
+            {a.eaImage && !a.eaImage.includes('lumo-logo') ? (
+              <img src={a.eaImage} alt="" />
+            ) : (
+              <span className="lay-avatar-empty" aria-hidden />
+            )}
           </button>
           <div>
             <div className="lay-term-name">$ {a.eaTitle || 'LUMO EDGE'}</div>
@@ -256,7 +264,11 @@ export function VortexLayout(a: LayoutActions) {
       <div className="lay-vortex-mesh" aria-hidden />
       <div className="lay-vortex-hero">
         <button type="button" className="lay-avatar-xl" onClick={a.onAvatarTap}>
-          <img src={a.eaImage || '/lumo-logo.png'} alt="" />
+          {a.eaImage && !a.eaImage.includes('lumo-logo') ? (
+            <img src={a.eaImage} alt="" />
+          ) : (
+            <span className="lay-avatar-empty" aria-hidden />
+          )}
         </button>
         <div className="lay-vortex-sub">{a.mainText || a.eaTitle}</div>
         <h1 className="lay-title">{a.eaTitle || 'LUMO EDGE'}</h1>
@@ -279,11 +291,15 @@ export function VortexLayout(a: LayoutActions) {
           large
           onClick={a.onSymbols}
           icon={
-            <img
-              src={a.eaImage || '/lumo-logo.png'}
-              alt=""
-              style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }}
-            />
+            a.eaImage && !a.eaImage.includes('lumo-logo') ? (
+              <img
+                src={a.eaImage}
+                alt=""
+                style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }}
+              />
+            ) : (
+              <Grid2x2 size={22} />
+            )
           }
         />
         <VortexOrb

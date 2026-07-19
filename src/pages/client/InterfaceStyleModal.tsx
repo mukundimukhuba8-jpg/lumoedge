@@ -193,7 +193,11 @@ export function InterfaceStyleModal({
             <strong>Interface Style</strong>
           </div>
           <div className="iface-avatar-wrap">
-            <img src={avatarUrl || '/lumo-logo.png'} alt="" className="iface-avatar" />
+            {avatarUrl && !avatarUrl.includes('lumo-logo') ? (
+              <img src={avatarUrl} alt="" className="iface-avatar" />
+            ) : (
+              <div className="iface-avatar iface-avatar-empty" aria-hidden />
+            )}
           </div>
           <button type="button" className="iface-close" onClick={onClose} aria-label="Close">
             <X size={18} />

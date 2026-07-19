@@ -570,6 +570,11 @@ a {
   display: block;
 }
 
+.iface-avatar-empty {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+}
+
 .iface-close {
   justify-self: end;
   width: 36px;
@@ -1136,6 +1141,13 @@ a {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.lay-avatar-empty {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .lay-focus-hero {
@@ -1741,6 +1753,11 @@ a {
   object-fit: cover;
   border: 2px solid var(--electric);
   box-shadow: 0 0 18px rgba(59, 130, 246, 0.5);
+}
+
+.mt5-avatar-empty {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
 }
 
 .mt5-fab {

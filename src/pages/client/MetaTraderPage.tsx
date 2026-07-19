@@ -90,7 +90,8 @@ export function MetaTraderPage() {
   const accent = accentHex(prefs.accent);
   const accentRgb = hexToRgb(accent);
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
-  const eaImage = bot.imageUrl || '/lumo-logo.png';
+  const eaImage =
+    bot.imageUrl && !bot.imageUrl.includes('lumo-logo') ? bot.imageUrl : '';
   const customBg = resolveCustomBackdrop(prefs.customBg, eaImage, bot.customMedia);
   const pageBgUrl = customBg?.src || eaImage;
 
@@ -346,7 +347,11 @@ export function MetaTraderPage() {
                   Use the red button above to unlink this broker
                 </div>
               </div>
-              <img className="mt5-connected-avatar" src={eaImage} alt="" />
+              {eaImage ? (
+                <img className="mt5-connected-avatar" src={eaImage} alt="" />
+              ) : (
+                <div className="mt5-connected-avatar mt5-avatar-empty" aria-hidden />
+              )}
             </div>
           ) : (
             <>

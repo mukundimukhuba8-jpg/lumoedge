@@ -1,25 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Copy, Plus, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
-import {
-  ALL_MEDIA_SLOTS,
-  BACKGROUND_SLOTS,
-  MEDIA_ACCEPT,
-  PROFILE_SLOTS,
-  deleteMentorMedia,
-  getMediaSlot,
-  isAllowedMediaFile,
-  mediaKey,
-  normalizeCustomMedia,
-  removeMediaSlot,
-  resolveProfileImage,
-  uploadMentorMedia,
-  uploadMentorMediaFile,
-  upsertMediaSlot,
-  type MentorMediaSlotId,
-} from '../../lib/mentorMedia';
+import { resolveProfileImage } from '../../lib/mentorMedia';
 import { compressImageFile, publishEaImage } from '../../lib/storage';
 import { Placeholder } from './AdminShell';
+
+function isRealImage(url?: string): boolean {
+  const u = String(url || '').trim();
+  if (!u) return false;
+  if (u.includes('lumo-logo')) return false;
+  if (u.startsWith('blob:') || u.startsWith('img:')) return false;
+  return u.startsWith('data:') || u.startsWith('http') || u.startsWith('/');
+}
 
 export function DashboardPage() {
   const { profile, stats, admin, eas, licenses } = useAdmin();
@@ -130,7 +122,7 @@ function Stat({ value, label, color }: { value: string; label: string; color: st
 }
 
 export function ManageEAsPage() {
-  const { eas, createEA, deleteEA, profile } = useAdmin();
+  const { eas, createEA, deleteEA } = useAdmin();
   const [name, setName] = useState('');
   const [draft, setDraft] = useState('');
   const [symbols, setSymbols] = useState<string[]>([]);
@@ -191,7 +183,7 @@ export function ManageEAsPage() {
               symbols,
               lotSize: 0.01,
               direction: 'both',
-              imageUrl: profile.eaImage || '',
+              imageUrl: '',
             });
             setName('');
             setSymbols([]);
@@ -206,7 +198,7 @@ export function ManageEAsPage() {
         {eas.map((ea) => (
           <div key={ea.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              {ea.imageUrl ? (
+              {isRealImage(ea.imageUrl) ? (
                 <img src={ea.imageUrl} alt="" width={40} height={40} style={{ borderRadius: 10, objectFit: 'cover' }} />
               ) : null}
               <div>
@@ -271,19 +263,33 @@ export function GenerateLicensePage() {
         </div>
         {selected ? (
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
-            <img
-              src={selected.imageUrl || profile.eaImage || '/lumo-logo.png'}
-              alt=""
-              width={48}
-              height={48}
-              style={{ borderRadius: 12, objectFit: 'cover' }}
-            />
+            {isRealImage(selected.imageUrl) || isRealImage(profile.eaImage) ? (
+              <img
+                src={
+                  (isRealImage(selected.imageUrl) ? selected.imageUrl : profile.eaImage) || ''
+                }
+                alt=""
+                width={48}
+                height={48}
+                style={{ borderRadius: 12, objectFit: 'cover' }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 12,
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                }}
+              />
+            )}
             <div>
               <strong>{selected.name}</strong>
               <div className="muted">
-                {(selected.imageUrl || profile.eaImage)
+                {isRealImage(selected.imageUrl) || isRealImage(profile.eaImage)
                   ? 'EA image will sync to the client app'
-                  : 'No EA image — upload one in Profile Settings first'}
+                  : 'No picture uploaded — clients will not show a profile photo'}
               </div>
             </div>
           </div>
@@ -300,12 +306,6 @@ export function GenerateLicensePage() {
           className="btn btn-blue"
           type="button"
           onClick={() => {
-            if (!(selected?.imageUrl || profile.eaImage)) {
-              const ok = confirm(
-                'No EA image on your profile yet. Upload one in Profile Settings for best sync.\n\nGenerate key anyway?',
-              );
-              if (!ok) return;
-            }
             const result = generateLicense({
               eaId: effectiveEaId,
               clientName,
@@ -320,7 +320,7 @@ export function GenerateLicensePage() {
             setLastKey(rec.key);
             navigator.clipboard?.writeText(rec.key).catch(() => undefined);
             alert(
-              `License key:\n${rec.key}\n\nFor: ${rec.clientEmail}\nEA: ${rec.eaName}\nImage: ${rec.eaImage ? 'synced' : 'missing — update Profile image & regenerate'}\n\nCopied to clipboard.`,
+              `License key:\n${rec.key}\n\nFor: ${rec.clientEmail}\nEA: ${rec.eaName}\n\nCopied to clipboard.`,
             );
             setClientName('');
             setClientEmail('');
@@ -369,7 +369,7 @@ export function GenerateLicensePage() {
               </button>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-              {lic.eaImage ? (
+              {isRealImage(lic.eaImage) ? (
                 <img src={lic.eaImage} alt="" width={28} height={28} style={{ borderRadius: 8, objectFit: 'cover' }} />
               ) : null}
               <div className="muted">{lic.eaName} · {lic.duration} · {lic.clientName}</div>
@@ -513,19 +513,16 @@ export function ProfilePage() {
   const [form, setForm] = useState(profile);
   const [imageError, setImageError] = useState('');
   const [savingImage, setSavingImage] = useState(false);
-  const [mediaError, setMediaError] = useState('');
-  const [savingSlot, setSavingSlot] = useState<MentorMediaSlotId | null>(null);
 
   useEffect(() => {
-    const eaImage = resolveProfileImage(profile.eaImage, profile.customMedia) || profile.eaImage;
+    const eaImage = resolveProfileImage(profile.eaImage) || profile.eaImage;
     setForm({
       ...profile,
-      eaImage: eaImage.startsWith('img:') ? '' : eaImage,
-      customMedia: normalizeCustomMedia(profile.customMedia),
+      eaImage: eaImage.startsWith('img:') || !isRealImage(eaImage) ? '' : eaImage,
     });
   }, [profile]);
 
-      const onPickImage = async (file: File | null) => {
+  const onPickImage = async (file: File | null) => {
     setImageError('');
     if (!file || !admin?.id) return;
     if (!file.type.startsWith('image/')) {
@@ -536,11 +533,9 @@ export function ProfilePage() {
     setForm((prev) => ({ ...prev, eaImage: previewUrl }));
     try {
       setSavingImage(true);
-      // Keep under ~100KB so Firebase Realtime Database accepts the write
       const dataUrl = await compressImageFile(file, 480, 0.72);
       const imageId = `profile-${admin.id}`;
       const url = await publishEaImage(imageId, dataUrl);
-      // Form keeps a displayable data URL; shared DB stores img:/https ref
       const stored = url || dataUrl;
       setForm((prev) => {
         const next = {
@@ -555,83 +550,11 @@ export function ProfilePage() {
       });
     } catch {
       setImageError('Could not save image. Try a smaller JPG/PNG.');
-      setForm((prev) => ({ ...prev, eaImage: profile.eaImage || '' }));
+      setForm((prev) => ({ ...prev, eaImage: isRealImage(profile.eaImage) ? profile.eaImage : '' }));
     } finally {
       URL.revokeObjectURL(previewUrl);
       setSavingImage(false);
     }
-  };
-
-  const onPickMedia = async (slot: MentorMediaSlotId, file: File | null) => {
-    setMediaError('');
-    if (!file || !admin?.id) return;
-    const check = isAllowedMediaFile(file);
-    if (!check.ok) {
-      setMediaError(check.error);
-      return;
-    }
-    const previewUrl = URL.createObjectURL(file);
-    setForm((prev) => ({
-      ...prev,
-      customMedia: upsertMediaSlot(prev.customMedia, {
-        slot,
-        kind: check.kind,
-        url: previewUrl,
-      }),
-    }));
-    try {
-      setSavingSlot(slot);
-      const key = mediaKey(admin.id, slot);
-      let url = '';
-      if (check.kind === 'video') {
-        ({ url } = await uploadMentorMediaFile(key, file));
-      } else {
-        const isBg = slot.startsWith('bg-');
-        const dataUrl = await compressImageFile(
-          file,
-          isBg ? 1280 : 480,
-          isBg ? 0.85 : 0.72,
-        );
-        ({ url } = await uploadMentorMedia(key, dataUrl));
-      }
-      setForm((prev) => {
-        const customMedia = upsertMediaSlot(prev.customMedia, {
-          slot,
-          kind: check.kind,
-          url,
-        });
-        const next = {
-          ...prev,
-          customMedia,
-          eaImage:
-            (slot === 'profile-1' || slot === 'profile-2') && check.kind === 'image'
-              ? url
-              : prev.eaImage.startsWith('blob:')
-                ? url
-                : prev.eaImage,
-        };
-        updateProfile(next);
-        return next;
-      });
-    } catch (e) {
-      setMediaError(e instanceof Error ? e.message : 'Could not upload media.');
-      setForm((prev) => ({
-        ...prev,
-        customMedia: normalizeCustomMedia(profile.customMedia),
-      }));
-    } finally {
-      URL.revokeObjectURL(previewUrl);
-      setSavingSlot(null);
-    }
-  };
-
-  const onClearMedia = async (slot: MentorMediaSlotId) => {
-    if (!admin?.id) return;
-    await deleteMentorMedia(mediaKey(admin.id, slot));
-    const customMedia = removeMediaSlot(form.customMedia, slot);
-    const next = { ...form, customMedia };
-    setForm(next);
-    updateProfile(next);
   };
 
   return (
@@ -645,15 +568,14 @@ export function ProfilePage() {
         <div className="field"><label>Mentor Name</label><input value={form.mentorName} onChange={(e) => setForm({ ...form, mentorName: e.target.value })} /></div>
       </div>
       <div className="glow-card">
-        <h3 style={{ marginTop: 0 }}>Branding & Assets</h3>
+        <h3 style={{ marginTop: 0 }}>Branding</h3>
         <p className="muted" style={{ marginTop: 0 }}>
-          Upload your EA / profile image — it auto-saves and syncs to client home
-          cards (re-open the client app or wait a few seconds to refresh).
+          Optional EA image for licensed clients. EAs stay without a picture until you upload one here.
         </p>
         <div className="field"><label>EA Name (Displayed on App)</label><input value={form.eaDisplayName} onChange={(e) => setForm({ ...form, eaDisplayName: e.target.value })} /></div>
         <div className="field"><label>Main Text (Top of Home Page)</label><input value={form.mainText} onChange={(e) => setForm({ ...form, mainText: e.target.value })} /></div>
         <div className="field">
-          <label>EA Image</label>
+          <label>EA Image (optional)</label>
           <input
             type="file"
             accept="image/*"
@@ -661,7 +583,7 @@ export function ProfilePage() {
           />
         </div>
         {savingImage ? <p className="muted">Saving image…</p> : null}
-        {form.eaImage ? (
+        {isRealImage(form.eaImage) ? (
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 10 }}>
             <img
               key={form.eaImage}
@@ -677,11 +599,11 @@ export function ProfilePage() {
                 flexShrink: 0,
               }}
               onError={(e) => {
-                e.currentTarget.style.opacity = '0.35';
+                e.currentTarget.style.display = 'none';
               }}
             />
             <div>
-              <div style={{ color: 'var(--green)', fontWeight: 700 }}>Saved — ready to sync</div>
+              <div style={{ color: 'var(--green)', fontWeight: 700 }}>Saved</div>
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -697,58 +619,9 @@ export function ProfilePage() {
             </div>
           </div>
         ) : (
-          <p className="muted">No EA image uploaded yet.</p>
+          <p className="muted">No picture uploaded — nothing will show on EAs or client home.</p>
         )}
         {imageError ? <p className="error">{imageError}</p> : null}
-      </div>
-
-      <div className="glow-card">
-        <h3 style={{ marginTop: 0 }}>Custom Media (5 spots)</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Upload <strong style={{ color: 'var(--text)' }}>2 profile</strong> and{' '}
-          <strong style={{ color: 'var(--text)' }}>3 background</strong> pictures or
-          videos. Clients see them under Interface Style → Custom — tap one to set it
-          as the app background. Prefer <strong style={{ color: 'var(--text)' }}>MP4</strong>{' '}
-          videos (H.264) up to 28 MB for best playback on iPhone.
-        </p>
-
-        <h4 style={{ margin: '10px 0 8px', fontSize: 14 }}>Profile picture / video</h4>
-        <div className="media-slot-grid">
-          {PROFILE_SLOTS.map((slot) => {
-            const item = getMediaSlot(form.customMedia, slot.id);
-            return (
-              <MediaSlotCard
-                key={slot.id}
-                label={slot.label}
-                item={item}
-                busy={savingSlot === slot.id}
-                onPick={(file) => void onPickMedia(slot.id, file)}
-                onClear={() => void onClearMedia(slot.id)}
-              />
-            );
-          })}
-        </div>
-
-        <h4 style={{ margin: '16px 0 8px', fontSize: 14 }}>Background features</h4>
-        <div className="media-slot-grid">
-          {BACKGROUND_SLOTS.map((slot) => {
-            const item = getMediaSlot(form.customMedia, slot.id);
-            return (
-              <MediaSlotCard
-                key={slot.id}
-                label={slot.label}
-                item={item}
-                busy={savingSlot === slot.id}
-                onPick={(file) => void onPickMedia(slot.id, file)}
-                onClear={() => void onClearMedia(slot.id)}
-              />
-            );
-          })}
-        </div>
-        {savingSlot ? (
-          <p className="muted">Uploading {ALL_MEDIA_SLOTS.find((s) => s.id === savingSlot)?.label}…</p>
-        ) : null}
-        {mediaError ? <p className="error">{mediaError}</p> : null}
       </div>
 
       <button
@@ -756,79 +629,11 @@ export function ProfilePage() {
         type="button"
         onClick={() => {
           updateProfile(form);
-          alert('Profile updated — branding & custom media sync to licensed clients');
+          alert('Profile updated');
         }}
       >
         Update Profile
       </button>
-    </div>
-  );
-}
-
-function MediaSlotCard({
-  label,
-  item,
-  busy,
-  onPick,
-  onClear,
-}: {
-  label: string;
-  item?: { url: string; kind: 'image' | 'video' };
-  busy: boolean;
-  onPick: (file: File | null) => void;
-  onClear: () => void;
-}) {
-  const [broken, setBroken] = useState(false);
-  const showMedia = Boolean(item?.url) && !broken;
-
-  return (
-    <div className="media-slot-card">
-      <div className="media-slot-preview">
-        {showMedia && item?.kind === 'video' ? (
-          <video key={item.url} src={item.url} muted playsInline controls={false} />
-        ) : showMedia && item?.url ? (
-          <img
-            key={item.url}
-            src={item.url}
-            alt=""
-            onError={() => setBroken(true)}
-            onLoad={() => setBroken(false)}
-          />
-        ) : (
-          <span>{busy ? 'Saving…' : 'Empty'}</span>
-        )}
-      </div>
-      <div className="media-slot-meta">
-        <strong>{label}</strong>
-        <span className="muted">{item && !broken ? item.kind : 'image / video'}</span>
-        <label className="btn btn-ghost media-slot-upload">
-          {busy ? 'Saving…' : item ? 'Replace' : 'Upload'}
-          <input
-            type="file"
-            accept={MEDIA_ACCEPT}
-            disabled={busy}
-            hidden
-            onChange={(e) => {
-              setBroken(false);
-              onPick(e.target.files?.[0] ?? null);
-              e.target.value = '';
-            }}
-          />
-        </label>
-        {item ? (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{ padding: '6px 10px' }}
-            onClick={() => {
-              setBroken(false);
-              onClear();
-            }}
-          >
-            Clear
-          </button>
-        ) : null}
-      </div>
     </div>
   );
 }

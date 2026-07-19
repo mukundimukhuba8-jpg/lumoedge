@@ -1066,7 +1066,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             {
               ...ea,
               id: `ea-${Date.now()}`,
-              imageUrl: ea.imageUrl || ws.profile.eaImage || '',
+              // Never invent a picture — only what was explicitly set on the EA
+              imageUrl: ea.imageUrl || '',
             },
             ...ws.eas,
           ],
@@ -1110,15 +1111,21 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           };
         }
 
-        const profileImage =
-          ws.profile.eaImage || getEaImage(`profile-${adminId}`) || '';
-        const eaImage =
-          ea.imageUrl ||
-          profileImage ||
-          getEaImage(`ea-${ea.id}`) ||
-          '';
-        const customMedia = normalizeCustomMedia(ws.profile.customMedia);
-        const id = `lic-${Date.now()}`;
+        const profileImage = ws.profile.eaImage || '';
+        const realProfile =
+          profileImage &&
+          !profileImage.includes('lumo-logo') &&
+          !profileImage.startsWith('blob:')
+            ? profileImage
+            : '';
+        const realEa =
+          ea.imageUrl &&
+          !ea.imageUrl.includes('lumo-logo') &&
+          !ea.imageUrl.startsWith('blob:')
+            ? ea.imageUrl
+            : '';
+        const eaImage = realEa || realProfile || '';
+        const customMedia = normalizeCustomMedia(ws.profile.customMedia);        const id = `lic-${Date.now()}`;
         const key = uniqueKey(allLicenses);
         const mainText = ws.profile.mainText || '';
         const eaName = ea.name || ws.profile.eaDisplayName || 'Lumo Edge';
@@ -1614,15 +1621,19 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           }
 
           patchWorkspace(adminId, (ws) => {
+            const clearingImage =
+              resolvedPatch.eaImage !== undefined &&
+              !String(resolvedPatch.eaImage || '').trim();
             const nextProfile: AdminProfile = {
               ...ws.profile,
               ...resolvedPatch,
-              eaImage:
-                resolvedPatch.eaImage ||
-                (String(ws.profile.eaImage || '').startsWith('blob:')
-                  ? ''
-                  : ws.profile.eaImage) ||
-                '',
+              eaImage: clearingImage
+                ? ''
+                : resolvedPatch.eaImage ||
+                  (String(ws.profile.eaImage || '').startsWith('blob:')
+                    ? ''
+                    : ws.profile.eaImage) ||
+                  '',
               customMedia: normalizeCustomMedia(
                 resolvedPatch.customMedia !== undefined
                   ? resolvedPatch.customMedia
@@ -1634,12 +1645,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               nextProfile.eaImage ||
               '';
             // Always persist short img: refs in shared DB (never giant data URLs)
-            const licenseImage =
-              image && (image.startsWith('data:') || image.startsWith('img:'))
+            const licenseImage = clearingImage
+              ? ''
+              : image && (image.startsWith('data:') || image.startsWith('img:'))
                 ? `img:profile-${adminId}`
                 : image;
-            const profileImageRef =
-              image && image.startsWith('data:')
+            const profileImageRef = clearingImage
+              ? ''
+              : image && image.startsWith('data:')
                 ? `img:profile-${adminId}`
                 : image.startsWith('img:')
                   ? image
@@ -1651,7 +1664,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             const media = nextProfile.customMedia;
             const nextLicenses = ws.licenses.map((lic) => ({
               ...lic,
-              eaImage: licenseImage || lic.eaImage,
+              eaImage: clearingImage ? '' : licenseImage || lic.eaImage,
               mainText: nextProfile.mainText || lic.mainText,
               eaName: nextProfile.eaDisplayName || lic.eaName,
               customMedia: media,
@@ -1683,15 +1696,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                 eaImage: profileImageRef || nextProfile.eaImage,
               },
               licenses: nextLicenses,
-              eas: image
-                ? ws.eas.map((ea) => {
-                    saveEaImage(`ea-${ea.id}`, image.startsWith('data:') ? image : getEaImage(`profile-${adminId}`) || image);
-                    return {
-                      ...ea,
-                      imageUrl: licenseImage || image,
-                    };
-                  })
-                : ws.eas,
+              // Do not stamp profile photos onto EAs — only show a picture when one was uploaded for that use
+              eas: ws.eas,
               mt5:
                 resolvedPatch.eaDisplayName !== undefined
                   ? {
