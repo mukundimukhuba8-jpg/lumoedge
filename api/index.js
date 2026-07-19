@@ -778,12 +778,17 @@ export default async function handler(req, res) {
     }
 
     if (pathname === '/api/scan/status' && req.method === 'GET') {
+      const configured = Boolean(
+        process.env.CHART_SCAN_API_KEY || process.env.OPENAI_API_KEY,
+      );
       send(res, 200, {
-        configured: Boolean(
-          process.env.CHART_SCAN_API_KEY || process.env.OPENAI_API_KEY,
-        ),
+        configured,
         model: process.env.CHART_SCAN_MODEL || 'gpt-4o',
         url: process.env.CHART_SCAN_API_URL || 'https://api.openai.com/v1/chat/completions',
+        mt5Base: Boolean(process.env.MT5_API_BASE),
+        hint: configured
+          ? 'Live AI scans enabled'
+          : 'Missing CHART_SCAN_API_KEY (or OPENAI_API_KEY) on Vercel Production — add it, enable Production, then Redeploy',
       });
       return;
     }
