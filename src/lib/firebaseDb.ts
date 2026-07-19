@@ -1,4 +1,4 @@
-import { get, ref, set, update } from 'firebase/database';
+import { get, onValue, ref, set, update } from 'firebase/database';
 import {
   getDownloadURL,
   ref as storageRef,
@@ -551,6 +551,32 @@ export async function firebaseFetchImage(id: string): Promise<string> {
 
 export function isFirebaseImageRef(value: string | undefined): boolean {
   return Boolean(value && String(value).startsWith('img:'));
+}
+
+/**
+ * Real-time listener on the shared DB heartbeat. Fires whenever any portal
+ * pushes an update (updatedAt changes) so clients refresh immediately.
+ */
+export function firebaseWatchUpdates(cb: () => void): () => void {
+  if (!isFirebaseConfigured()) return () => undefined;
+  try {
+    const r = ref(getFirebaseDb(), `${ROOT}/updatedAt`);
+    let first = true;
+    const unsub = onValue(
+      r,
+      () => {
+        if (first) {
+          first = false;
+          return;
+        }
+        cb();
+      },
+      () => undefined,
+    );
+    return unsub;
+  } catch {
+    return () => undefined;
+  }
 }
 
 export async function firebaseHealthy(): Promise<boolean> {

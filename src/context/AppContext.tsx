@@ -155,7 +155,11 @@ function mergeSessions(local: Session, remote: Session | null): Session {
       ...DEFAULT_BOT,
       ...localN.bot,
       ...remoteN.bot,
-      imageUrl: remoteN.bot.imageUrl || localN.bot.imageUrl || '',
+      // Server session is written by the license owner's portal — trust it
+      // fully (including empty) so stale mentor images never linger locally
+      imageUrl: remoteN.bot.licenseKey
+        ? remoteN.bot.imageUrl || ''
+        : remoteN.bot.imageUrl || localN.bot.imageUrl || '',
       licenseKey,
       customMedia: normalizeCustomMedia(
         remoteN.bot.customMedia?.length
@@ -255,7 +259,8 @@ function applyVaultLicense(
       ...session.bot,
       licenseKey: vault.licenseKey,
       status: session.bot.status === 'paused' ? 'paused' : 'active',
-      imageUrl: vault.imageUrl || session.bot.imageUrl,
+      // Vault entry belongs to this license's owner — use its image verbatim
+      imageUrl: vault.imageUrl || '',
       displayName: vault.displayName || session.bot.displayName,
       mainText: vault.mainText || session.bot.mainText,
       symbols: vault.symbols.length ? vault.symbols : session.bot.symbols,
