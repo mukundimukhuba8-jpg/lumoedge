@@ -1,11 +1,11 @@
 /**
  * Client for MT5API RESTFul — Swagger: https://66.23.225.158/swagger/index.html
- * Order: server proxy (/api/mt5) first, then direct browser call to the
- * bridge (the MT5 host blocks datacenter IPs but allows real users).
+ * Brokers connect DIRECTLY to the swagger host from the user's device
+ * (that is how it worked before); the /api/mt5 server proxy is the backup.
  */
 
-const PROXY_BASE = '/api/mt5';
 const DIRECT_BASE = 'https://66.23.225.158';
+const PROXY_BASE = '/api/mt5';
 
 /** Remember which base worked so later calls are fast */
 let preferredBase: string | null = null;
@@ -88,8 +88,8 @@ function isBridgeBlocked(res: Response): boolean {
 
 async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
   const bases = preferredBase
-    ? [preferredBase, ...[PROXY_BASE, DIRECT_BASE].filter((b) => b !== preferredBase)]
-    : [PROXY_BASE, DIRECT_BASE];
+    ? [preferredBase, ...[DIRECT_BASE, PROXY_BASE].filter((b) => b !== preferredBase)]
+    : [DIRECT_BASE, PROXY_BASE];
   let lastError: unknown = null;
   for (const base of bases) {
     try {
@@ -109,7 +109,7 @@ async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
     }
   }
   throw new Error(
-    lastError instanceof Error && /certificate|Failed to fetch|network/i.test(lastError.message)
+    lastError instanceof Error && /certificate|Failed to fetch|network|abort/i.test(lastError.message)
       ? 'Cannot reach the broker bridge. Open https://66.23.225.158/swagger/index.html once in this browser, accept the security warning, then try again.'
       : lastError instanceof Error
         ? lastError.message
