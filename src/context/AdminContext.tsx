@@ -561,13 +561,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       if (db) {
         if (Array.isArray(db.auth?.admins)) {
-          const nextAuth: AuthState = {
-            portalOpen: false,
-            admin: (db.auth.admin as AdminUser | null) ?? null,
-            admins: db.auth.admins as AdminUser[],
-          };
-          setAuth(nextAuth);
-          saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+          // Never take remote "admin" (logged-in user) — that is per-device only.
+          // Syncing it made Super Admin and mentors overwrite each other.
+          setAuth((prev) => {
+            const nextAuth: AuthState = {
+              portalOpen: prev.portalOpen,
+              admin: prev.admin,
+              admins: db.auth!.admins as AdminUser[],
+            };
+            // Keep super in the list conceptually; mentors stay as stored
+            saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+            return nextAuth;
+          });
         }
         if (Array.isArray((db as { revokedKeys?: string[] }).revokedKeys)) {
           saveRevokedKeysLocal([
@@ -600,7 +605,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           });
         }
         if (db.images && typeof db.images === 'object') {
-          saveJSON(IMAGE_STORE, db.images);
+          saveJSON(IMAGE_STORE, {
+            ...loadJSON<Record<string, string>>(IMAGE_STORE, {}),
+            ...db.images,
+          });
         }
         if (Array.isArray(db.clients)) {
           const merged = mergeClientLists(
@@ -608,7 +616,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             db.clients as ClientRequest[],
           );
           setClients(merged);
-          // Ensure prepaid list is mirrored on the shared DB when possible
           void pushDb({ clients: merged }).catch(() => undefined);
         } else {
           const prepaid = prepaidAsClientRequests();
@@ -640,8 +647,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const saveAuth = useCallback((next: AuthState) => {
     setAuth(next);
     saveJSON(AUTH_KEY, { ...next, portalOpen: false });
+    // Only sync the mentor registry — never the active login session
     void pushDb({
-      auth: { admins: next.admins, admin: next.admin },
+      auth: { admins: next.admins, admin: null },
     });
   }, []);
 
@@ -774,11 +782,22 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         return null;
       },
       logout: () => saveAuth({ ...auth, admin: null, portalOpen: false }),
-      approveAdmin: (id) =>
+      approveAdmin: (id) => {
+        const mentor = auth.admins.find((a) => a.id === id);
+        if (mentor && !store.workspaces[id]) {
+          saveStore({
+            ...store,
+            workspaces: {
+              ...store.workspaces,
+              [id]: createEmptyWorkspace(mentor),
+            },
+          });
+        }
         saveAuth({
           ...auth,
           admins: auth.admins.map((a) => (a.id === id ? { ...a, role: 'admin' } : a)),
-        }),
+        });
+      },
       deleteAdmin: (id) => {
         if (id === SUPER_ADMIN.user.id) return;
         const nextAdmins = auth.admins.filter((a) => a.id !== id);
@@ -1595,10 +1614,19 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               resolveProfileImage(nextProfile.eaImage, nextProfile.customMedia) ||
               nextProfile.eaImage ||
               '';
+            // Prefer short img: refs on licenses so Firebase writes stay small
+            const licenseImage =
+              image && image.startsWith('data:')
+                ? `img:profile-${adminId}`
+                : image;
+            if (image && image.startsWith('data:')) {
+              saveEaImage(`profile-${adminId}`, image);
+              saveEaImage(`img:profile-${adminId}`, image);
+            }
             const media = nextProfile.customMedia;
             const nextLicenses = ws.licenses.map((lic) => ({
               ...lic,
-              eaImage: image || lic.eaImage,
+              eaImage: licenseImage || lic.eaImage,
               mainText: nextProfile.mainText || lic.mainText,
               eaName: nextProfile.eaDisplayName || lic.eaName,
               customMedia: media,
@@ -1630,7 +1658,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               eas: image
                 ? ws.eas.map((ea) => {
                     saveEaImage(`ea-${ea.id}`, image);
-                    return { ...ea, imageUrl: image };
+                    return {
+                      ...ea,
+                      imageUrl: licenseImage || image,
+                    };
                   })
                 : ws.eas,
               mt5:
@@ -1642,6 +1673,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                   : ws.mt5,
             };
           });
+          // Push image blob separately so it can't get lost in a large store merge
+          if (resolvedPatch.eaImage?.startsWith('data:')) {
+            void pushDb({
+              images: { [`profile-${adminId}`]: resolvedPatch.eaImage },
+            });
+          }
         })();
       },
       executeOrder: (order) => {
