@@ -171,7 +171,7 @@ export function ChartScannerPage() {
     const start = performance.now();
     const from = 0;
     const to = targetAccuracy;
-    const duration = 1800;
+    const duration = 900;
 
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / duration);
@@ -194,14 +194,14 @@ export function ChartScannerPage() {
     setLastResult(item);
     setPhase('symbol');
     setStatus(`Detected ${item.symbol || 'symbol'}…`);
-    await wait(1100);
+    await wait(550);
     setPhase('direction');
     setStatus(
       item.direction === 'sell'
         ? `Direction: SELL ${item.symbol || ''}`
         : `Direction: BUY ${item.symbol || ''}`,
     );
-    await wait(1200);
+    await wait(650);
     setPhase('accuracy');
     setTargetAccuracy(item.accuracy);
     setStatus('Calculating accuracy…');

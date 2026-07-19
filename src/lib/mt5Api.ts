@@ -110,10 +110,10 @@ async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
   }
   throw new Error(
     lastError instanceof Error && /certificate|Failed to fetch|network|abort/i.test(lastError.message)
-      ? 'Cannot reach the broker bridge. Open https://66.23.225.158/swagger/index.html once in this browser, accept the security warning, then try again.'
+      ? 'Cannot reach the broker server. Check your connection and try again.'
       : lastError instanceof Error
         ? lastError.message
-        : 'MT5 bridge unreachable',
+        : 'Broker server unreachable',
   );
 }
 
@@ -137,102 +137,16 @@ export async function pingMt5(): Promise<boolean> {
   }
 }
 
-/** Search existing broker companies / MT5 server names */
+/** Search existing broker companies / MT5 server names (live results only) */
 export async function searchBrokers(company: string): Promise<Mt5Company[]> {
   const q = company.trim();
   if (q.length < 2) return [];
-  try {
-    const res = await mt5Fetch(`/Search?company=${encodeURIComponent(q)}`);
-    const data = await readBody(res);
-    if (!res.ok) {
-      throw new Error(typeof data === 'string' ? data : 'Broker search failed');
-    }
-    const list = Array.isArray(data) ? (data as Mt5Company[]) : [];
-    if (list.length) return list;
-  } catch (err) {
-    // Fall through to local known brokers when MT5 bridge is down
-    console.warn('[mt5] search failed, using offline list', err);
+  const res = await mt5Fetch(`/Search?company=${encodeURIComponent(q)}`);
+  const data = await readBody(res);
+  if (!res.ok) {
+    throw new Error(typeof data === 'string' ? data : 'Broker search failed');
   }
-  return offlineBrokerMatches(q);
-}
-
-/** Known brokers when the live MT5 search bridge is unreachable */
-function offlineBrokerMatches(q: string): Mt5Company[] {
-  const known: Mt5Company[] = [
-    {
-      company: 'Razor Markets',
-      results: [
-        { name: 'RazorMarkets-Live', site: 'https://razormarkets.co.za' },
-        { name: 'RazorMarkets-Demo', site: 'https://razormarkets.co.za' },
-      ],
-    },
-    {
-      company: 'IC Markets',
-      results: [
-        { name: 'ICMarketsSC-MT5', site: 'https://www.icmarkets.com' },
-        { name: 'ICMarketsSC-Demo', site: 'https://www.icmarkets.com' },
-      ],
-    },
-    {
-      company: 'Exness',
-      results: [
-        { name: 'Exness-MT5Real', site: 'https://www.exness.com' },
-        { name: 'Exness-MT5Trial', site: 'https://www.exness.com' },
-      ],
-    },
-    {
-      company: 'XM',
-      results: [
-        { name: 'XMGlobal-MT5', site: 'https://www.xm.com' },
-        { name: 'XMGlobal-MT5 2', site: 'https://www.xm.com' },
-      ],
-    },
-    {
-      company: 'FTMO',
-      results: [{ name: 'FTMO-Server', site: 'https://ftmo.com' }],
-    },
-    {
-      company: 'Pepperstone',
-      results: [
-        { name: 'Pepperstone-MT5-Live', site: 'https://pepperstone.com' },
-        { name: 'Pepperstone-MT5-Demo', site: 'https://pepperstone.com' },
-      ],
-    },
-    {
-      company: 'FBS',
-      results: [
-        { name: 'FBS-Real', site: 'https://fbs.com' },
-        { name: 'FBS-Demo', site: 'https://fbs.com' },
-      ],
-    },
-    {
-      company: 'RoboForex',
-      results: [
-        { name: 'RoboForex-Pro', site: 'https://roboforex.com' },
-        { name: 'RoboForex-Demo', site: 'https://roboforex.com' },
-      ],
-    },
-    {
-      company: 'Tickmill',
-      results: [
-        { name: 'Tickmill-Live', site: 'https://tickmill.com' },
-        { name: 'Tickmill-Demo', site: 'https://tickmill.com' },
-      ],
-    },
-    {
-      company: 'Admiral Markets',
-      results: [
-        { name: 'AdmiralsGroup-Demo', site: 'https://admiralmarkets.com' },
-        { name: 'AdmiralsGroup-Live', site: 'https://admiralmarkets.com' },
-      ],
-    },
-  ];
-  const needle = q.toLowerCase();
-  return known.filter(
-    (c) =>
-      c.company.toLowerCase().includes(needle) ||
-      c.results.some((r) => r.name.toLowerCase().includes(needle)),
-  );
+  return Array.isArray(data) ? (data as Mt5Company[]) : [];
 }
 
 /**
