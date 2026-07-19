@@ -246,15 +246,37 @@ export function resolveProfileImage(
     );
   };
 
-  const fromEa = String(eaImage || '').trim();
-  if (fromEa && !isFakeLogo(fromEa)) return fromEa;
+  const resolveRef = (raw: string): string => {
+    const fromEa = String(raw || '').trim();
+    if (!fromEa || isFakeLogo(fromEa)) return '';
+    if (fromEa.startsWith('img:')) {
+      try {
+        const key = fromEa.replace(/^img:/, '');
+        const all = JSON.parse(
+          localStorage.getItem('ub-web/ea-images-v1') || '{}',
+        ) as Record<string, string>;
+        return all[fromEa] || all[key] || all[`img:${key}`] || fromEa;
+      } catch {
+        return fromEa;
+      }
+    }
+    return fromEa;
+  };
+
+  const fromEa = resolveRef(String(eaImage || ''));
+  if (fromEa && !isFakeLogo(fromEa) && !fromEa.startsWith('img:')) return fromEa;
 
   const media = normalizeCustomMedia(customMedia);
   for (const slot of ['profile-1', 'profile-2'] as const) {
     const hit = media.find((m) => m.slot === slot && m.kind === 'image' && m.url);
-    if (hit?.url && !isFakeLogo(hit.url)) return hit.url;
+    if (hit?.url) {
+      const resolved = resolveRef(hit.url);
+      if (resolved && !isFakeLogo(resolved) && !resolved.startsWith('img:')) {
+        return resolved;
+      }
+    }
   }
-  return '';
+  return fromEa.startsWith('img:') ? '' : fromEa;
 }
 
 export function resolveCustomBackdrop(

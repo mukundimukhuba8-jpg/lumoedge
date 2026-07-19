@@ -12,6 +12,7 @@ import {
   mediaKey,
   normalizeCustomMedia,
   removeMediaSlot,
+  resolveProfileImage,
   uploadMentorMedia,
   uploadMentorMediaFile,
   upsertMediaSlot,
@@ -516,8 +517,10 @@ export function ProfilePage() {
   const [savingSlot, setSavingSlot] = useState<MentorMediaSlotId | null>(null);
 
   useEffect(() => {
+    const eaImage = resolveProfileImage(profile.eaImage, profile.customMedia) || profile.eaImage;
     setForm({
       ...profile,
+      eaImage: eaImage.startsWith('img:') ? '' : eaImage,
       customMedia: normalizeCustomMedia(profile.customMedia),
     });
   }, [profile]);
@@ -537,10 +540,17 @@ export function ProfilePage() {
       const dataUrl = await compressImageFile(file, 480, 0.72);
       const imageId = `profile-${admin.id}`;
       const url = await publishEaImage(imageId, dataUrl);
-      const finalUrl = url || dataUrl;
+      // Form keeps a displayable data URL; shared DB stores img:/https ref
+      const stored = url || dataUrl;
       setForm((prev) => {
-        const next = { ...prev, eaImage: finalUrl };
-        updateProfile(next);
+        const next = {
+          ...prev,
+          eaImage: stored.startsWith('img:') ? dataUrl : stored,
+        };
+        updateProfile({
+          ...next,
+          eaImage: stored.startsWith('img:') ? stored : stored || dataUrl,
+        });
         return next;
       });
     } catch {

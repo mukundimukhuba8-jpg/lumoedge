@@ -247,8 +247,8 @@ export async function publishEaImage(id: string, dataUrl: string): Promise<strin
       saveEaImage(id, dataUrl);
       saveEaImage(refId, dataUrl);
       void pushDbImages(id, dataUrl);
-      // Return data URL so <img> works immediately; RTDB also has a copy
-      return dataUrl;
+      // Short ref for shared DB; local cache keeps the displayable data URL
+      return refId;
     }
   }
 

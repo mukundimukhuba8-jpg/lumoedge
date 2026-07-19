@@ -616,7 +616,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             db.clients as ClientRequest[],
           );
           setClients(merged);
-          void pushDb({ clients: merged }).catch(() => undefined);
+          // Only seed Firebase when the remote list is empty — never rewrite
+          // clients on every page load (that raced with admin workspace saves).
+          if (db.clients.length === 0 && merged.length > 0) {
+            void pushDb({ clients: merged }).catch(() => undefined);
+          }
         } else {
           const prepaid = prepaidAsClientRequests();
           setClients(prepaid);
@@ -656,7 +660,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const saveStore = useCallback((next: StoreState) => {
     setStore(next);
     saveJSON(STORE_KEY, next);
-    void pushDb({ store: next });
+    // Push each workspace path-scoped (merge on server) — avoids full-tree races
+    void pushDb({ store: { workspaces: next.workspaces } });
   }, []);
 
   const patchWorkspace = useCallback(
@@ -669,7 +674,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           workspaces: { ...prev.workspaces, [adminId]: nextWs },
         };
         saveJSON(STORE_KEY, next);
-        void pushDb({ store: next });
+        // Only push THIS admin's workspace — never rewrite every mentor's portal
+        void pushDb({ store: { workspaces: { [adminId]: nextWs } } });
         return next;
       });
     },
@@ -1167,7 +1173,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             },
           };
           saveJSON(STORE_KEY, next);
-          void pushDb({ store: next, vault: loadVault() });
+          void pushDb({
+            store: {
+              workspaces: {
+                [adminId]: next.workspaces[adminId],
+              },
+            },
+            vault: loadVault(),
+          });
           return next;
         });
         return { ok: true, license: record };
@@ -1202,7 +1215,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           };
           saveJSON(STORE_KEY, next);
           void pushDb({
-            store: next,
+            store: {
+              workspaces: {
+                [adminId]: next.workspaces[adminId],
+              },
+            },
             vault: loadVault(),
             revokedKeys: loadRevokedKeys(),
           });
@@ -1555,12 +1572,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             imagePatch = undefined;
           }
           if (imagePatch && imagePatch.startsWith('data:')) {
-            imagePatch = await publishEaImage(`profile-${adminId}`, imagePatch);
-          } else if (imagePatch) {
+            const published = await publishEaImage(`profile-${adminId}`, imagePatch);
+            // Keep bytes in local cache; shared DB gets a short img: ref
             saveEaImage(`profile-${adminId}`, imagePatch);
-            if (imagePatch.startsWith('data:')) {
-              await firebaseSaveImage(`profile-${adminId}`, imagePatch);
-            }
+            saveEaImage(`img:profile-${adminId}`, imagePatch);
+            imagePatch = published || `img:profile-${adminId}`;
+          } else if (imagePatch && imagePatch.startsWith('img:')) {
+            // Already a durable ref — do not overwrite cache with the ref string
+          } else if (imagePatch && (imagePatch.startsWith('http') || imagePatch.startsWith('/'))) {
+            saveEaImage(`profile-${adminId}`, imagePatch);
           }
           const resolvedPatch = {
             ...patch,
@@ -1573,8 +1593,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           if (resolvedPatch.eaImage?.startsWith('data:')) {
             saveEaImage(`profile-${adminId}`, resolvedPatch.eaImage);
             await firebaseSaveImage(`profile-${adminId}`, resolvedPatch.eaImage);
-          } else if (resolvedPatch.eaImage) {
-            saveEaImage(`profile-${adminId}`, resolvedPatch.eaImage);
+            resolvedPatch.eaImage = `img:profile-${adminId}`;
           }
 
           // Resolve custom media data URLs into durable copies
@@ -1614,11 +1633,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               resolveProfileImage(nextProfile.eaImage, nextProfile.customMedia) ||
               nextProfile.eaImage ||
               '';
-            // Prefer short img: refs on licenses so Firebase writes stay small
+            // Always persist short img: refs in shared DB (never giant data URLs)
             const licenseImage =
-              image && image.startsWith('data:')
+              image && (image.startsWith('data:') || image.startsWith('img:'))
                 ? `img:profile-${adminId}`
                 : image;
+            const profileImageRef =
+              image && image.startsWith('data:')
+                ? `img:profile-${adminId}`
+                : image.startsWith('img:')
+                  ? image
+                  : image || '';
             if (image && image.startsWith('data:')) {
               saveEaImage(`profile-${adminId}`, image);
               saveEaImage(`img:profile-${adminId}`, image);
@@ -1653,11 +1678,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             }
             return {
               ...ws,
-              profile: { ...nextProfile, eaImage: image || nextProfile.eaImage },
+              profile: {
+                ...nextProfile,
+                eaImage: profileImageRef || nextProfile.eaImage,
+              },
               licenses: nextLicenses,
               eas: image
                 ? ws.eas.map((ea) => {
-                    saveEaImage(`ea-${ea.id}`, image);
+                    saveEaImage(`ea-${ea.id}`, image.startsWith('data:') ? image : getEaImage(`profile-${adminId}`) || image);
                     return {
                       ...ea,
                       imageUrl: licenseImage || image,

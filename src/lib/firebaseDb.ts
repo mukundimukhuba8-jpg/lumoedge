@@ -1,4 +1,4 @@
-import { get, ref, set } from 'firebase/database';
+import { get, ref, set, update } from 'firebase/database';
 import {
   getDownloadURL,
   ref as storageRef,
@@ -155,66 +155,6 @@ function mergeWorkspace(
   };
 }
 
-function mergeWorkspaces(
-  current: Record<string, unknown>,
-  incoming: Record<string, unknown>,
-): Record<string, unknown> {
-  const ids = new Set([...Object.keys(current || {}), ...Object.keys(incoming || {})]);
-  const out: Record<string, unknown> = {};
-  for (const id of ids) {
-    out[id] = mergeWorkspace(
-      current?.[id] as Record<string, unknown> | undefined,
-      incoming?.[id] as Record<string, unknown> | undefined,
-    );
-  }
-  return out;
-}
-
-function mergeDb(current: RemoteDb, patch: Partial<RemoteDb>): RemoteDb {
-  const curWs =
-    (current.store?.workspaces as Record<string, unknown>) || {};
-  const patchWs =
-    patch.store?.workspaces && typeof patch.store.workspaces === 'object'
-      ? (patch.store.workspaces as Record<string, unknown>)
-      : null;
-
-  const next = normalizeDb({
-    ...current,
-    ...patch,
-    auth: { ...current.auth, ...(patch.auth || {}) },
-    store: {
-      workspaces: patchWs ? mergeWorkspaces(curWs, patchWs) : curWs,
-    },
-    images: { ...(current.images || {}), ...(patch.images || {}) },
-    sessions: { ...(current.sessions || {}), ...(patch.sessions || {}) },
-    updatedAt: new Date().toISOString(),
-  });
-
-  if (Array.isArray(patch.clients)) {
-    next.clients = mergeById(
-      current.clients || [],
-      patch.clients,
-      (c) => String(c.id || c.email || ''),
-    ) as RemoteDb['clients'];
-  }
-
-  if (Array.isArray(patch.vault)) {
-    next.vault = mergeById(
-      (current.vault || []) as Record<string, unknown>[],
-      patch.vault as Record<string, unknown>[],
-      (v) => String(v.id || v.key || ''),
-    );
-  }
-
-  if (Array.isArray(patch.revokedKeys)) {
-    next.revokedKeys = Array.from(
-      new Set([...(current.revokedKeys || []), ...patch.revokedKeys]),
-    );
-  }
-
-  return next;
-}
-
 export async function firebaseFetchDb(): Promise<RemoteDb | null> {
   if (!isFirebaseConfigured()) return null;
   try {
@@ -227,19 +167,158 @@ export async function firebaseFetchDb(): Promise<RemoteDb | null> {
   }
 }
 
+/** Serialize writes so Super Admin + mentor tabs don't clobber each other. */
+let writeChain: Promise<unknown> = Promise.resolve();
+
+function enqueueWrite<T>(fn: () => Promise<T>): Promise<T> {
+  const next = writeChain.then(fn, fn);
+  writeChain = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
+async function getPath<T>(path: string): Promise<T | null> {
+  const snap = await get(ref(getFirebaseDb(), path));
+  return snap.exists() ? (snap.val() as T) : null;
+}
+
+/**
+ * Path-scoped push — never rewrite the whole `lumo/` tree.
+ * Concurrent Super Admin / mentor / client loads used to overwrite each other
+ * because every save did read→merge→set(root).
+ */
 export async function firebasePushDb(
   partial: Partial<RemoteDb>,
 ): Promise<RemoteDb | null> {
   if (!isFirebaseConfigured()) return null;
-  try {
-    const current = (await firebaseFetchDb()) || emptyDb();
-    const merged = mergeDb(current, partial);
-    await set(ref(getFirebaseDb(), ROOT), merged);
-    return merged;
-  } catch (err) {
-    console.warn('[firebase] pushDb failed', err);
-    return null;
+  return enqueueWrite(async () => {
+    try {
+      const db = getFirebaseDb();
+      const rootRef = ref(db, ROOT);
+      const patch: Record<string, unknown> = {
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (partial.auth) {
+        const curAuth =
+          (await getPath<RemoteDb['auth']>(`${ROOT}/auth`)) || emptyDb().auth;
+        // Never persist a shared logged-in user — login is per-device only
+        patch.auth = {
+          admins: Array.isArray(partial.auth.admins)
+            ? partial.auth.admins
+            : curAuth.admins || [],
+          admin: null,
+        };
+      }
+
+      if (partial.store?.workspaces && typeof partial.store.workspaces === 'object') {
+        const remoteWs =
+          (await getPath<Record<string, unknown>>(`${ROOT}/store/workspaces`)) ||
+          {};
+        for (const [id, incoming] of Object.entries(partial.store.workspaces)) {
+          const merged = mergeWorkspace(
+            remoteWs[id] as Record<string, unknown> | undefined,
+            incoming as Record<string, unknown> | undefined,
+          );
+          patch[`store/workspaces/${id}`] = stripHeavyImages(merged);
+          remoteWs[id] = merged;
+        }
+      }
+
+      if (Array.isArray(partial.vault)) {
+        const curVault =
+          (await getPath<unknown[]>(`${ROOT}/vault`)) || [];
+        patch.vault = mergeById(
+          curVault as Record<string, unknown>[],
+          partial.vault as Record<string, unknown>[],
+          (v) => String(v.id || v.key || ''),
+        ).map((v) => stripHeavyImages(v));
+      }
+
+      if (Array.isArray(partial.clients)) {
+        const curClients =
+          (await getPath<RemoteDb['clients']>(`${ROOT}/clients`)) || [];
+        patch.clients = mergeById(
+          curClients,
+          partial.clients,
+          (c) => String(c.id || c.email || ''),
+        );
+      }
+
+      if (partial.images && typeof partial.images === 'object') {
+        for (const [id, dataUrl] of Object.entries(partial.images)) {
+          const key = id.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
+          if (!key || !dataUrl) continue;
+          patch[`images/${key}`] = dataUrl;
+        }
+      }
+
+      if (partial.sessions && typeof partial.sessions === 'object') {
+        for (const [email, session] of Object.entries(partial.sessions)) {
+          const key = email.trim().toLowerCase();
+          if (!key) continue;
+          patch[`sessions/${key}`] = session;
+        }
+      }
+
+      if (Array.isArray(partial.revokedKeys)) {
+        const cur =
+          (await getPath<string[]>(`${ROOT}/revokedKeys`)) || [];
+        patch.revokedKeys = Array.from(
+          new Set([...cur, ...partial.revokedKeys]),
+        );
+      }
+
+      await update(rootRef, patch);
+      return (await firebaseFetchDb()) || emptyDb();
+    } catch (err) {
+      console.warn('[firebase] pushDb failed', err);
+      return null;
+    }
+  });
+}
+
+/** Keep large data-URLs out of workspaces/vault — they live under lumo/images. */
+function stripHeavyImages<T extends Record<string, unknown>>(obj: T): T {
+  const out: Record<string, unknown> = { ...obj };
+  if (typeof out.eaImage === 'string' && out.eaImage.startsWith('data:')) {
+    const owner = String(out.ownerAdminId || out.mentorId || '');
+    out.eaImage = owner ? `img:profile-${owner}` : '';
   }
+  if (typeof out.imageUrl === 'string' && out.imageUrl.startsWith('data:')) {
+    out.imageUrl = '';
+  }
+  if (out.profile && typeof out.profile === 'object') {
+    const profile = { ...(out.profile as Record<string, unknown>) };
+    if (typeof profile.eaImage === 'string' && profile.eaImage.startsWith('data:')) {
+      const mentorId = String(profile.mentorId || '');
+      profile.eaImage = mentorId ? `img:profile-${mentorId}` : '';
+    }
+    out.profile = profile;
+  }
+  if (Array.isArray(out.eas)) {
+    out.eas = (out.eas as Record<string, unknown>[]).map((ea) => {
+      if (typeof ea.imageUrl === 'string' && ea.imageUrl.startsWith('data:')) {
+        return { ...ea, imageUrl: '' };
+      }
+      return ea;
+    });
+  }
+  if (Array.isArray(out.licenses)) {
+    out.licenses = (out.licenses as Record<string, unknown>[]).map((lic) => {
+      if (typeof lic.eaImage === 'string' && lic.eaImage.startsWith('data:')) {
+        const owner = String(lic.ownerAdminId || '');
+        return {
+          ...lic,
+          eaImage: owner ? `img:profile-${owner}` : '',
+        };
+      }
+      return lic;
+    });
+  }
+  return out as T;
 }
 
 export async function firebaseFetchClients(): Promise<RemoteDb['clients'] | null> {
@@ -253,27 +332,31 @@ export async function firebasePostClient(input: {
   lastName: string;
 }): Promise<RemoteDb['clients'][number] | null> {
   if (!isFirebaseConfigured()) return null;
-  try {
-    const db = (await firebaseFetchDb()) || emptyDb();
-    const email = input.email.trim().toLowerCase();
-    const existing = db.clients.find((c) => c.email.toLowerCase() === email);
-    if (existing) return existing;
-    const entry: RemoteDb['clients'][number] = {
-      id: `cli-${Date.now()}`,
-      email,
-      firstName: input.firstName.trim(),
-      lastName: input.lastName.trim(),
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-    };
-    db.clients = [entry, ...db.clients];
-    db.updatedAt = new Date().toISOString();
-    await set(ref(getFirebaseDb(), ROOT), db);
-    return entry;
-  } catch (err) {
-    console.warn('[firebase] postClient failed', err);
-    return null;
-  }
+  return enqueueWrite(async () => {
+    try {
+      const email = input.email.trim().toLowerCase();
+      const curClients =
+        (await getPath<RemoteDb['clients']>(`${ROOT}/clients`)) || [];
+      const existing = curClients.find((c) => c.email.toLowerCase() === email);
+      if (existing) return existing;
+      const entry: RemoteDb['clients'][number] = {
+        id: `cli-${Date.now()}`,
+        email,
+        firstName: input.firstName.trim(),
+        lastName: input.lastName.trim(),
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+      await update(ref(getFirebaseDb(), ROOT), {
+        clients: [entry, ...curClients],
+        updatedAt: new Date().toISOString(),
+      });
+      return entry;
+    } catch (err) {
+      console.warn('[firebase] postClient failed', err);
+      return null;
+    }
+  });
 }
 
 export async function firebasePatchClient(
@@ -285,39 +368,49 @@ export async function firebasePatchClient(
   },
 ): Promise<RemoteDb['clients'][number] | null> {
   if (!isFirebaseConfigured()) return null;
-  try {
-    const db = (await firebaseFetchDb()) || emptyDb();
-    const idx = db.clients.findIndex(
-      (c) => c.id === id || c.email.toLowerCase() === id.toLowerCase(),
-    );
-    if (idx < 0) return null;
-    db.clients[idx] = { ...db.clients[idx], ...patch };
-    db.updatedAt = new Date().toISOString();
-    await set(ref(getFirebaseDb(), ROOT), db);
-    return db.clients[idx];
-  } catch (err) {
-    console.warn('[firebase] patchClient failed', err);
-    return null;
-  }
+  return enqueueWrite(async () => {
+    try {
+      const curClients =
+        (await getPath<RemoteDb['clients']>(`${ROOT}/clients`)) || [];
+      const idx = curClients.findIndex(
+        (c) => c.id === id || c.email.toLowerCase() === id.toLowerCase(),
+      );
+      if (idx < 0) return null;
+      curClients[idx] = { ...curClients[idx], ...patch };
+      await update(ref(getFirebaseDb(), ROOT), {
+        clients: curClients,
+        updatedAt: new Date().toISOString(),
+      });
+      return curClients[idx];
+    } catch (err) {
+      console.warn('[firebase] patchClient failed', err);
+      return null;
+    }
+  });
 }
 
 export async function firebaseDeleteClient(
   id: string,
 ): Promise<{ ok: boolean; removed: number } | null> {
   if (!isFirebaseConfigured()) return null;
-  try {
-    const db = (await firebaseFetchDb()) || emptyDb();
-    const before = db.clients.length;
-    db.clients = db.clients.filter(
-      (c) => c.id !== id && c.email.toLowerCase() !== id.toLowerCase(),
-    );
-    db.updatedAt = new Date().toISOString();
-    await set(ref(getFirebaseDb(), ROOT), db);
-    return { ok: true, removed: before - db.clients.length };
-  } catch (err) {
-    console.warn('[firebase] deleteClient failed', err);
-    return null;
-  }
+  return enqueueWrite(async () => {
+    try {
+      const curClients =
+        (await getPath<RemoteDb['clients']>(`${ROOT}/clients`)) || [];
+      const before = curClients.length;
+      const next = curClients.filter(
+        (c) => c.id !== id && c.email.toLowerCase() !== id.toLowerCase(),
+      );
+      await update(ref(getFirebaseDb(), ROOT), {
+        clients: next,
+        updatedAt: new Date().toISOString(),
+      });
+      return { ok: true, removed: before - next.length };
+    } catch (err) {
+      console.warn('[firebase] deleteClient failed', err);
+      return null;
+    }
+  });
 }
 
 export async function firebaseFetchSession<T>(
