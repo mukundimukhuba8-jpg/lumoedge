@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { EaBackdrop } from './components/EaBackdrop';
 import { useAdmin } from './context/AdminContext';
 import { useApp } from './context/AppContext';
 import { AdminAuthPage } from './pages/admin/AdminAuthPage';
@@ -23,13 +24,21 @@ import { SubscribePage } from './pages/client/SubscribePage';
 import { WaitingApprovalPage } from './pages/client/WaitingApprovalPage';
 
 function ClientAppGate({ children }: { children: React.ReactNode }) {
-  const { user, accessStatus } = useApp();
+  const { user, accessStatus, bot } = useApp();
+  const location = useLocation();
   if (!user) return <Navigate to="/" replace />;
   if (accessStatus === 'pending') return <Navigate to="/waiting" replace />;
   if (accessStatus === 'approved') return <Navigate to="/subscribe" replace />;
   if (accessStatus === 'paid') return <Navigate to="/activate" replace />;
   if (accessStatus !== 'licensed') return <Navigate to="/" replace />;
-  return <>{children}</>;
+  return (
+    <>
+      <EaBackdrop src={bot.imageUrl || '/bull-hero.jpg'} />
+      <div key={location.pathname} className="page-enter">
+        {children}
+      </div>
+    </>
+  );
 }
 
 function AdminGate({ children }: { children: React.ReactNode }) {

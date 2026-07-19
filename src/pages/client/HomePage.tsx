@@ -563,26 +563,10 @@ function Modal({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.55)',
-        display: 'grid',
-        alignItems: 'end',
-        zIndex: 50,
-      }}
-    >
+    <div className="sheet-backdrop smooth-fade" onClick={onClose}>
       <div
-        className="glow-card"
-        style={{
-          borderRadius: '24px 24px 0 0',
-          maxHeight: '78vh',
-          overflow: 'auto',
-          maxWidth: 480,
-          width: '100%',
-          margin: '0 auto',
-        }}
+        className="glow-card sheet-panel smooth-sheet"
+        onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
           <strong>{title}</strong>

@@ -15,6 +15,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
+import { EaBackdrop } from '../../components/EaBackdrop';
 import { useAdmin } from '../../context/AdminContext';
 
 type MenuRole = 'super' | 'admin';
@@ -40,7 +41,7 @@ const ALL_MENU: {
 ];
 
 export function AdminShell() {
-  const { admin, logout } = useAdmin();
+  const { admin, logout, profile } = useAdmin();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
@@ -59,6 +60,7 @@ export function AdminShell() {
 
   return (
     <div className="app-shell">
+      <EaBackdrop src={profile.eaImage || '/bull-hero.jpg'} />
       <div className="admin-top">
         <button type="button" onClick={() => setOpen(true)} style={{ background: 'transparent', color: 'var(--text)' }}>
           <Menu />
@@ -66,13 +68,13 @@ export function AdminShell() {
         <strong>{isSuper ? 'Super Admin' : 'Mentor Portal'}</strong>
         <span style={{ width: 40 }} />
       </div>
-      <div style={{ padding: 16, paddingBottom: 40 }}>
+      <div className="page-enter" style={{ padding: 16, paddingBottom: 40, position: 'relative', zIndex: 1 }}>
         <Outlet />
       </div>
 
       {open ? (
-        <div className="drawer-backdrop">
-          <aside className="drawer">
+        <div className="drawer-backdrop smooth-fade">
+          <aside className="drawer smooth-drawer">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span className="title-blue" style={{ fontSize: 18 }}>Lumo Admin</span>

@@ -165,8 +165,14 @@ export function InterfaceStyleModal({
   };
 
   return (
-    <div className="iface-backdrop" role="dialog" aria-modal="true" aria-label="Interface Style">
-      <div className="iface-sheet">
+    <div
+      className="iface-backdrop smooth-fade"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Interface Style"
+      onClick={onClose}
+    >
+      <div className="iface-sheet smooth-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="iface-handle" />
         <div className="iface-header">
           <div className="iface-title-row">
