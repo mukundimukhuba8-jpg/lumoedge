@@ -23,12 +23,12 @@ import {
 import {
   emptyCustomMedia,
   normalizeCustomMedia,
+  resolveProfileImage,
   type MentorMediaItem,
 } from '../lib/mentorMedia';
 import {
   findInVault,
   getEaImage,
-  imagePublicUrl,
   isRevokedKey,
   keyFingerprint,
   keysMatch,
@@ -1272,25 +1272,69 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           };
         }
 
-        // Always re-resolve EA branding from admin profile / image store
+        // Always re-resolve EA branding from admin profile / image store / custom media
         const ownerWs = ownerId ? workspaces[ownerId] : undefined;
         const ownerEa = ownerWs?.eas.find((e) => e.id === license!.eaId);
-        const resolvedImage =
-          (license.eaImage &&
-          (license.eaImage.startsWith('/') ||
-            license.eaImage.startsWith('http') ||
-            license.eaImage.startsWith('data:'))
-            ? license.eaImage
-            : '') ||
-          getEaImage(license.id) ||
-          getEaImage(`key-${normalizedKey}`) ||
-          ownerEa?.imageUrl ||
-          ownerWs?.profile.eaImage ||
-          getEaImage(`profile-${ownerId || license.ownerAdminId}`) ||
-          (ownerId || license.ownerAdminId
-            ? imagePublicUrl(`profile-${ownerId || license.ownerAdminId}`)
-            : '') ||
+        const profileAdminId = ownerId || license.ownerAdminId || '';
+        const remoteImages =
+          remote?.images && typeof remote.images === 'object'
+            ? (remote.images as Record<string, string>)
+            : {};
+        const fromRemoteProfile =
+          (profileAdminId && remoteImages[`profile-${profileAdminId}`]) ||
+          (license.id && remoteImages[license.id]) ||
+          remoteImages[`key-${normalizedKey}`] ||
           '';
+        const resolvedMedia = normalizeCustomMedia(
+          ownerWs?.profile.customMedia?.length
+            ? ownerWs.profile.customMedia
+            : license.customMedia,
+        );
+        const fromProfileSlots = resolvedMedia.find(
+          (m) =>
+            (m.slot === 'profile-1' || m.slot === 'profile-2') &&
+            m.kind === 'image' &&
+            m.url &&
+            !String(m.url).includes('lumo-logo'),
+        )?.url;
+        const candidateImages = [
+          license.eaImage,
+          ownerWs?.profile.eaImage,
+          fromRemoteProfile,
+          getEaImage(license.id),
+          getEaImage(`key-${normalizedKey}`),
+          ownerEa?.imageUrl,
+          getEaImage(`profile-${profileAdminId}`),
+          fromProfileSlots,
+        ];
+        let resolvedImage = '';
+        for (const c of candidateImages) {
+          const v = String(c || '').trim();
+          if (!v || v.includes('lumo-logo')) continue;
+          // Skip bare /api/images refs that were never uploaded (would 404 → fake logo)
+          if (v.startsWith('/api/images/')) {
+            const imgKey = decodeURIComponent(v.replace('/api/images/', '').split('?')[0]);
+            const embedded = remoteImages[imgKey] || getEaImage(imgKey);
+            if (embedded && embedded.startsWith('data:')) {
+              resolvedImage = embedded;
+              break;
+            }
+            // Keep URL only if we know the blob exists in the remote images map
+            if (remoteImages[imgKey]) {
+              resolvedImage = v;
+              break;
+            }
+            continue;
+          }
+          if (
+            v.startsWith('data:') ||
+            v.startsWith('http') ||
+            v.startsWith('/')
+          ) {
+            resolvedImage = v;
+            break;
+          }
+        }
         const resolvedName =
           license.eaName || ownerEa?.name || ownerWs?.profile.eaDisplayName || 'Lumo Edge';
         const resolvedMain =
@@ -1301,11 +1345,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             : ownerEa?.symbols?.length
               ? ownerEa.symbols
               : ['XAUUSD'];
-        const resolvedMedia = normalizeCustomMedia(
-          ownerWs?.profile.customMedia?.length
-            ? ownerWs.profile.customMedia
-            : license.customMedia,
-        );
 
         license = {
           ...license,
@@ -1430,8 +1469,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               ),
             };
             const image =
+              resolveProfileImage(nextProfile.eaImage, nextProfile.customMedia) ||
               nextProfile.eaImage ||
-              imagePublicUrl(`profile-${adminId}`) ||
               '';
             const media = nextProfile.customMedia;
             const nextLicenses = ws.licenses.map((lic) => ({

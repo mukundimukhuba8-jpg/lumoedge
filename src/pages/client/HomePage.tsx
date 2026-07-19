@@ -11,7 +11,7 @@ import {
   saveInterfacePrefs,
   type InterfacePrefs,
 } from '../../lib/interfaceStyle';
-import { resolveCustomBackdrop } from '../../lib/mentorMedia';
+import { resolveCustomBackdrop, resolveProfileImage } from '../../lib/mentorMedia';
 import { loadJSON, normalizeLicenseKey, saveJSON } from '../../lib/storage';
 import { FocusLayout, TerminalLayout, VortexLayout } from './HomeLayouts';
 import { InterfaceStyleModal } from './InterfaceStyleModal';
@@ -38,7 +38,10 @@ export function HomePage() {
     refreshBranding,
   } = useApp();
   const { openPortal, claimLicense } = useAdmin();
-  const eaImage = bot.imageUrl || '';
+  // Real mentor profile only — never the default app robot logo
+  const profileAvatar = resolveProfileImage(bot.imageUrl, bot.customMedia);
+  const eaImage = profileAvatar || bot.imageUrl || '';
+  const heroImage = profileAvatar || bot.imageUrl || '/bull-hero.jpg';
   const [symbolsOpen, setSymbolsOpen] = useState(false);
   const [licenseOpen, setLicenseOpen] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
@@ -97,7 +100,8 @@ export function HomePage() {
           name: lic.eaName,
           displayName: lic.eaName,
           mainText: lic.mainText,
-          imageUrl: lic.eaImage,
+          imageUrl:
+            resolveProfileImage(lic.eaImage, lic.customMedia) || lic.eaImage || '',
           symbols: lic.symbols,
           customMedia: lic.customMedia,
         });
@@ -211,7 +215,7 @@ export function HomePage() {
 
   const layoutActions = {
     eaTitle,
-    eaImage,
+    eaImage: profileAvatar || eaImage,
     backdropUrl: platformBgUrl,
     backdropKind: platformBgKind,
     mainText: bot.mainText || eaTitle,
@@ -237,8 +241,8 @@ export function HomePage() {
     <div className={`app-shell home-layout-${stylePrefs.layout}`}>
       {fxClass ? <div className={`iface-fx ${fxClass}`} aria-hidden /> : null}
 
-      {/* Floating avatar — classic + focus/terminal (vortex has its own large avatar) */}
-      {stylePrefs.layout !== 'vortex' ? (
+      {/* Floating profile avatar — only when mentor uploaded a real photo */}
+      {stylePrefs.layout !== 'vortex' && profileAvatar ? (
         <button
           type="button"
           ref={floatRef}
@@ -266,16 +270,13 @@ export function HomePage() {
           }}
         >
           <img
-            src={eaImage || '/lumo-logo.png'}
+            src={profileAvatar}
             alt=""
             width={56}
             height={56}
             draggable={false}
             onError={(e) => {
-              const el = e.currentTarget;
-              if (el.dataset.fallback === '1') return;
-              el.dataset.fallback = '1';
-              el.src = '/lumo-logo.png';
+              e.currentTarget.style.display = 'none';
             }}
             style={{
               width: '100%',
@@ -353,7 +354,7 @@ export function HomePage() {
             >
               <img
                 className="home-hero"
-                src={eaImage || '/bull-hero.jpg'}
+                src={heroImage}
                 alt={bot.displayName}
                 onError={(e) => {
                   const el = e.currentTarget;
@@ -417,19 +418,32 @@ export function HomePage() {
             </div>
 
             <div className="pill home-status-pill" style={{ marginBottom: 14, flexShrink: 0 }}>
-              <img
-                src={eaImage || '/lumo-logo.png'}
-                width={36}
-                height={36}
-                style={{ borderRadius: '50%', objectFit: 'cover' }}
-                alt=""
-                onError={(e) => {
-                  const el = e.currentTarget;
-                  if (el.dataset.fallback === '1') return;
-                  el.dataset.fallback = '1';
-                  el.src = '/lumo-logo.png';
-                }}
-              />
+              {profileAvatar ? (
+                <img
+                  src={profileAvatar}
+                  width={36}
+                  height={36}
+                  style={{ borderRadius: '50%', objectFit: 'cover' }}
+                  alt=""
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <span
+                  className="circle-btn"
+                  style={{
+                    width: 36,
+                    height: 36,
+                    fontSize: 14,
+                    fontWeight: 800,
+                    flexShrink: 0,
+                  }}
+                  aria-hidden
+                >
+                  {(eaTitle || 'L').slice(0, 1).toUpperCase()}
+                </span>
+              )}
               <div>
                 <div style={{ fontWeight: 700, letterSpacing: 1.2 }}>{bot.name}</div>
                 <div style={{ color: 'var(--electric)', fontWeight: 600 }}>
@@ -568,7 +582,10 @@ export function HomePage() {
                 name: lic.eaName,
                 displayName: lic.eaName,
                 mainText: lic.mainText,
-                imageUrl: lic.eaImage,
+                imageUrl:
+                  resolveProfileImage(lic.eaImage, lic.customMedia) ||
+                  lic.eaImage ||
+                  '',
                 symbols: lic.symbols,
                 customMedia: lic.customMedia,
               });
@@ -583,18 +600,20 @@ export function HomePage() {
       {eaInfoOpen ? (
         <Modal title="EA Status" onClose={() => setEaInfoOpen(false)}>
           <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
-            <img
-              src={eaImage || '/lumo-logo.png'}
-              alt=""
-              width={64}
-              height={64}
-              style={{
-                borderRadius: '50%',
-                border: '2px solid var(--electric)',
-                objectFit: 'cover',
-                marginBottom: 12,
-              }}
-            />
+            {profileAvatar ? (
+              <img
+                src={profileAvatar}
+                alt=""
+                width={64}
+                height={64}
+                style={{
+                  borderRadius: '50%',
+                  border: '2px solid var(--electric)',
+                  objectFit: 'cover',
+                  marginBottom: 12,
+                }}
+              />
+            ) : null}
             <div
               style={{
                 color: 'var(--electric)',
@@ -625,8 +644,8 @@ export function HomePage() {
         onClose={() => setStyleOpen(false)}
         prefs={stylePrefs}
         onChange={updateStylePrefs}
-        avatarUrl={eaImage || '/lumo-logo.png'}
-        mentorBgUrl={eaImage}
+        avatarUrl={profileAvatar || ''}
+        mentorBgUrl={heroImage}
         mentorMedia={bot.customMedia}
         onOpenScanner={() => {
           setStyleOpen(false);

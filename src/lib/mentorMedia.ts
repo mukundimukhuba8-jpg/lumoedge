@@ -219,6 +219,32 @@ export function mediaKey(adminId: string, slot: MentorMediaSlotId): string {
   return `${adminId}-${slot}`;
 }
 
+/** True profile photo for client avatars — never the default app logo. */
+export function resolveProfileImage(
+  eaImage: string | undefined,
+  customMedia?: MentorMediaItem[] | null,
+): string {
+  const isFakeLogo = (url: string) => {
+    const u = url.trim().toLowerCase();
+    return (
+      !u ||
+      u === '/lumo-logo.png' ||
+      u.endsWith('/lumo-logo.png') ||
+      u.includes('lumo-logo.png')
+    );
+  };
+
+  const fromEa = String(eaImage || '').trim();
+  if (fromEa && !isFakeLogo(fromEa)) return fromEa;
+
+  const media = normalizeCustomMedia(customMedia);
+  for (const slot of ['profile-1', 'profile-2'] as const) {
+    const hit = media.find((m) => m.slot === slot && m.kind === 'image' && m.url);
+    if (hit?.url && !isFakeLogo(hit.url)) return hit.url;
+  }
+  return '';
+}
+
 export function resolveCustomBackdrop(
   customBg: string,
   eaImage: string,

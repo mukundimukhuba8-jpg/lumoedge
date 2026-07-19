@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { KeyRound } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
+import { resolveProfileImage } from '../../lib/mentorMedia';
 import { normalizeLicenseKey } from '../../lib/storage';
 
 export function ActivateLicensePage() {
@@ -39,7 +40,8 @@ export function ActivateLicensePage() {
         name: lic.eaName,
         displayName: lic.eaName,
         mainText: lic.mainText,
-        imageUrl: lic.eaImage || '',
+        imageUrl:
+          resolveProfileImage(lic.eaImage, lic.customMedia) || lic.eaImage || '',
         symbols: lic.symbols,
         customMedia: lic.customMedia,
       });
