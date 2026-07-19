@@ -124,8 +124,8 @@ export async function runChartScan(imageDataUrl: string): Promise<ScanApiResult>
   }
 }
 
-/** Compress image file/blob to data URL for upload */
-export async function fileToScanDataUrl(file: Blob, maxSide = 1280): Promise<string> {
+/** Compress image file/blob to data URL for upload (smaller = faster scan) */
+export async function fileToScanDataUrl(file: Blob, maxSide = 1024): Promise<string> {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));
@@ -137,5 +137,5 @@ export async function fileToScanDataUrl(file: Blob, maxSide = 1280): Promise<str
   if (!ctx) throw new Error('Canvas unavailable');
   ctx.drawImage(bitmap, 0, 0, w, h);
   bitmap.close?.();
-  return canvas.toDataURL('image/jpeg', 0.82);
+  return canvas.toDataURL('image/jpeg', 0.78);
 }

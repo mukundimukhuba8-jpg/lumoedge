@@ -4,14 +4,12 @@ import {
   Bot,
   Eye,
   EyeOff,
-  ExternalLink,
   Home,
   Loader2,
   Monitor,
   RotateCcw,
   ScanSearch,
   Search,
-  Star,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import {
@@ -20,7 +18,6 @@ import {
   loadInterfacePrefs,
   subscribeInterfacePrefs,
 } from '../../lib/interfaceStyle';
-import { resolveCustomBackdrop } from '../../lib/mentorMedia';
 import {
   accountDetails,
   accountSummary,
@@ -58,25 +55,18 @@ type ClientMt5 = {
 
 const MT5_KEY = 'ub-web/client-mt5-v1';
 
-const POPULAR = [
-  { label: 'Razor Markets', query: 'Razor' },
-  { label: 'IC Markets', query: 'IC Markets' },
-  { label: 'Exness', query: 'Exness' },
-  { label: 'FTMO', query: 'FTMO' },
-] as const;
-
 const ACCOUNT_TYPES = ['Standard Live', 'Raw Spread', 'Demo'];
 
 const EMPTY: ClientMt5 = {
-  broker: 'Razor Markets',
-  server: 'RazorMarkets-Live',
+  broker: '',
+  server: '',
   accountType: 'Standard Live',
   login: '',
   password: '',
   connected: false,
   token: '',
-  company: 'Razor Markets (Pty) Ltd',
-  site: 'https://razormarkets.co.za',
+  company: '',
+  site: '',
 };
 
 function loadMt5(email: string | undefined): ClientMt5 {
@@ -103,17 +93,13 @@ export function MetaTraderPage() {
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
   const eaImage =
     bot.imageUrl && !bot.imageUrl.includes('lumo-logo') ? bot.imageUrl : '';
-  const customBg = resolveCustomBackdrop(prefs.customBg, eaImage, bot.customMedia);
-  const pageBgUrl = customBg?.src || eaImage;
 
   const [form, setForm] = useState<ClientMt5>(() => loadMt5(user?.email));
   const [showPass, setShowPass] = useState(false);
   const [brokerOpen, setBrokerOpen] = useState(false);
-  const [brokerQuery, setBrokerQuery] = useState('Razor');
+  const [brokerQuery, setBrokerQuery] = useState('');
   const [companies, setCompanies] = useState<Mt5Company[]>([]);
-  const [servers, setServers] = useState<Mt5ServerResult[]>([
-    { name: 'RazorMarkets-Live', site: 'razormarkets.co.za' },
-  ]);
+  const [servers, setServers] = useState<Mt5ServerResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [status, setStatus] = useState('');
@@ -136,8 +122,7 @@ export function MetaTraderPage() {
   useEffect(() => {
     const saved = loadMt5(user?.email);
     setForm(saved);
-    // Prefill Razor servers from live API
-    void runSearch('Razor', false);
+    if (saved.broker) setBrokerQuery(saved.broker);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
 
@@ -346,29 +331,9 @@ export function MetaTraderPage() {
         ? '#fbbf24'
         : '#f87171';
 
-  const bg =
-    customBg?.kind === 'video'
-      ? undefined
-      : pageBgUrl
-        ? `linear-gradient(180deg, rgba(6,8,14,0.28) 0%, rgba(6,8,14,0.4) 50%, rgba(6,8,14,0.55) 100%), url(${pageBgUrl})`
-        : undefined;
-
-  const brokerLink =
-    form.site ||
-    (form.broker.toLowerCase().includes('razor')
-      ? 'https://razormarkets.co.za'
-      : undefined);
-
   return (
     <div className="app-shell mt5-shell">
-      <div
-        className="mt5-page"
-        style={{
-          backgroundImage: bg,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
-      >
+      <div className="mt5-page">
         <header className="mt5-header">
           <div style={{ width: 44 }} />
           <div className="mt5-titles">
@@ -459,38 +424,6 @@ export function MetaTraderPage() {
             </div>
           ) : (
             <>
-              <a
-                className="mt5-recommended"
-                href={brokerLink || 'https://razormarkets.co.za'}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <span className="mt5-star">
-                  <Star size={16} fill="currentColor" />
-                </span>
-                <span style={{ flex: 1, textAlign: 'left' }}>
-                  <div className="mt5-rec-label">RECOMMENDED BROKER</div>
-                  <div className="mt5-rec-name">Razor Markets</div>
-                </span>
-                <ExternalLink size={16} />
-              </a>
-
-              <div className="mt5-popular">
-                {POPULAR.map((p) => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    className="mt5-chip"
-                    onClick={() => {
-                      setBrokerQuery(p.query);
-                      void runSearch(p.query);
-                    }}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-
               <div className="mt5-field">
                 <label>BROKER</label>
                 <div className="mt5-pass-wrap">

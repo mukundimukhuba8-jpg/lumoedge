@@ -730,7 +730,7 @@ export default async function handler(req, res) {
               role: 'user',
               content: [
                 { type: 'text', text: prompt },
-                { type: 'image_url', image_url: { url: image, detail: 'high' } },
+                { type: 'image_url', image_url: { url: image, detail: 'auto' } },
               ],
             },
           ],
