@@ -41,36 +41,38 @@ export function RegisterPage() {
     };
     submitClientRegistration(profile);
     await registerLocal(profile);
-    // Opens device mail app to notify Super Admin
     notifySuperAdminEmail(profile);
     navigate('/waiting');
   };
 
   return (
-    <div className="page" style={{ textAlign: 'center' }}>
+    <div className="page" style={{ textAlign: 'center', paddingTop: 48 }}>
       <button
         type="button"
         onClick={onLogoTap}
         style={{
           background: 'transparent',
-          marginBottom: 14,
+          marginBottom: 18,
           borderRadius: 22,
-          boxShadow: '0 0 28px rgba(59,130,246,0.75)',
           padding: 0,
         }}
       >
         <img
           src="/lumo-logo.png"
           alt="Lumo Edge"
-          width={88}
-          height={88}
-          style={{ borderRadius: 22, display: 'block', background: '#fff' }}
+          width={92}
+          height={92}
+          style={{
+            borderRadius: 22,
+            display: 'block',
+            background: '#fff',
+          }}
         />
       </button>
-      <h1 className="title-blue" style={{ fontSize: 22, margin: '0 0 6px' }}>
+      <h1 className="title-blue" style={{ fontSize: 28, margin: '0 0 8px' }}>
         Lumo Edge
       </h1>
-      <p className="muted" style={{ marginBottom: 28 }}>
+      <p className="muted" style={{ marginBottom: 28, fontSize: 14 }}>
         Create your account to get started
       </p>
 
@@ -81,6 +83,7 @@ export function RegisterPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Enter your email"
+            autoComplete="email"
           />
         </div>
         <div className="field">
@@ -89,6 +92,7 @@ export function RegisterPage() {
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
             placeholder="Enter your first name"
+            autoComplete="given-name"
           />
         </div>
         <div className="field">
@@ -97,6 +101,7 @@ export function RegisterPage() {
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
             placeholder="Enter your last name"
+            autoComplete="family-name"
           />
         </div>
         {error ? <p className="error">{error}</p> : null}

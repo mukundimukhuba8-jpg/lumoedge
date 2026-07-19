@@ -122,8 +122,7 @@ export function SubscriptionPaymentInfo({ referenceEmail }: { referenceEmail?: s
         style={{
           marginTop: 16,
           borderColor: 'rgba(59,130,246,0.55)',
-          boxShadow:
-            '0 0 24px rgba(59,130,246,0.22), inset 0 1px 0 rgba(255,255,255,0.12)',
+          boxShadow: '0 0 28px rgba(59,130,246,0.22)',
           padding: '14px 14px 4px',
         }}
       >

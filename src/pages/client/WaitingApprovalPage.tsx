@@ -85,8 +85,8 @@ export function WaitingApprovalPage() {
             border: '1.5px solid rgba(59,130,246,0.85)',
             display: 'grid',
             placeItems: 'center',
-            boxShadow: '0 0 28px rgba(59,130,246,0.55)',
-            background: 'rgba(14,18,32,0.9)',
+            boxShadow: '0 0 28px rgba(59,130,246,0.45)',
+            background: '#121218',
           }}
         >
           <CreditCard color="#3b82f6" size={28} />
