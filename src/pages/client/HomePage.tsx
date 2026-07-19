@@ -300,109 +300,48 @@ export function HomePage() {
       ) : null}
 
       {!specialLayout ? (
-        <div
-          className="home-shell"
-          style={{
-            minHeight: '100dvh',
-            display: 'flex',
-            flexDirection: 'column',
-            boxSizing: 'border-box',
-          }}
-        >
+        <div className="home-shell">
           <div
             className="page home-page-fill"
             style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              paddingBottom: 8,
               backgroundImage: customBg
-                ? `linear-gradient(rgba(10,10,16,0.28), rgba(10,10,16,0.45)), url(${customBg})`
+                ? `linear-gradient(rgba(10,10,16,0.35), rgba(10,10,16,0.55)), url(${customBg})`
                 : undefined,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
             }}
           >
-            <h2
-              className="home-main-text"
-              style={{
-                textAlign: 'center',
-                color: 'var(--electric)',
-                fontFamily: 'var(--font-body)',
-                fontWeight: 700,
-                letterSpacing: 1,
-                marginTop: 8,
-                flexShrink: 0,
-              }}
-            >
-              {bot.mainText}
-            </h2>
+            <h2 className="home-main-text">{bot.mainText}</h2>
 
             <div
-              className="home-hero-wrap"
+              className="home-hero-box"
               style={{
-                borderRadius: 24,
-                overflow: 'hidden',
-                border: `1px solid rgba(${accentRgb},0.4)`,
-                position: 'relative',
-                marginTop: 12,
-                flex: 1,
-                minHeight: 240,
-                display: 'flex',
-                background: '#0e1220',
+                borderColor: `rgba(${accentRgb},0.55)`,
+                boxShadow: `0 0 0 1px rgba(${accentRgb},0.12), 0 12px 36px rgba(0,0,0,0.45), 0 0 28px rgba(${accentRgb},0.22)`,
               }}
             >
-              <img
-                className="home-hero"
-                src={heroImage}
-                alt={bot.displayName}
-                onError={(e) => {
-                  const el = e.currentTarget;
-                  if (el.dataset.fallback === '1') return;
-                  el.dataset.fallback = '1';
-                  el.src = '/bull-hero.jpg';
-                }}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  minHeight: 240,
-                  display: 'block',
-                  objectFit: 'cover',
-                  flex: 1,
-                }}
-              />
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  padding: 16,
-                  textAlign: 'center',
-                  background: 'linear-gradient(transparent, rgba(10,10,10,0.55))',
-                }}
-              >
-                <div style={{ color: 'var(--electric)', fontFamily: 'var(--font-body)', fontSize: 17, fontWeight: 700 }}>
-                  {eaTitle}
+              <div className="home-hero-media">
+                <img
+                  className="home-hero"
+                  src={heroImage}
+                  alt={bot.displayName}
+                  onError={(e) => {
+                    const el = e.currentTarget;
+                    if (el.dataset.fallback === '1') return;
+                    el.dataset.fallback = '1';
+                    el.src = '/bull-hero.jpg';
+                  }}
+                />
+                <div className="home-hero-shade" />
+                <div className="home-hero-caption">
+                  <div className="home-hero-ea">{eaTitle}</div>
                 </div>
               </div>
             </div>
 
-            <p
-              style={{
-                textAlign: 'center',
-                color: 'var(--muted)',
-                fontFamily: 'var(--font-body)',
-                fontSize: 13,
-                letterSpacing: 0.5,
-                margin: '8px 0 6px',
-                flexShrink: 0,
-              }}
-            >
-              powered by LUMOEDGE
-            </p>
+            <p className="home-powered">powered by LUMOEDGE</p>
 
-            <div className="neon-action" style={{ marginTop: 0, flexShrink: 0 }}>
+            <div className="neon-action home-actions">
               <button type="button" onClick={confirmDelete}>
                 <span className="circle-btn"><Trash2 size={22} /></span>
                 DELETE
@@ -417,7 +356,7 @@ export function HomePage() {
               </button>
             </div>
 
-            <div className="pill home-status-pill" style={{ marginBottom: 14, flexShrink: 0 }}>
+            <div className="pill home-status-pill">
               {profileAvatar ? (
                 <img
                   src={profileAvatar}
@@ -452,7 +391,7 @@ export function HomePage() {
               </div>
             </div>
 
-            <div className="pill" style={{ marginBottom: 0, flexShrink: 0 }}>
+            <div className="pill home-connect-pill">
               <button
                 type="button"
                 onClick={() => setLicenseOpen(true)}
@@ -488,7 +427,6 @@ export function HomePage() {
                 <Settings size={22} />
               </button>
             </div>
-
           </div>
 
           <nav className="lay-dock" aria-label="Main">

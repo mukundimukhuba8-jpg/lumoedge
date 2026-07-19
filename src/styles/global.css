@@ -294,10 +294,104 @@ a {
 
 .home-page-fill {
   min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 10px;
 }
 
-.home-page-fill .home-hero-wrap {
-  align-self: stretch;
+.home-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.home-main-text {
+  text-align: center;
+  color: var(--electric);
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: 1px;
+  margin: 8px 0 0;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+/* Compact neon media box — not a full-screen stretch */
+.home-hero-box {
+  margin-top: 14px;
+  border-radius: 22px;
+  border: 1.5px solid rgba(59, 130, 246, 0.5);
+  background: #10141f;
+  overflow: hidden;
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.home-hero-media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-height: min(42vh, 320px);
+  background: #0a0c12;
+}
+
+.home-hero-media .home-hero {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.home-hero-shade {
+  position: absolute;
+  inset: auto 0 0;
+  height: 42%;
+  background: linear-gradient(transparent, rgba(6, 8, 14, 0.88));
+  pointer-events: none;
+}
+
+.home-hero-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 14px 16px 16px;
+  text-align: center;
+}
+
+.home-hero-ea {
+  color: var(--electric);
+  font-family: var(--font-body);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.home-powered {
+  text-align: center;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  margin: 10px 0 8px;
+  flex-shrink: 0;
+}
+
+.home-actions {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.home-status-pill {
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.home-connect-pill {
+  margin-bottom: 0;
+  flex-shrink: 0;
 }
 
 .drawer-backdrop {
