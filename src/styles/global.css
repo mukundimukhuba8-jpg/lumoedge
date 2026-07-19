@@ -1641,7 +1641,8 @@ a {
   border-radius: 10px;
   color: var(--text);
   padding: 10px 11px;
-  font-size: 13px;
+  /* 16px stops iOS Safari from auto-zooming when the field is focused */
+  font-size: 16px;
   outline: none;
   appearance: none;
 }

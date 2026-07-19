@@ -74,7 +74,19 @@ function loadMt5(email: string | undefined): ClientMt5 {
   if (!email) return { ...EMPTY };
   const all = loadJSON<Record<string, ClientMt5>>(MT5_KEY, {});
   const saved = all[email.toLowerCase()] ?? {};
-  return { ...EMPTY, ...saved, password: '' };
+  const merged = { ...EMPTY, ...saved, password: '' };
+  // Not connected → clean slate: the user picks their own broker every time
+  if (!merged.connected) {
+    return {
+      ...merged,
+      broker: '',
+      company: '',
+      site: '',
+      server: '',
+      accountType: '',
+    };
+  }
+  return merged;
 }
 
 function saveMt5(email: string, data: ClientMt5) {
@@ -123,7 +135,7 @@ export function MetaTraderPage() {
   useEffect(() => {
     const saved = loadMt5(user?.email);
     setForm(saved);
-    if (saved.broker) setBrokerQuery(saved.broker);
+    setBrokerQuery('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
 
