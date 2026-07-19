@@ -207,6 +207,52 @@ export async function handleApi(req, res, pathname) {
       return true;
     }
 
+    if (pathname.startsWith('/api/images/') && req.method === 'PUT') {
+      const key = decodeURIComponent(pathname.replace('/api/images/', '')).trim();
+      if (!key) {
+        json(res, 400, { error: 'image key required' });
+        return true;
+      }
+      const body = await readBody(req);
+      const dataUrl = String(body.dataUrl || '');
+      if (!dataUrl.startsWith('data:')) {
+        json(res, 400, { error: 'dataUrl required' });
+        return true;
+      }
+      const { db, sha } = await loadDb();
+      db.images = { ...(db.images || {}), [key]: dataUrl };
+      await saveDb(db, sha);
+      json(res, 200, { ok: true, url: `/api/images/${encodeURIComponent(key)}` });
+      return true;
+    }
+
+    if (pathname.startsWith('/api/images/') && (req.method === 'GET' || req.method === 'HEAD')) {
+      const key = decodeURIComponent(pathname.replace('/api/images/', '')).trim();
+      const { db } = await loadDb();
+      const dataUrl = db.images?.[key];
+      if (!dataUrl || !String(dataUrl).startsWith('data:')) {
+        json(res, 404, { error: 'Image not found' });
+        return true;
+      }
+      const m = /^data:([^;]+);base64,(.+)$/s.exec(String(dataUrl));
+      if (!m) {
+        json(res, 404, { error: 'Invalid image' });
+        return true;
+      }
+      const buf = Buffer.from(m[2], 'base64');
+      res.statusCode = 200;
+      res.setHeader('Content-Type', m[1] || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      if (req.method === 'HEAD') {
+        res.setHeader('Content-Length', String(buf.length));
+        res.end();
+        return true;
+      }
+      res.end(buf);
+      return true;
+    }
+
     return false;
   } catch (err) {
     json(res, 500, {

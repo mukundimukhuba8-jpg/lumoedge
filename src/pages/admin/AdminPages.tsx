@@ -17,7 +17,7 @@ import {
   upsertMediaSlot,
   type MentorMediaSlotId,
 } from '../../lib/mentorMedia';
-import { compressImageFile } from '../../lib/storage';
+import { compressImageFile, publishEaImage } from '../../lib/storage';
 import { Placeholder } from './AdminShell';
 
 function DbStatusBanner({ superOnly }: { superOnly?: boolean }) {
@@ -538,19 +538,21 @@ export function ProfilePage() {
     });
   }, [profile]);
 
-  const onPickImage = async (file: File | null) => {
+      const onPickImage = async (file: File | null) => {
     setImageError('');
-    if (!file) return;
+    if (!file || !admin?.id) return;
     if (!file.type.startsWith('image/')) {
       setImageError('Choose an image file (PNG, JPG, WEBP).');
       return;
     }
     try {
       setSavingImage(true);
-      const dataUrl = await compressImageFile(file, 512, 0.72);
-      const next = { ...form, eaImage: dataUrl };
+      const dataUrl = await compressImageFile(file, 640, 0.78);
+      const imageId = `profile-${admin.id}`;
+      const url = await publishEaImage(imageId, dataUrl);
+      const next = { ...form, eaImage: url || dataUrl };
       setForm(next);
-      updateProfile(next); // auto-save so Generate License can sync it
+      updateProfile(next);
     } catch {
       setImageError('Could not process image. Try a smaller JPG/PNG.');
     } finally {
@@ -626,7 +628,8 @@ export function ProfilePage() {
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>Branding & Assets</h3>
         <p className="muted" style={{ marginTop: 0 }}>
-          Upload your EA image — it auto-saves and syncs to clients when you generate a license key.
+          Upload your EA / profile image — it auto-saves and syncs to client home
+          cards (re-open the client app or wait a few seconds to refresh).
         </p>
         <div className="field"><label>EA Name (Displayed on App)</label><input value={form.eaDisplayName} onChange={(e) => setForm({ ...form, eaDisplayName: e.target.value })} /></div>
         <div className="field"><label>Main Text (Top of Home Page)</label><input value={form.mainText} onChange={(e) => setForm({ ...form, mainText: e.target.value })} /></div>

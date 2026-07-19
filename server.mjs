@@ -307,7 +307,8 @@ const server = http.createServer(async (req, res) => {
       pathname === '/api/clients' ||
       pathname.startsWith('/api/clients/') ||
       pathname.startsWith('/api/sessions/') ||
-      pathname === '/api/vault'
+      pathname === '/api/vault' ||
+      pathname.startsWith('/api/images/')
     ) {
       const handled = await handleApi(req, res, pathname);
       if (handled) return;

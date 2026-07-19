@@ -349,25 +349,8 @@ export default async function handler(req, res) {
     if (pathname === '/api/db' && req.method === 'PUT') {
       const body = await readBody(req);
       const { db, sha } = await loadDb();
-      const next = {
-        ...db,
-        ...body,
-        auth: { ...db.auth, ...(body.auth || {}) },
-        store: {
-          workspaces: {
-            ...(db.store?.workspaces || {}),
-            ...(body.store?.workspaces || {}),
-          },
-        },
-        vault: Array.isArray(body.vault) ? body.vault : db.vault,
-        images: { ...db.images, ...(body.images || {}) },
-        clients: Array.isArray(body.clients) ? body.clients : db.clients,
-        sessions: { ...db.sessions, ...(body.sessions || {}) },
-        revokedKeys: Array.isArray(body.revokedKeys)
-          ? [...new Set([...(db.revokedKeys || []), ...body.revokedKeys])]
-          : db.revokedKeys || [],
-      };
-      const saved = await saveDb(next, sha);
+      // Merge only — never replace whole lists with empties from a partial client sync
+      const saved = await saveDb(mergeDatabases(db, body), sha);
       send(res, 200, saved.db);
       return;
     }
@@ -486,6 +469,52 @@ export default async function handler(req, res) {
       db.vault = Array.isArray(body) ? body : body.vault || db.vault;
       await saveDb(db, sha);
       send(res, 200, db.vault);
+      return;
+    }
+
+    if (pathname.startsWith('/api/images/') && req.method === 'PUT') {
+      const key = decodeURIComponent(pathname.replace('/api/images/', '')).trim();
+      if (!key) {
+        send(res, 400, { error: 'image key required' });
+        return;
+      }
+      const body = await readBody(req);
+      const dataUrl = String(body.dataUrl || '');
+      if (!dataUrl.startsWith('data:')) {
+        send(res, 400, { error: 'dataUrl required' });
+        return;
+      }
+      const { db, sha } = await loadDb();
+      db.images = { ...(db.images || {}), [key]: dataUrl };
+      await saveDb(db, sha);
+      send(res, 200, { ok: true, url: `/api/images/${encodeURIComponent(key)}` });
+      return;
+    }
+
+    if (pathname.startsWith('/api/images/') && (req.method === 'GET' || req.method === 'HEAD')) {
+      const key = decodeURIComponent(pathname.replace('/api/images/', '')).trim();
+      const { db } = await loadDb();
+      const dataUrl = db.images?.[key];
+      if (!dataUrl || !String(dataUrl).startsWith('data:')) {
+        send(res, 404, { error: 'Image not found' });
+        return;
+      }
+      const m = /^data:([^;]+);base64,(.+)$/s.exec(String(dataUrl));
+      if (!m) {
+        send(res, 404, { error: 'Invalid image' });
+        return;
+      }
+      const buf = Buffer.from(m[2], 'base64');
+      res.statusCode = 200;
+      res.setHeader('Content-Type', m[1] || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      if (req.method === 'HEAD') {
+        res.setHeader('Content-Length', String(buf.length));
+        res.end();
+        return;
+      }
+      res.end(buf);
       return;
     }
 

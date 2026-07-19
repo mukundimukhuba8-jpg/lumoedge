@@ -197,6 +197,10 @@ export function isRevokedKey(key: string) {
 
 const IMAGE_STORE = 'ub-web/ea-images-v1';
 
+export function imagePublicUrl(id: string) {
+  return `/api/images/${encodeURIComponent(id)}`;
+}
+
 /** Keep EA images outside huge JSON blobs so they survive reliably */
 export function saveEaImage(id: string, dataUrl: string) {
   if (!id || !dataUrl) return;
@@ -207,11 +211,37 @@ export function saveEaImage(id: string, dataUrl: string) {
     void fetch('/api/db', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ images: all }),
+      body: JSON.stringify({ images: { [id]: dataUrl } }),
+    }).catch(() => undefined);
+    void fetch(imagePublicUrl(id), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataUrl }),
     }).catch(() => undefined);
   } catch {
     // quota — ignore
   }
+}
+
+/** Upload profile/EA image and return a stable public URL for client cards */
+export async function publishEaImage(id: string, dataUrl: string): Promise<string> {
+  if (!id || !dataUrl) return '';
+  saveEaImage(id, dataUrl);
+  try {
+    const res = await fetch(imagePublicUrl(id), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataUrl }),
+    });
+    if (res.ok) {
+      const body = (await res.json()) as { url?: string };
+      return body.url || imagePublicUrl(id);
+    }
+  } catch {
+    // fall through
+  }
+  // Data-URL fallback (same device / when API write is unavailable)
+  return dataUrl;
 }
 
 export function getEaImage(id: string): string {
@@ -222,6 +252,21 @@ export function getEaImage(id: string): string {
   } catch {
     return '';
   }
+}
+
+/** Resolve stored image refs (/api/images/...) or raw data URLs for display */
+export function resolveEaImageUrl(value: string, fallbackIds: string[] = []): string {
+  if (value) {
+    if (value.startsWith('data:') || value.startsWith('http') || value.startsWith('/')) {
+      return value;
+    }
+  }
+  for (const id of fallbackIds) {
+    const local = getEaImage(id);
+    if (local) return local;
+    if (id) return imagePublicUrl(id);
+  }
+  return value || '';
 }
 
 /** Compress uploads so profile + license sync fits in localStorage */

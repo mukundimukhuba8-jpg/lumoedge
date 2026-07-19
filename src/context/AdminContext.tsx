@@ -28,6 +28,7 @@ import {
 import {
   findInVault,
   getEaImage,
+  imagePublicUrl,
   isRevokedKey,
   keyFingerprint,
   keysMatch,
@@ -36,6 +37,7 @@ import {
   loadVault,
   makeLicenseKey,
   normalizeLicenseKey,
+  publishEaImage,
   revokeLicenseKey,
   saveEaImage,
   saveJSON,
@@ -1180,6 +1182,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               ),
             );
           }
+          if (remote.images && typeof remote.images === 'object') {
+            const localImages = loadJSON<Record<string, string>>(
+              'ub-web/ea-images-v1',
+              {},
+            );
+            saveJSON('ub-web/ea-images-v1', {
+              ...localImages,
+              ...remote.images,
+            });
+          }
           if (remote.store?.workspaces) {
             const workspaces = {
               ...(remote.store.workspaces as StoreState['workspaces']),
@@ -1264,12 +1276,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const ownerWs = ownerId ? workspaces[ownerId] : undefined;
         const ownerEa = ownerWs?.eas.find((e) => e.id === license!.eaId);
         const resolvedImage =
-          license.eaImage ||
+          (license.eaImage &&
+          (license.eaImage.startsWith('/') ||
+            license.eaImage.startsWith('http') ||
+            license.eaImage.startsWith('data:'))
+            ? license.eaImage
+            : '') ||
           getEaImage(license.id) ||
           getEaImage(`key-${normalizedKey}`) ||
           ownerEa?.imageUrl ||
           ownerWs?.profile.eaImage ||
           getEaImage(`profile-${ownerId || license.ownerAdminId}`) ||
+          (ownerId || license.ownerAdminId
+            ? imagePublicUrl(`profile-${ownerId || license.ownerAdminId}`)
+            : '') ||
           '';
         const resolvedName =
           license.eaName || ownerEa?.name || ownerWs?.profile.eaDisplayName || 'Lumo Edge';
@@ -1383,66 +1403,83 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       },
       updateProfile: (patch) => {
         if (!adminId) return;
-        if (patch.eaImage) {
-          saveEaImage(`profile-${adminId}`, patch.eaImage);
-        }
-        patchWorkspace(adminId, (ws) => {
-          const nextProfile: AdminProfile = {
-            ...ws.profile,
-            ...patch,
-            customMedia: normalizeCustomMedia(
-              patch.customMedia !== undefined
-                ? patch.customMedia
-                : ws.profile.customMedia,
-            ),
-          };
-          const image = nextProfile.eaImage || '';
-          const media = nextProfile.customMedia;
-          // Push custom media onto live licenses + vault so clients see updates
-          const nextLicenses = ws.licenses.map((lic) => ({
-            ...lic,
-            eaImage: image || lic.eaImage,
-            mainText: nextProfile.mainText || lic.mainText,
-            eaName: nextProfile.eaDisplayName || lic.eaName,
-            customMedia: media,
-          }));
-          for (const lic of nextLicenses) {
-            if (lic.status === 'deleted') continue;
-            upsertVault({
-              id: lic.id,
-              key: lic.key,
-              email: lic.clientEmail,
-              clientName: lic.clientName,
-              eaName: lic.eaName,
-              mainText: lic.mainText,
-              symbols: lic.symbols,
-              eaImage: lic.eaImage,
-              customMedia: lic.customMedia,
-              duration: lic.duration,
-              ownerAdminId: lic.ownerAdminId,
-              eaId: lic.eaId,
-              status: lic.status,
-              assignedEmail: lic.assignedEmail,
-              assignedAt: lic.assignedAt,
-            });
+        void (async () => {
+          let imagePatch = patch.eaImage;
+          // Prefer stable /api/images URL so clients can load the same asset
+          if (imagePatch && imagePatch.startsWith('data:')) {
+            imagePatch = await publishEaImage(`profile-${adminId}`, imagePatch);
+          } else if (imagePatch) {
+            saveEaImage(`profile-${adminId}`, imagePatch);
           }
-          return {
-            ...ws,
-            profile: nextProfile,
-            licenses: nextLicenses,
-            // Sync branding image onto every EA for this admin
-            eas: image
-              ? ws.eas.map((ea) => {
-                  if (image) saveEaImage(`ea-${ea.id}`, image);
-                  return { ...ea, imageUrl: image };
-                })
-              : ws.eas,
-            mt5:
-              patch.eaDisplayName !== undefined
-                ? { ...ws.mt5, eaName: patch.eaDisplayName || ws.mt5.eaName }
-                : ws.mt5,
+          const resolvedPatch = {
+            ...patch,
+            eaImage: imagePatch ?? patch.eaImage ?? '',
           };
-        });
+          if (resolvedPatch.eaImage) {
+            saveEaImage(`profile-${adminId}`, resolvedPatch.eaImage);
+          }
+          patchWorkspace(adminId, (ws) => {
+            const nextProfile: AdminProfile = {
+              ...ws.profile,
+              ...resolvedPatch,
+              customMedia: normalizeCustomMedia(
+                resolvedPatch.customMedia !== undefined
+                  ? resolvedPatch.customMedia
+                  : ws.profile.customMedia,
+              ),
+            };
+            const image =
+              nextProfile.eaImage ||
+              imagePublicUrl(`profile-${adminId}`) ||
+              '';
+            const media = nextProfile.customMedia;
+            const nextLicenses = ws.licenses.map((lic) => ({
+              ...lic,
+              eaImage: image || lic.eaImage,
+              mainText: nextProfile.mainText || lic.mainText,
+              eaName: nextProfile.eaDisplayName || lic.eaName,
+              customMedia: media,
+            }));
+            for (const lic of nextLicenses) {
+              if (lic.status === 'deleted') continue;
+              upsertVault({
+                id: lic.id,
+                key: lic.key,
+                email: lic.clientEmail,
+                clientName: lic.clientName,
+                eaName: lic.eaName,
+                mainText: lic.mainText,
+                symbols: lic.symbols,
+                eaImage: lic.eaImage,
+                customMedia: lic.customMedia,
+                duration: lic.duration,
+                ownerAdminId: lic.ownerAdminId,
+                eaId: lic.eaId,
+                status: lic.status,
+                assignedEmail: lic.assignedEmail,
+                assignedAt: lic.assignedAt,
+              });
+            }
+            return {
+              ...ws,
+              profile: { ...nextProfile, eaImage: image || nextProfile.eaImage },
+              licenses: nextLicenses,
+              eas: image
+                ? ws.eas.map((ea) => {
+                    saveEaImage(`ea-${ea.id}`, image);
+                    return { ...ea, imageUrl: image };
+                  })
+                : ws.eas,
+              mt5:
+                resolvedPatch.eaDisplayName !== undefined
+                  ? {
+                      ...ws.mt5,
+                      eaName: resolvedPatch.eaDisplayName || ws.mt5.eaName,
+                    }
+                  : ws.mt5,
+            };
+          });
+        })();
       },
       executeOrder: (order) => {
         if (!adminId) {

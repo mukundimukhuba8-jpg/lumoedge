@@ -86,21 +86,26 @@ export function HomePage() {
     };
   }, [accent, accentRgb]);
 
-  // Pull latest mentor custom media when home opens
+  // Pull latest mentor branding / profile picture while home is open
   useEffect(() => {
     if (!user?.email || !bot.licenseKey) return;
-    void claimLicense(bot.licenseKey, user.email).then((result) => {
-      if (!result.ok) return;
-      const lic = result.license;
-      refreshBranding({
-        name: lic.eaName,
-        displayName: lic.eaName,
-        mainText: lic.mainText,
-        imageUrl: lic.eaImage,
-        symbols: lic.symbols,
-        customMedia: lic.customMedia,
+    const sync = () => {
+      void claimLicense(bot.licenseKey, user.email).then((result) => {
+        if (!result.ok) return;
+        const lic = result.license;
+        refreshBranding({
+          name: lic.eaName,
+          displayName: lic.eaName,
+          mainText: lic.mainText,
+          imageUrl: lic.eaImage,
+          symbols: lic.symbols,
+          customMedia: lic.customMedia,
+        });
       });
-    });
+    };
+    sync();
+    const id = window.setInterval(sync, 8000);
+    return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email, bot.licenseKey]);
 
