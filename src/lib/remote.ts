@@ -1,25 +1,20 @@
-/** Disk-backed API — survives Cloudflare URL changes */
+/** Shared remote API — Firebase first, then Vercel/local /api fallback */
 
-export type RemoteDb = {
-  auth: { admins: unknown[]; admin: unknown | null };
-  store: { workspaces: Record<string, unknown> };
-  vault: unknown[];
-  images: Record<string, string>;
-  clients: Array<{
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    status: 'pending' | 'approved' | 'rejected';
-    createdAt: string;
-    notifiedAt?: string;
-    paymentClaimed?: boolean;
-    paymentClaimedAt?: string;
-  }>;
-  sessions: Record<string, unknown>;
-  revokedKeys?: string[];
-  updatedAt?: string;
-};
+import {
+  firebaseDeleteClient,
+  firebaseFetchClients,
+  firebaseFetchDb,
+  firebaseFetchSession,
+  firebaseHealthy,
+  firebasePatchClient,
+  firebasePostClient,
+  firebasePushDb,
+  firebasePushSession,
+  type RemoteDb,
+} from './firebaseDb';
+import { isFirebaseConfigured } from './firebase';
+
+export type { RemoteDb };
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -36,6 +31,10 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export async function fetchDb(): Promise<RemoteDb | null> {
+  if (isFirebaseConfigured()) {
+    const fb = await firebaseFetchDb();
+    if (fb) return fb;
+  }
   try {
     return await req<RemoteDb>('/api/db');
   } catch {
@@ -44,6 +43,17 @@ export async function fetchDb(): Promise<RemoteDb | null> {
 }
 
 export async function pushDb(partial: Partial<RemoteDb>): Promise<RemoteDb | null> {
+  if (isFirebaseConfigured()) {
+    const fb = await firebasePushDb(partial);
+    if (fb) {
+      // Best-effort mirror to /api for local/dev tools
+      void req<RemoteDb>('/api/db', {
+        method: 'PUT',
+        body: JSON.stringify(partial),
+      }).catch(() => null);
+      return fb;
+    }
+  }
   try {
     return await req<RemoteDb>('/api/db', {
       method: 'PUT',
@@ -55,6 +65,10 @@ export async function pushDb(partial: Partial<RemoteDb>): Promise<RemoteDb | nul
 }
 
 export async function fetchClients() {
+  if (isFirebaseConfigured()) {
+    const fb = await firebaseFetchClients();
+    if (fb) return fb;
+  }
   try {
     return await req<RemoteDb['clients']>('/api/clients');
   } catch {
@@ -67,6 +81,10 @@ export async function postClient(input: {
   firstName: string;
   lastName: string;
 }) {
+  if (isFirebaseConfigured()) {
+    const fb = await firebasePostClient(input);
+    if (fb) return fb;
+  }
   return req<RemoteDb['clients'][number]>('/api/clients', {
     method: 'POST',
     body: JSON.stringify(input),
@@ -81,6 +99,10 @@ export async function patchClient(
     paymentClaimedAt?: string;
   },
 ) {
+  if (isFirebaseConfigured()) {
+    const fb = await firebasePatchClient(id, patch);
+    if (fb) return fb;
+  }
   return req<RemoteDb['clients'][number] | null>(`/api/clients/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(patch),
@@ -88,12 +110,20 @@ export async function patchClient(
 }
 
 export async function deleteClientRemote(id: string) {
+  if (isFirebaseConfigured()) {
+    const fb = await firebaseDeleteClient(id);
+    if (fb) return fb;
+  }
   return req<{ ok: boolean; removed: number }>(`/api/clients/${id}`, {
     method: 'DELETE',
   });
 }
 
 export async function fetchSession<T>(email: string): Promise<T | null> {
+  if (isFirebaseConfigured()) {
+    const fb = await firebaseFetchSession<T>(email);
+    if (fb) return fb;
+  }
   try {
     return await req<T | null>(`/api/sessions/${encodeURIComponent(email.toLowerCase())}`);
   } catch {
@@ -102,6 +132,10 @@ export async function fetchSession<T>(email: string): Promise<T | null> {
 }
 
 export async function pushSession(email: string, session: unknown) {
+  if (isFirebaseConfigured()) {
+    const ok = await firebasePushSession(email, session);
+    if (ok) return;
+  }
   try {
     await req(`/api/sessions/${encodeURIComponent(email.toLowerCase())}`, {
       method: 'PUT',
@@ -113,6 +147,7 @@ export async function pushSession(email: string, session: unknown) {
 }
 
 export async function apiHealthy() {
+  if (isFirebaseConfigured() && (await firebaseHealthy())) return true;
   try {
     const r = await fetch('/api/health');
     return r.ok;

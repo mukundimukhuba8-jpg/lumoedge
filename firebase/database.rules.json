@@ -1,0 +1,8 @@
+{
+  "rules": {
+    "lumo": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}

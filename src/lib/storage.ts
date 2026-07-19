@@ -1,4 +1,6 @@
 import type { MentorMediaItem } from './mentorMedia';
+import { firebaseUploadDataUrl } from './firebaseDb';
+import { isFirebaseConfigured } from './firebase';
 
 export function loadJSON<T>(key: string, fallback: T): T {
   try {
@@ -227,6 +229,13 @@ export function saveEaImage(id: string, dataUrl: string) {
 export async function publishEaImage(id: string, dataUrl: string): Promise<string> {
   if (!id || !dataUrl) return '';
   saveEaImage(id, dataUrl);
+
+  // Prefer Firebase Storage — durable HTTPS URL for every client device
+  if (isFirebaseConfigured()) {
+    const url = await firebaseUploadDataUrl(`images/${id}.jpg`, dataUrl);
+    if (url) return url;
+  }
+
   try {
     const health = await fetch('/api/health')
       .then((r) => r.json())
@@ -236,7 +245,6 @@ export async function publishEaImage(id: string, dataUrl: string): Promise<strin
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ dataUrl }),
     });
-    // Only expose /api/images URL when storage is durable — otherwise clients get broken images
     if (res.ok && health?.durable) {
       const body = (await res.json()) as { url?: string };
       return body.url || imagePublicUrl(id);

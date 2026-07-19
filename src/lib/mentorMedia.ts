@@ -1,5 +1,8 @@
 /** Mentor Custom media — 2 profile + 3 background slots (image/video only). */
 
+import { firebaseUploadDataUrl, firebaseUploadFile } from './firebaseDb';
+import { isFirebaseConfigured } from './firebase';
+
 export type MentorMediaSlotId =
   | 'profile-1'
   | 'profile-2'
@@ -110,16 +113,21 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-/** Upload data URL — uses /api/images (Vercel) with /api/media fallback (local). */
+/** Upload data URL — Firebase Storage first, then /api fallbacks. */
 export async function uploadMentorMedia(
   key: string,
   dataUrl: string,
 ): Promise<{ url: string }> {
+  if (isFirebaseConfigured()) {
+    const url = await firebaseUploadDataUrl(`media/${key}`, dataUrl);
+    if (url) return { url };
+  }
+
   const health = await fetch('/api/health')
     .then((r) => r.json())
     .catch(() => null as { durable?: boolean } | null);
 
-  // Primary: shared images store (works on Vercel + local)
+  // Shared images store (works on Vercel + local)
   try {
     const res = await fetch(`/api/images/${encodeURIComponent(key)}`, {
       method: 'PUT',
@@ -127,7 +135,6 @@ export async function uploadMentorMedia(
       body: JSON.stringify({ dataUrl }),
     });
     if (res.ok) {
-      // Only use API URL when durable — otherwise return data URL so clients see the image
       if (health?.durable) {
         const data = (await res.json()) as { url?: string };
         return { url: data.url || `/api/images/${encodeURIComponent(key)}` };
@@ -155,19 +162,23 @@ export async function uploadMentorMedia(
     throw new Error(err?.error || 'Upload failed');
   } catch (e) {
     if (e instanceof Error && e.message !== 'Upload failed') {
-      // last resort: keep local data URL so the portal still shows the asset
       return { url: dataUrl };
     }
     throw e instanceof Error ? e : new Error('Upload failed');
   }
 }
 
-/** Upload original File (videos prefer binary; images fall back to data URL). */
+/** Upload original File (videos prefer Firebase / binary; images fall back to data URL). */
 export async function uploadMentorMediaFile(
   key: string,
   file: File,
 ): Promise<{ url: string; mime: string }> {
   const mime = file.type || 'application/octet-stream';
+
+  if (isFirebaseConfigured()) {
+    const url = await firebaseUploadFile(`media/${key}`, file, mime);
+    if (url) return { url, mime };
+  }
 
   // Try local binary media endpoint first (Range streaming for video)
   try {
@@ -184,10 +195,9 @@ export async function uploadMentorMediaFile(
       if (data.url) return { url: data.url, mime: data.mime || mime };
     }
   } catch {
-    // fall through to data-URL path (Vercel)
+    // fall through to data-URL path
   }
 
-  // Vercel / serverless: store as data URL in images DB (keep under ~2.5MB)
   if (file.size > 2_500_000) {
     throw new Error(
       'File too large for cloud upload (max ~2.5 MB). Use a shorter MP4 or compress the image.',
