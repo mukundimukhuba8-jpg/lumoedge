@@ -1715,13 +1715,29 @@ a {
 .mt5-connect {
   margin-top: auto;
   width: 100%;
-  border-radius: 11px;
-  padding: 11px;
-  font-size: 13px;
+  border-radius: 999px;
+  padding: 14px;
+  font-size: 15px;
   font-weight: 700;
   background: var(--electric);
-  color: #061018;
+  color: #fff;
   box-shadow: 0 0 22px rgba(59, 130, 246, 0.45);
+}
+
+.mt5-chevron {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+}
+
+.mt5-input option {
+  background: #0c1220;
+  color: var(--text);
 }
 
 .mt5-connected {

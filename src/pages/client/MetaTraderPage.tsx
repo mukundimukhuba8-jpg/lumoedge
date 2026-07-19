@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bot,
+  ChevronDown,
+  ExternalLink,
   Eye,
   EyeOff,
   Home,
   Loader2,
   Monitor,
   RotateCcw,
-  ScanSearch,
   Search,
+  Star,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import {
@@ -60,7 +61,7 @@ const ACCOUNT_TYPES = ['Standard Live', 'Raw Spread', 'Demo'];
 const EMPTY: ClientMt5 = {
   broker: '',
   server: '',
-  accountType: 'Standard Live',
+  accountType: '',
   login: '',
   password: '',
   connected: false,
@@ -424,21 +425,40 @@ export function MetaTraderPage() {
             </div>
           ) : (
             <>
+              <a
+                className="mt5-recommended"
+                href="https://razormarkets.co.za"
+                target="_blank"
+                rel="noreferrer"
+              >
+                <span className="mt5-star">
+                  <Star size={16} fill="currentColor" />
+                </span>
+                <span style={{ flex: 1, textAlign: 'left' }}>
+                  <div className="mt5-rec-label">RECOMMENDED BROKER</div>
+                  <div className="mt5-rec-name">Razor Markets</div>
+                </span>
+                <ExternalLink size={16} />
+              </a>
+
               <div className="mt5-field">
                 <label>BROKER</label>
                 <div className="mt5-pass-wrap">
                   <input
                     className="mt5-input"
-                    style={{ paddingLeft: 40 }}
+                    style={{ paddingLeft: 40, paddingRight: 40 }}
                     value={brokerQuery}
                     onChange={(e) => onBrokerQuery(e.target.value)}
                     onFocus={() => {
                       if (companies.length) setBrokerOpen(true);
                     }}
-                    placeholder="Search existing brokers…"
+                    placeholder="Search Broker"
                   />
                   <span className="mt5-search-ico">
                     {searching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
+                  </span>
+                  <span className="mt5-chevron" aria-hidden>
+                    <ChevronDown size={16} />
                   </span>
                 </div>
                 {brokerOpen && companies.length ? (
@@ -459,44 +479,63 @@ export function MetaTraderPage() {
                     ))}
                   </div>
                 ) : null}
-                {form.company ? (
-                  <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-                    Selected: {form.broker} · {form.server}
-                  </div>
-                ) : null}
               </div>
 
               <div className="mt5-field">
                 <label>SELECT SERVER</label>
-                <select
-                  className="mt5-input"
-                  value={form.server}
-                  onChange={(e) => persist({ ...form, server: e.target.value })}
-                >
-                  {(servers.length
-                    ? servers
-                    : [{ name: form.server || 'Select server' }]
-                  ).map((s) => (
-                    <option key={s.name} value={s.name}>
-                      {s.name}
+                <div className="mt5-pass-wrap">
+                  <select
+                    className="mt5-input"
+                    style={{
+                      paddingRight: 40,
+                      color: form.server ? undefined : 'var(--muted)',
+                    }}
+                    value={form.server}
+                    onChange={(e) => persist({ ...form, server: e.target.value })}
+                  >
+                    <option value="" disabled hidden>
+                      Select broker server
                     </option>
-                  ))}
-                </select>
+                    {servers.map((s) => (
+                      <option key={s.name} value={s.name}>
+                        {s.name}
+                      </option>
+                    ))}
+                    {form.server && !servers.some((s) => s.name === form.server) ? (
+                      <option value={form.server}>{form.server}</option>
+                    ) : null}
+                  </select>
+                  <span className="mt5-chevron" aria-hidden>
+                    <ChevronDown size={16} />
+                  </span>
+                </div>
               </div>
 
               <div className="mt5-field">
                 <label>ACCOUNT TYPE</label>
-                <select
-                  className="mt5-input"
-                  value={form.accountType}
-                  onChange={(e) => persist({ ...form, accountType: e.target.value })}
-                >
-                  {ACCOUNT_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                <div className="mt5-pass-wrap">
+                  <select
+                    className="mt5-input"
+                    style={{
+                      paddingRight: 40,
+                      color: form.accountType ? undefined : 'var(--muted)',
+                    }}
+                    value={form.accountType}
+                    onChange={(e) => persist({ ...form, accountType: e.target.value })}
+                  >
+                    <option value="" disabled hidden>
+                      Select account type
                     </option>
-                  ))}
-                </select>
+                    {ACCOUNT_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="mt5-chevron" aria-hidden>
+                    <ChevronDown size={16} />
+                  </span>
+                </div>
               </div>
 
               <div className="mt5-field">
@@ -505,7 +544,7 @@ export function MetaTraderPage() {
                   className="mt5-input"
                   value={form.login}
                   onChange={(e) => setForm({ ...form, login: e.target.value })}
-                  placeholder="Enter MT5 login"
+                  placeholder="Enter your MT5 login"
                   inputMode="numeric"
                 />
               </div>
@@ -518,7 +557,7 @@ export function MetaTraderPage() {
                     type={showPass ? 'text' : 'password'}
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    placeholder="Enter password"
+                    placeholder="Enter your password"
                   />
                   <button
                     type="button"
@@ -608,14 +647,6 @@ export function MetaTraderPage() {
           </div>
         ) : null}
 
-        <button
-          type="button"
-          className="mt5-fab"
-          aria-label="AI assistant"
-          onClick={() => alert('Lumo AI assistant — coming soon.')}
-        >
-          <Bot size={22} color="#061018" />
-        </button>
       </div>
 
       <nav className="lay-dock" aria-label="Main">
@@ -624,16 +655,6 @@ export function MetaTraderPage() {
             <Home size={20} />
           </span>
           <span>Home</span>
-        </button>
-        <button
-          type="button"
-          className="lay-dock-item"
-          onClick={() => navigate('/app/scanner')}
-        >
-          <span className="lay-dock-ico">
-            <ScanSearch size={20} />
-          </span>
-          <span>Scanner</span>
         </button>
         <button type="button" className="lay-dock-item active">
           <span className="lay-dock-ico">
