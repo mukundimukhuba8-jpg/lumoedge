@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -12,7 +13,7 @@ import {
   normalizeCustomMedia,
   type MentorMediaItem,
 } from '../lib/mentorMedia';
-import { fetchSession, pushSession } from '../lib/remote';
+import { fetchDb, fetchSession, pushSession } from '../lib/remote';
 import { loadJSON, saveJSON } from '../lib/storage';
 
 export type UserProfile = { email: string; firstName: string; lastName: string };
@@ -72,7 +73,7 @@ type Ctx = {
   bot: EABot;
   isPaused: boolean;
   setAccessStatus: (status: AccessStatus) => void;
-  registerLocal: (u: UserProfile) => Promise<void>;
+  registerLocal: (u: UserProfile) => Promise<Session>;
   markPaid: () => void;
   activateWithLicense: (key: string, sync?: LicenseSync) => void;
   /** Update branding/media from mentor without changing pause/access */
@@ -84,10 +85,32 @@ type Ctx = {
 
 const AppContext = createContext<Ctx | null>(null);
 
+/** Once a license key exists, stay licensed — never bounce back to payment */
+function normalizeSession(session: Session): Session {
+  const bot = {
+    ...DEFAULT_BOT,
+    ...(session.bot ?? {}),
+    customMedia: normalizeCustomMedia(session.bot?.customMedia),
+    licenseKey: String(session.bot?.licenseKey || '').trim(),
+  };
+  let accessStatus = session.accessStatus ?? 'none';
+  if (bot.licenseKey) {
+    accessStatus = 'licensed';
+    if (bot.status !== 'active' && bot.status !== 'paused') {
+      bot.status = 'active';
+    }
+  }
+  return {
+    user: session.user ?? null,
+    accessStatus,
+    bot,
+  };
+}
+
 function migrateSession(): Session {
   const v2 = loadJSON<Session | null>(KEY, null as unknown as Session);
   if (v2 && typeof v2 === 'object' && 'accessStatus' in (v2 as object)) {
-    return {
+    return normalizeSession({
       user: v2.user ?? null,
       accessStatus: v2.accessStatus ?? 'none',
       bot: {
@@ -95,7 +118,7 @@ function migrateSession(): Session {
         ...(v2.bot ?? {}),
         customMedia: normalizeCustomMedia(v2.bot?.customMedia),
       },
-    };
+    });
   }
   const v1 = loadJSON<{ user: UserProfile | null; paid?: boolean; bot?: EABot }>(
     'ub-web/session-v1',
@@ -107,66 +130,208 @@ function migrateSession(): Session {
     else if (v1.paid) accessStatus = 'paid';
     else accessStatus = 'pending';
   }
-  return {
+  return normalizeSession({
     user: v1.user,
     accessStatus,
     bot: { ...DEFAULT_BOT, ...(v1.bot ?? {}) },
-  };
+  });
 }
 
 function mergeSessions(local: Session, remote: Session | null): Session {
-  if (!remote?.user) return local;
-  const status =
-    RANK[remote.accessStatus] >= RANK[local.accessStatus]
-      ? remote.accessStatus
-      : local.accessStatus;
-  return {
-    user: remote.user || local.user,
+  if (!remote?.user) return normalizeSession(local);
+  const localN = normalizeSession(local);
+  const remoteN = normalizeSession(remote);
+  const licenseKey = remoteN.bot.licenseKey || localN.bot.licenseKey || '';
+  let status =
+    RANK[remoteN.accessStatus] >= RANK[localN.accessStatus]
+      ? remoteN.accessStatus
+      : localN.accessStatus;
+  // Hard rule: any saved license key means licensed forever (until deleteBot)
+  if (licenseKey) status = 'licensed';
+  return normalizeSession({
+    user: remoteN.user || localN.user,
     accessStatus: status,
     bot: {
       ...DEFAULT_BOT,
-      ...local.bot,
-      ...remote.bot,
-      imageUrl: remote.bot?.imageUrl || local.bot.imageUrl || '',
-      licenseKey: remote.bot?.licenseKey || local.bot.licenseKey || '',
+      ...localN.bot,
+      ...remoteN.bot,
+      imageUrl: remoteN.bot.imageUrl || localN.bot.imageUrl || '',
+      licenseKey,
       customMedia: normalizeCustomMedia(
-        remote.bot?.customMedia?.length
-          ? remote.bot.customMedia
-          : local.bot.customMedia,
+        remoteN.bot.customMedia?.length
+          ? remoteN.bot.customMedia
+          : localN.bot.customMedia,
       ),
+      status: licenseKey
+        ? remoteN.bot.status === 'paused' && localN.bot.status === 'paused'
+          ? 'paused'
+          : remoteN.bot.status === 'active' || localN.bot.status === 'active'
+            ? 'active'
+            : remoteN.bot.status || localN.bot.status || 'active'
+        : remoteN.bot.status || localN.bot.status,
     },
-  };
+  });
+}
+
+/** Look up a vault / workspace license for this email (server may have lost session). */
+async function restoreLicenseFromVault(email: string): Promise<{
+  licenseKey: string;
+  imageUrl: string;
+  displayName: string;
+  mainText: string;
+  symbols: string[];
+} | null> {
+  try {
+    const db = await fetchDb();
+    if (!db) return null;
+    const vaultHit = (db.vault || []).find(
+      (v) =>
+        String((v as { email?: string }).email || '').toLowerCase() ===
+          email.toLowerCase() &&
+        (v as { status?: string }).status !== 'deleted' &&
+        (v as { key?: string }).key,
+    ) as
+      | {
+          key?: string;
+          eaImage?: string;
+          eaName?: string;
+          mainText?: string;
+          symbols?: string[];
+        }
+      | undefined;
+    let licenseKey = vaultHit?.key || '';
+    let imageUrl = vaultHit?.eaImage || '';
+    let displayName = vaultHit?.eaName || '';
+    let mainText = vaultHit?.mainText || '';
+    let symbols = vaultHit?.symbols || [];
+    if (!licenseKey && db.store?.workspaces) {
+      for (const ws of Object.values(
+        db.store.workspaces as Record<
+          string,
+          {
+            licenses?: Array<{
+              key: string;
+              clientEmail: string;
+              status: string;
+              eaImage?: string;
+              eaName?: string;
+              mainText?: string;
+              symbols?: string[];
+            }>;
+          }
+        >,
+      )) {
+        const hit = (ws.licenses || []).find(
+          (l) =>
+            String(l.clientEmail || '').toLowerCase() === email.toLowerCase() &&
+            l.status !== 'deleted' &&
+            l.key,
+        );
+        if (hit) {
+          licenseKey = hit.key;
+          imageUrl = hit.eaImage || imageUrl;
+          displayName = hit.eaName || displayName;
+          mainText = hit.mainText || mainText;
+          symbols = hit.symbols || symbols;
+          break;
+        }
+      }
+    }
+    if (!licenseKey) return null;
+    return { licenseKey, imageUrl, displayName, mainText, symbols };
+  } catch {
+    return null;
+  }
+}
+
+function applyVaultLicense(
+  session: Session,
+  vault: NonNullable<Awaited<ReturnType<typeof restoreLicenseFromVault>>>,
+): Session {
+  return normalizeSession({
+    ...session,
+    accessStatus: 'licensed',
+    bot: {
+      ...session.bot,
+      licenseKey: vault.licenseKey,
+      status: session.bot.status === 'paused' ? 'paused' : 'active',
+      imageUrl: vault.imageUrl || session.bot.imageUrl,
+      displayName: vault.displayName || session.bot.displayName,
+      mainText: vault.mainText || session.bot.mainText,
+      symbols: vault.symbols.length ? vault.symbols : session.bot.symbols,
+    },
+  });
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session>(() => migrateSession());
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
 
   const persist = useCallback((next: Session) => {
-    setSession(next);
-    saveJSON(KEY, next);
-    if (next.user?.email) {
-      void pushSession(next.user.email, next);
+    const normalized = normalizeSession(next);
+    setSession(normalized);
+    saveJSON(KEY, normalized);
+    if (normalized.user?.email) {
+      void pushSession(normalized.user.email, normalized);
     }
   }, []);
 
-  // Restore progress from server when opening a new preview link
+  // Restore progress from server when opening / refreshing — never demote a licensed local session
   useEffect(() => {
     const email = session.user?.email;
     if (!email) return;
-    void fetchSession<Session>(email).then((remote) => {
-      if (!remote) return;
-      const merged = mergeSessions(session, remote);
+    let cancelled = false;
+    (async () => {
+      const remote = await fetchSession<Session>(email);
+      if (cancelled) return;
+
+      const latest = sessionRef.current;
+      let merged = mergeSessions(latest, remote);
+
+      if (!merged.bot.licenseKey) {
+        const vault = await restoreLicenseFromVault(email);
+        if (cancelled) return;
+        if (vault) merged = applyVaultLicense(merged, vault);
+      }
+
+      // Never overwrite a newer local licensed session with a stale demoted fetch
+      const current = sessionRef.current;
+      if (current.bot.licenseKey && !merged.bot.licenseKey) {
+        merged = normalizeSession({
+          ...merged,
+          accessStatus: 'licensed',
+          bot: { ...merged.bot, ...current.bot, licenseKey: current.bot.licenseKey },
+        });
+      }
+      if (current.bot.licenseKey) {
+        merged = normalizeSession({
+          ...merged,
+          accessStatus: 'licensed',
+          bot: {
+            ...merged.bot,
+            licenseKey: current.bot.licenseKey || merged.bot.licenseKey,
+          },
+        });
+      }
+
       if (
-        merged.accessStatus !== session.accessStatus ||
-        merged.bot.licenseKey !== session.bot.licenseKey ||
-        merged.bot.imageUrl !== session.bot.imageUrl ||
+        merged.accessStatus !== current.accessStatus ||
+        merged.bot.licenseKey !== current.bot.licenseKey ||
+        merged.bot.imageUrl !== current.bot.imageUrl ||
         JSON.stringify(merged.bot.customMedia) !==
-          JSON.stringify(session.bot.customMedia)
+          JSON.stringify(current.bot.customMedia)
       ) {
         setSession(merged);
         saveJSON(KEY, merged);
+        if (merged.bot.licenseKey) {
+          void pushSession(email, merged);
+        }
       }
-    });
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.user?.email]);
 
@@ -176,25 +341,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
       accessStatus: session.accessStatus,
       bot: { ...DEFAULT_BOT, ...session.bot },
       isPaused: session.bot.status === 'paused',
-      setAccessStatus: (accessStatus) => persist({ ...session, accessStatus }),
-      registerLocal: async (user) => {
-        const remote = await fetchSession<Session>(user.email);
-        if (remote?.user) {
-          persist(
-            mergeSessions(
-              { user, accessStatus: 'pending', bot: { ...DEFAULT_BOT, ...session.bot } },
-              remote,
-            ),
-          );
+      setAccessStatus: (accessStatus) => {
+        // Never demote a licensed account back to payment/waiting
+        if (session.bot.licenseKey && accessStatus !== 'licensed') {
+          persist({ ...session, accessStatus: 'licensed' });
           return;
         }
-        persist({
-          user,
-          accessStatus: 'pending',
-          bot: { ...DEFAULT_BOT, ...session.bot, licenseKey: '', imageUrl: '' },
-        });
+        persist({ ...session, accessStatus });
       },
-      markPaid: () => persist({ ...session, accessStatus: 'paid' }),
+      registerLocal: async (user) => {
+        const existing =
+          session.user?.email?.toLowerCase() === user.email.toLowerCase()
+            ? session
+            : migrateSession();
+        const sameEmail =
+          existing.user?.email?.toLowerCase() === user.email.toLowerCase();
+        const remote = await fetchSession<Session>(user.email);
+        const base: Session = normalizeSession({
+          user,
+          accessStatus:
+            sameEmail &&
+            (existing.bot.licenseKey || existing.accessStatus === 'licensed')
+              ? 'licensed'
+              : sameEmail &&
+                  (existing.accessStatus === 'paid' ||
+                    existing.accessStatus === 'approved')
+                ? existing.accessStatus
+                : 'pending',
+          bot: sameEmail
+            ? { ...DEFAULT_BOT, ...existing.bot }
+            : { ...DEFAULT_BOT, licenseKey: '', imageUrl: '' },
+        });
+        let merged = mergeSessions(base, remote);
+        if (!merged.bot.licenseKey) {
+          const vault = await restoreLicenseFromVault(user.email);
+          if (vault) merged = applyVaultLicense(merged, vault);
+        }
+        persist(merged);
+        return merged;
+      },
+      markPaid: () => {
+        if (session.bot.licenseKey) {
+          persist({ ...session, accessStatus: 'licensed' });
+          return;
+        }
+        persist({ ...session, accessStatus: 'paid' });
+      },
       activateWithLicense: (key, sync) => {
         const displayName =
           sync?.displayName ?? sync?.name ?? session.bot.displayName;
@@ -221,6 +413,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshBranding: (sync) => {
         persist({
           ...session,
+          accessStatus: session.bot.licenseKey ? 'licensed' : session.accessStatus,
           bot: {
             ...session.bot,
             name: sync.name
@@ -241,6 +434,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       togglePause: () =>
         persist({
           ...session,
+          accessStatus: session.bot.licenseKey ? 'licensed' : session.accessStatus,
           bot: {
             ...session.bot,
             status: session.bot.status === 'active' ? 'paused' : 'active',
@@ -259,7 +453,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           },
         }),
       setSymbols: (symbols) =>
-        persist({ ...session, bot: { ...session.bot, symbols } }),
+        persist({
+          ...session,
+          accessStatus: session.bot.licenseKey ? 'licensed' : session.accessStatus,
+          bot: { ...session.bot, symbols },
+        }),
     }),
     [persist, session],
   );

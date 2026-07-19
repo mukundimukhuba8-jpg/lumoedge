@@ -20,6 +20,35 @@ async function readBody(req) {
   }
 }
 
+/** Never let a stale pending push wipe a saved license key. */
+function mergeSessionPreferLicense(prev, incoming) {
+  if (!incoming || typeof incoming !== 'object') return prev || incoming;
+  if (!prev || typeof prev !== 'object') return incoming;
+  const prevBot = prev.bot && typeof prev.bot === 'object' ? prev.bot : {};
+  const nextBot = incoming.bot && typeof incoming.bot === 'object' ? incoming.bot : {};
+  const incomingKey = String(nextBot.licenseKey || '').trim();
+  const prevKey = String(prevBot.licenseKey || '').trim();
+  // deleteBot sends paid + empty key — allow that clear. Block other demotions.
+  const intentionalClear =
+    nextBot.licenseKey !== undefined &&
+    !incomingKey &&
+    incoming.accessStatus === 'paid';
+  const licenseKey = intentionalClear ? '' : incomingKey || prevKey;
+  const accessStatus = licenseKey
+    ? 'licensed'
+    : incoming.accessStatus || prev.accessStatus || 'pending';
+  return {
+    ...prev,
+    ...incoming,
+    accessStatus,
+    bot: {
+      ...prevBot,
+      ...nextBot,
+      licenseKey,
+    },
+  };
+}
+
 function mirrorClientToSuper(db, entry) {
   const sid = 'LM-004821';
   db.store = db.store || { workspaces: {} };
@@ -186,7 +215,11 @@ export async function handleApi(req, res, pathname) {
       const email = decodeURIComponent(pathname.replace('/api/sessions/', '')).toLowerCase();
       const body = await readBody(req);
       const { db, sha } = await loadDb();
-      db.sessions = { ...(db.sessions || {}), [email]: body };
+      const prev = db.sessions?.[email];
+      db.sessions = {
+        ...(db.sessions || {}),
+        [email]: mergeSessionPreferLicense(prev, body),
+      };
       await saveDb(db, sha);
       json(res, 200, { ok: true });
       return true;

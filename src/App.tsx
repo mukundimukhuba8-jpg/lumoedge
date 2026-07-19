@@ -33,15 +33,17 @@ function ClientAppGate({ children }: { children: React.ReactNode }) {
   const { user, accessStatus, bot } = useApp();
   const location = useLocation();
   const [prefs, setPrefs] = useState(() => loadInterfacePrefs());
+  const licensed = accessStatus === 'licensed' || Boolean(bot.licenseKey?.trim());
 
   useEffect(() => subscribeInterfacePrefs(() => setPrefs(loadInterfacePrefs())), []);
 
   if (!user) return <Navigate to="/" replace />;
-  if (accessStatus === 'pending') return <Navigate to="/waiting" replace />;
-  if (accessStatus === 'approved' || accessStatus === 'paid') {
+  // License key already entered — stay in the app, never bounce to payment
+  if (!licensed && accessStatus === 'pending') return <Navigate to="/waiting" replace />;
+  if (!licensed && (accessStatus === 'approved' || accessStatus === 'paid')) {
     return <Navigate to="/activate" replace />;
   }
-  if (accessStatus !== 'licensed') return <Navigate to="/" replace />;
+  if (!licensed) return <Navigate to="/" replace />;
 
   const custom = resolveCustomBackdrop(
     prefs.customBg,
@@ -77,9 +79,11 @@ function SuperOnly({ children }: { children: React.ReactNode }) {
 }
 
 function HomeRedirect() {
-  const { user, accessStatus } = useApp();
+  const { user, accessStatus, bot } = useApp();
   if (!user) return <RegisterPage />;
-  if (accessStatus === 'licensed') return <Navigate to="/app" replace />;
+  if (accessStatus === 'licensed' || bot.licenseKey?.trim()) {
+    return <Navigate to="/app" replace />;
+  }
   if (accessStatus === 'approved' || accessStatus === 'paid') {
     return <Navigate to="/activate" replace />;
   }

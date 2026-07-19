@@ -7,7 +7,7 @@ import { normalizeLicenseKey } from '../../lib/storage';
 
 export function ActivateLicensePage() {
   const navigate = useNavigate();
-  const { user, accessStatus, activateWithLicense } = useApp();
+  const { user, accessStatus, activateWithLicense, bot } = useApp();
   const { claimLicense } = useAdmin();
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
@@ -15,12 +15,13 @@ export function ActivateLicensePage() {
 
   useEffect(() => {
     if (!user) navigate('/', { replace: true });
-    else if (accessStatus === 'pending') navigate('/waiting', { replace: true });
-    else if (accessStatus === 'licensed') navigate('/app', { replace: true });
+    else if (accessStatus === 'licensed' || bot.licenseKey?.trim()) {
+      navigate('/app', { replace: true });
+    } else if (accessStatus === 'pending') navigate('/waiting', { replace: true });
     else if (accessStatus !== 'approved' && accessStatus !== 'paid') {
       navigate('/', { replace: true });
     }
-  }, [user, accessStatus, navigate]);
+  }, [user, accessStatus, bot.licenseKey, navigate]);
 
   const onActivate = async (e: React.FormEvent) => {
     e.preventDefault();

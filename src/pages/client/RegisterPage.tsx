@@ -40,9 +40,18 @@ export function RegisterPage() {
       lastName: lastName.trim(),
     };
     submitClientRegistration(profile);
-    await registerLocal(profile);
+    const next = await registerLocal(profile);
     notifySuperAdminEmail(profile);
-    navigate('/waiting');
+    // Already licensed (same email / vault) → home, not payment again
+    if (next.accessStatus === 'licensed' || next.bot.licenseKey?.trim()) {
+      navigate('/app', { replace: true });
+      return;
+    }
+    if (next.accessStatus === 'approved' || next.accessStatus === 'paid') {
+      navigate('/activate', { replace: true });
+      return;
+    }
+    navigate('/waiting', { replace: true });
   };
 
   return (

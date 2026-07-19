@@ -5,13 +5,17 @@ import { useApp } from '../../context/AppContext';
 
 /** Payment details live on /waiting. After approval, go straight to license key. */
 export function SubscribePage() {
-  const { user, accessStatus, setAccessStatus } = useApp();
+  const { user, accessStatus, setAccessStatus, bot } = useApp();
   const { getClientByEmail } = useAdmin();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!user) {
       navigate('/', { replace: true });
+      return;
+    }
+    if (accessStatus === 'licensed' || bot.licenseKey?.trim()) {
+      navigate('/app', { replace: true });
       return;
     }
     const client = getClientByEmail(user.email);
@@ -22,12 +26,8 @@ export function SubscribePage() {
     if (client.status === 'approved' && accessStatus === 'pending') {
       setAccessStatus('approved');
     }
-    if (accessStatus === 'licensed') {
-      navigate('/app', { replace: true });
-      return;
-    }
     navigate('/activate', { replace: true });
-  }, [user, accessStatus, getClientByEmail, navigate, setAccessStatus]);
+  }, [user, accessStatus, bot.licenseKey, getClientByEmail, navigate, setAccessStatus]);
 
   return null;
 }

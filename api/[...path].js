@@ -49,6 +49,35 @@ function normalizeDb(db) {
   };
 }
 
+/** Never let a stale pending push wipe a saved license key. */
+function mergeSessionPreferLicense(prev, incoming) {
+  if (!incoming || typeof incoming !== 'object') return prev || incoming;
+  if (!prev || typeof prev !== 'object') return incoming;
+  const prevBot = prev.bot && typeof prev.bot === 'object' ? prev.bot : {};
+  const nextBot = incoming.bot && typeof incoming.bot === 'object' ? incoming.bot : {};
+  const incomingKey = String(nextBot.licenseKey || '').trim();
+  const prevKey = String(prevBot.licenseKey || '').trim();
+  // deleteBot sends paid + empty key — allow that clear. Block other demotions.
+  const intentionalClear =
+    nextBot.licenseKey !== undefined &&
+    !incomingKey &&
+    incoming.accessStatus === 'paid';
+  const licenseKey = intentionalClear ? '' : incomingKey || prevKey;
+  const accessStatus = licenseKey
+    ? 'licensed'
+    : incoming.accessStatus || prev.accessStatus || 'pending';
+  return {
+    ...prev,
+    ...incoming,
+    accessStatus,
+    bot: {
+      ...prevBot,
+      ...nextBot,
+      licenseKey,
+    },
+  };
+}
+
 function clone(v) {
   return JSON.parse(JSON.stringify(v));
 }
@@ -451,7 +480,11 @@ export default async function handler(req, res) {
       const email = decodeURIComponent(pathname.replace('/api/sessions/', '')).toLowerCase();
       const body = await readBody(req);
       const { db, sha } = await loadDb();
-      db.sessions = { ...(db.sessions || {}), [email]: body };
+      const prev = db.sessions?.[email];
+      db.sessions = {
+        ...(db.sessions || {}),
+        [email]: mergeSessionPreferLicense(prev, body),
+      };
       await saveDb(db, sha);
       send(res, 200, { ok: true });
       return;

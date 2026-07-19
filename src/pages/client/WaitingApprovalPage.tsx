@@ -8,7 +8,7 @@ import { isPrepaidEmail } from '../../lib/prepaidClients';
 
 export function WaitingApprovalPage() {
   const navigate = useNavigate();
-  const { user, setAccessStatus, accessStatus, markPaid } = useApp();
+  const { user, setAccessStatus, accessStatus, markPaid, bot } = useApp();
   const { getClientByEmail, claimClientPayment } = useAdmin();
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState('');
@@ -27,6 +27,15 @@ export function WaitingApprovalPage() {
       navigate('/', { replace: true });
       return;
     }
+    // Already activated — never show payment again
+    if (accessStatus === 'licensed' || bot.licenseKey?.trim()) {
+      navigate('/app', { replace: true });
+      return;
+    }
+    if (accessStatus === 'approved' || accessStatus === 'paid') {
+      navigate('/activate', { replace: true });
+      return;
+    }
     const tick = () => {
       const client = getClientByEmail(user.email);
       // Only auto-advance after approval when already past payment claim,
@@ -39,7 +48,7 @@ export function WaitingApprovalPage() {
     tick();
     const id = window.setInterval(tick, 1500);
     return () => window.clearInterval(id);
-  }, [user, getClientByEmail, navigate, setAccessStatus, accessStatus]);
+  }, [user, getClientByEmail, navigate, setAccessStatus, accessStatus, bot.licenseKey]);
 
   const onPaidCheck = async () => {
     if (!user || checking) return;
