@@ -45,7 +45,7 @@ const CHART_SCAN_API_KEY =
 const CHART_SCAN_API_URL =
   process.env.CHART_SCAN_API_URL ||
   'https://api.openai.com/v1/chat/completions';
-const CHART_SCAN_MODEL = process.env.CHART_SCAN_MODEL || 'gpt-4o-mini';
+const CHART_SCAN_MODEL = process.env.CHART_SCAN_MODEL || 'gpt-4o';
 
 const emptyDb = () => ({
   auth: { admins: [], admin: null },
