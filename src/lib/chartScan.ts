@@ -2,12 +2,15 @@ import { loadJSON, saveJSON } from './storage';
 
 export const DAILY_SCAN_LIMIT = 7;
 
+export type TradeDirection = 'buy' | 'sell';
+
 export type ScanHistoryItem = {
   id: string;
   imageDataUrl: string;
   accuracy: number;
   symbol?: string;
   timeframe?: string;
+  direction?: TradeDirection;
   summary?: string;
   createdAt: string;
 };
@@ -76,6 +79,7 @@ export type ScanApiResult = {
   accuracy: number;
   symbol?: string;
   timeframe?: string;
+  direction?: TradeDirection;
   summary?: string;
   error?: string;
   demo?: boolean;

@@ -2006,3 +2006,117 @@ a {
   padding: 2px 6px;
   border-radius: 999px;
 }
+
+/* Scan reveal sequence */
+.scan-reveal {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.scan-phase-card {
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.scan-phase-card.scanning {
+  min-height: 88px;
+  display: grid;
+  place-content: center;
+  gap: 4px;
+}
+
+.scan-phase-pulse {
+  position: absolute;
+  inset: -20%;
+  background: conic-gradient(
+    from 0deg,
+    transparent,
+    rgba(59, 130, 246, 0.18),
+    transparent 40%
+  );
+  animation: scan-sweep 1.2s linear infinite;
+  opacity: 0.7;
+}
+
+.scan-phase-card.scanning strong,
+.scan-phase-card.scanning p {
+  position: relative;
+  z-index: 1;
+}
+
+.scan-phase-label {
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.scan-symbol-big {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.scan-tf {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--electric);
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.scan-direction-big {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+}
+
+.scan-phase-card.direction.buy {
+  border-color: rgba(57, 255, 20, 0.45);
+  box-shadow: inset 0 1px 0 var(--glass-shine), 0 0 22px rgba(57, 255, 20, 0.15);
+  color: var(--green);
+}
+
+.scan-phase-card.direction.sell {
+  border-color: rgba(225, 29, 46, 0.5);
+  box-shadow: inset 0 1px 0 var(--glass-shine), 0 0 22px rgba(225, 29, 46, 0.18);
+  color: #fecaca;
+}
+
+.scan-phase-card.accuracy-box {
+  border-color: rgba(103, 232, 249, 0.4);
+}
+
+.pop-in {
+  animation: scan-pop 0.45s cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+
+@keyframes scan-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.scan-status-line {
+  text-align: center;
+  font-size: 11px;
+  margin: 0;
+}

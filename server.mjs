@@ -309,12 +309,16 @@ const server = http.createServer(async (req, res) => {
       // No key yet → demo scan so UI still works (70–90%)
       if (!CHART_SCAN_API_KEY) {
         const accuracy = 70 + Math.floor(Math.random() * 21);
+        const demoSymbols = ['XAUUSD', 'EURUSD', 'GBPUSD', 'NAS100', 'BTCUSD'];
+        const symbol = demoSymbols[Math.floor(Math.random() * demoSymbols.length)];
+        const direction = Math.random() > 0.5 ? 'buy' : 'sell';
         sendJson(res, 200, {
           ok: true,
           demo: true,
           accuracy,
-          symbol: 'XAUUSD',
+          symbol,
           timeframe: 'M15',
+          direction,
           summary: 'Demo mode — add CHART_SCAN_API_KEY on the server for live AI scans.',
         });
         return;
@@ -322,8 +326,8 @@ const server = http.createServer(async (req, res) => {
 
       const prompt =
         'You are a trading chart analyst. From this MT5 chart screenshot, detect symbol and timeframe if visible, ' +
-        'and estimate setup confidence as accuracy_percent between 70 and 90. ' +
-        'Reply ONLY compact JSON: {"symbol":"...","timeframe":"...","accuracy_percent":78,"summary":"one short sentence"}';
+        'decide trade direction as buy or sell, and estimate setup confidence as accuracy_percent between 70 and 90. ' +
+        'Reply ONLY compact JSON: {"symbol":"...","timeframe":"...","direction":"buy|sell","accuracy_percent":78,"summary":"one short sentence"}';
 
       const upstream = await fetch(CHART_SCAN_API_URL, {
         method: 'POST',
@@ -376,6 +380,14 @@ const server = http.createServer(async (req, res) => {
       if (!Number.isFinite(accuracy) || accuracy < 70 || accuracy > 90) {
         accuracy = 70 + Math.floor(Math.random() * 21);
       }
+      const rawDir = String(parsed.direction || parsed.side || '').toLowerCase();
+      const direction = rawDir.includes('sell')
+        ? 'sell'
+        : rawDir.includes('buy')
+          ? 'buy'
+          : Math.random() > 0.5
+            ? 'buy'
+            : 'sell';
 
       sendJson(res, 200, {
         ok: true,
@@ -383,6 +395,7 @@ const server = http.createServer(async (req, res) => {
         accuracy: Math.round(accuracy),
         symbol: parsed.symbol || undefined,
         timeframe: parsed.timeframe || undefined,
+        direction,
         summary: parsed.summary || 'Chart scan complete.',
       });
       return;

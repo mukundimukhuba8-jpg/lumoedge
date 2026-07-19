@@ -9,6 +9,8 @@ import {
   Plus,
   ScanSearch,
   Sparkles,
+  TrendingDown,
+  TrendingUp,
   Upload,
   X,
 } from 'lucide-react';
@@ -22,12 +24,17 @@ import {
   pushScanHistory,
   runChartScan,
   type ScanHistoryItem,
+  type TradeDirection,
 } from '../../lib/chartScan';
 import {
   accentHex,
   hexToRgb,
   loadInterfacePrefs,
 } from '../../lib/interfaceStyle';
+
+type RevealPhase = 'idle' | 'scanning' | 'symbol' | 'direction' | 'accuracy';
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function ChartScannerPage() {
   const navigate = useNavigate();
@@ -39,7 +46,7 @@ export function ChartScannerPage() {
   const [trades, setTrades] = useState(9);
   const [lotSize, setLotSize] = useState('0.01');
   const [autoOpen, setAutoOpen] = useState(true);
-  const [scanning, setScanning] = useState(false);
+  const [phase, setPhase] = useState<RevealPhase>('idle');
   const [accuracy, setAccuracy] = useState(0);
   const [targetAccuracy, setTargetAccuracy] = useState<number | null>(null);
   const [lastResult, setLastResult] = useState<ScanHistoryItem | null>(null);
@@ -50,6 +57,7 @@ export function ChartScannerPage() {
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const uploadRef = useRef<HTMLInputElement | null>(null);
   const animRef = useRef<number | null>(null);
+  const scanning = phase === 'scanning';
 
   useEffect(() => {
     const root = document.documentElement;
@@ -66,14 +74,14 @@ export function ChartScannerPage() {
     setHistory(loadScanHistory(user?.email));
   }, [user?.email]);
 
-  // Animate accuracy 0 → target
+  // Animate accuracy 0 → target only once accuracy phase opens
   useEffect(() => {
-    if (targetAccuracy == null) return;
+    if (phase !== 'accuracy' || targetAccuracy == null) return;
     if (animRef.current) cancelAnimationFrame(animRef.current);
     const start = performance.now();
     const from = 0;
     const to = targetAccuracy;
-    const duration = 1600;
+    const duration = 1800;
 
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / duration);
@@ -90,7 +98,24 @@ export function ChartScannerPage() {
     return () => {
       if (animRef.current) cancelAnimationFrame(animRef.current);
     };
-  }, [targetAccuracy]);
+  }, [phase, targetAccuracy]);
+
+  const playReveal = async (item: ScanHistoryItem) => {
+    setLastResult(item);
+    setPhase('symbol');
+    setStatus(`Detected ${item.symbol || 'symbol'}…`);
+    await wait(1100);
+    setPhase('direction');
+    setStatus(
+      item.direction === 'sell'
+        ? `Direction: SELL ${item.symbol || ''}`
+        : `Direction: BUY ${item.symbol || ''}`,
+    );
+    await wait(1200);
+    setPhase('accuracy');
+    setTargetAccuracy(item.accuracy);
+    setStatus('Calculating accuracy…');
+  };
 
   const onPick = async (file: File | null) => {
     if (!file) return;
@@ -103,15 +128,14 @@ export function ChartScannerPage() {
       return;
     }
 
-    setScanning(true);
-    setStatus('Uploading chart…');
+    setPhase('scanning');
+    setStatus('Scanning chart…');
     setLastResult(null);
     setTargetAccuracy(null);
     setAccuracy(0);
 
     try {
       const dataUrl = await fileToScanDataUrl(file);
-      setStatus('AI scanning chart…');
       const result = await runChartScan(dataUrl);
       if (!result.ok) {
         throw new Error(result.error || 'Scan failed');
@@ -124,29 +148,31 @@ export function ChartScannerPage() {
         1,
         Math.min(99, Math.round(result.accuracy || 0)),
       );
+      const direction: TradeDirection =
+        result.direction === 'sell' ? 'sell' : 'buy';
       const item: ScanHistoryItem = {
         id: `scan-${Date.now()}`,
         imageDataUrl: dataUrl,
         accuracy: accuracyValue,
-        symbol: result.symbol,
+        symbol: result.symbol || 'XAUUSD',
         timeframe: result.timeframe,
+        direction,
         summary: result.summary,
         createdAt: new Date().toISOString(),
       };
       const nextHistory = pushScanHistory(user?.email, item);
       setHistory(nextHistory);
-      setLastResult(item);
-      setTargetAccuracy(accuracyValue);
+      await playReveal(item);
       setStatus(
         result.demo
-          ? 'Demo scan (add your API key on the server for live AI)'
+          ? 'Demo scan complete'
           : 'Scan complete',
       );
     } catch (e) {
+      setPhase('idle');
       setStatus(e instanceof Error ? e.message : 'Scan failed');
       alert(e instanceof Error ? e.message : 'Scan failed');
     } finally {
-      setScanning(false);
       if (cameraRef.current) cameraRef.current.value = '';
       if (uploadRef.current) uploadRef.current.value = '';
     }
@@ -287,46 +313,76 @@ export function ChartScannerPage() {
           />
         </div>
 
-        {(scanning || lastResult || status) && (
-          <div className="scan-card scan-result">
-            {scanning ? (
-              <div className="scan-result-status">Scanning…</div>
+        {phase !== 'idle' || lastResult ? (
+          <div className="scan-reveal">
+            {phase === 'scanning' ? (
+              <div className="scan-card scan-phase-card scanning">
+                <div className="scan-phase-pulse" />
+                <strong>Scanning chart…</strong>
+                <p className="muted">Reading symbol, direction &amp; setup</p>
+              </div>
             ) : null}
-            {lastResult ? (
-              <>
-                <div className="scan-accuracy-wrap">
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    Accuracy
-                  </div>
-                  <div className="scan-accuracy">{accuracy}%</div>
-                  <div className="scan-accuracy-bar">
-                    <div style={{ width: `${accuracy}%` }} />
-                  </div>
-                  {(lastResult.symbol || lastResult.timeframe) && (
-                    <div className="muted" style={{ marginTop: 8, fontSize: 13 }}>
-                      {lastResult.symbol || '—'}
-                      {lastResult.timeframe ? ` · ${lastResult.timeframe}` : ''}
-                    </div>
-                  )}
-                  {lastResult.summary ? (
-                    <p className="muted" style={{ margin: '8px 0 0', fontSize: 13 }}>
-                      {lastResult.summary}
-                    </p>
+
+            {(phase === 'symbol' || phase === 'direction' || phase === 'accuracy') &&
+            lastResult ? (
+              <div className="scan-card scan-phase-card pop-in">
+                <div className="muted scan-phase-label">Symbol detected</div>
+                <div className="scan-symbol-big">
+                  {lastResult.symbol}
+                  {lastResult.timeframe ? (
+                    <span className="scan-tf">{lastResult.timeframe}</span>
                   ) : null}
                 </div>
+              </div>
+            ) : null}
+
+            {(phase === 'direction' || phase === 'accuracy') && lastResult ? (
+              <div
+                className={`scan-card scan-phase-card pop-in direction ${
+                  lastResult.direction === 'sell' ? 'sell' : 'buy'
+                }`}
+              >
+                <div className="muted scan-phase-label">Trade direction</div>
+                <div className="scan-direction-big">
+                  {lastResult.direction === 'sell' ? (
+                    <TrendingDown size={22} />
+                  ) : (
+                    <TrendingUp size={22} />
+                  )}
+                  <span>{(lastResult.direction || 'buy').toUpperCase()}</span>
+                </div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                  {trades} trade{trades === 1 ? '' : 's'} · lot {lotSize}
+                  {autoOpen ? ' · auto-open on' : ''}
+                </div>
+              </div>
+            ) : null}
+
+            {phase === 'accuracy' && lastResult ? (
+              <div className="scan-card scan-phase-card pop-in accuracy-box">
+                <div className="muted scan-phase-label">Accuracy</div>
+                <div className="scan-accuracy">{accuracy}%</div>
+                <div className="scan-accuracy-bar">
+                  <div style={{ width: `${accuracy}%` }} />
+                </div>
+                {lastResult.summary ? (
+                  <p className="muted" style={{ margin: '8px 0 0', fontSize: 12 }}>
+                    {lastResult.summary}
+                  </p>
+                ) : null}
                 <img
                   className="scan-preview"
                   src={lastResult.imageDataUrl}
                   alt="Scanned chart"
                 />
-              </>
-            ) : status ? (
-              <div className="muted" style={{ fontSize: 13 }}>
-                {status}
               </div>
             ) : null}
+
+            {status && phase !== 'idle' ? (
+              <p className="muted scan-status-line">{status}</p>
+            ) : null}
           </div>
-        )}
+        ) : null}
 
         {history.length > 0 ? (
           <div className="scan-history">
@@ -338,13 +394,13 @@ export function ChartScannerPage() {
                   type="button"
                   className="scan-history-item"
                   onClick={() => {
-                    setLastResult(h);
-                    setTargetAccuracy(h.accuracy);
-                    setAccuracy(h.accuracy);
+                    void playReveal(h);
                   }}
                 >
                   <img src={h.imageDataUrl} alt="" />
-                  <span>{h.accuracy}%</span>
+                  <span>
+                    {(h.direction || 'buy').toUpperCase().slice(0, 1)} · {h.accuracy}%
+                  </span>
                 </button>
               ))}
             </div>
