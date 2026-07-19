@@ -2,15 +2,26 @@ import { useEffect, useMemo, useState } from 'react';
 import { Copy, Plus, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { resolveProfileImage } from '../../lib/mentorMedia';
-import { compressImageFile, publishEaImage } from '../../lib/storage';
+import { compressImageFile, getEaImage, publishEaImage } from '../../lib/storage';
 import { Placeholder } from './AdminShell';
 
 function isRealImage(url?: string): boolean {
   const u = String(url || '').trim();
   if (!u) return false;
   if (u.includes('lumo-logo')) return false;
-  if (u.startsWith('blob:') || u.startsWith('img:')) return false;
+  if (u.startsWith('blob:')) return false;
+  if (u.startsWith('img:')) return true;
   return u.startsWith('data:') || u.startsWith('http') || u.startsWith('/');
+}
+
+function displayImageSrc(url?: string): string {
+  const u = String(url || '').trim();
+  if (!u || u.includes('lumo-logo') || u.startsWith('blob:')) return '';
+  if (u.startsWith('img:')) {
+    const id = u.replace(/^img:/, '');
+    return getEaImage(id) || getEaImage(u) || '';
+  }
+  return u;
 }
 
 export function DashboardPage() {
@@ -122,10 +133,13 @@ function Stat({ value, label, color }: { value: string; label: string; color: st
 }
 
 export function ManageEAsPage() {
-  const { eas, createEA, deleteEA } = useAdmin();
+  const { eas, createEA, updateEA, deleteEA } = useAdmin();
   const [name, setName] = useState('');
   const [draft, setDraft] = useState('');
   const [symbols, setSymbols] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [editSymbols, setEditSymbols] = useState<string[]>([]);
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -194,23 +208,113 @@ export function ManageEAsPage() {
       </div>
       <div className="glow-card" style={{ boxShadow: 'none', borderColor: 'rgba(255,255,255,0.08)' }}>
         <h3 style={{ marginTop: 0 }}>Created EAs</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Edit symbols here — they sync to every license key and licensed client for that EA.
+        </p>
         {eas.length === 0 ? <p className="muted">No EAs yet — create one to generate licenses.</p> : null}
-        {eas.map((ea) => (
-          <div key={ea.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              {isRealImage(ea.imageUrl) ? (
-                <img src={ea.imageUrl} alt="" width={40} height={40} style={{ borderRadius: 10, objectFit: 'cover' }} />
-              ) : null}
-              <div>
-                <strong>{ea.name}</strong>
-                <div className="muted">{ea.symbols.length} symbols · lot {ea.lotSize} · {ea.direction}</div>
+        {eas.map((ea) => {
+          const src = displayImageSrc(ea.imageUrl);
+          const isEditing = editingId === ea.id;
+          return (
+            <div key={ea.id} style={{ padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: 1 }}>
+                  {src ? (
+                    <img src={src} alt="" width={40} height={40} style={{ borderRadius: 10, objectFit: 'cover' }} />
+                  ) : null}
+                  <div style={{ flex: 1 }}>
+                    <strong>{ea.name}</strong>
+                    <div className="muted">{ea.symbols.length} symbols · lot {ea.lotSize} · {ea.direction}</div>
+                    {!isEditing ? (
+                      <div style={{ marginTop: 6 }}>
+                        {ea.symbols.map((s) => (
+                          <span key={s} className="chip" style={{ cursor: 'default' }}>{s}</span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ width: 'auto', padding: '8px 10px' }}
+                    onClick={() => {
+                      if (isEditing) {
+                        setEditingId(null);
+                        return;
+                      }
+                      setEditingId(ea.id);
+                      setEditSymbols([...ea.symbols]);
+                      setEditDraft('');
+                    }}
+                  >
+                    {isEditing ? 'Close' : 'Symbols'}
+                  </button>
+                  <button type="button" onClick={() => deleteEA(ea.id)} style={{ background: 'var(--red)', borderRadius: 17, width: 34, height: 34, color: '#fff' }}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
+              {isEditing ? (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      value={editDraft}
+                      onChange={(e) => setEditDraft(e.target.value)}
+                      placeholder="Add symbol (e.g. EURUSD)"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const s = editDraft.trim().toUpperCase();
+                          if (s && !editSymbols.includes(s)) setEditSymbols((p) => [...p, s]);
+                          setEditDraft('');
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-blue"
+                      style={{ width: 48 }}
+                      onClick={() => {
+                        const s = editDraft.trim().toUpperCase();
+                        if (s && !editSymbols.includes(s)) setEditSymbols((p) => [...p, s]);
+                        setEditDraft('');
+                      }}
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    {editSymbols.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        className="chip"
+                        onClick={() => setEditSymbols((p) => p.filter((x) => x !== s))}
+                      >
+                        {s} ×
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-blue"
+                    style={{ marginTop: 10 }}
+                    onClick={() => {
+                      if (!editSymbols.length) return alert('Add at least one symbol');
+                      updateEA(ea.id, { symbols: editSymbols });
+                      setEditingId(null);
+                      alert('Symbols saved — syncing to license keys and clients');
+                    }}
+                  >
+                    Save & sync to licenses
+                  </button>
+                </div>
+              ) : null}
             </div>
-            <button type="button" onClick={() => deleteEA(ea.id)} style={{ background: 'var(--red)', borderRadius: 17, width: 34, height: 34, color: '#fff' }}>
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -266,7 +370,9 @@ export function GenerateLicensePage() {
             {isRealImage(selected.imageUrl) || isRealImage(profile.eaImage) ? (
               <img
                 src={
-                  (isRealImage(selected.imageUrl) ? selected.imageUrl : profile.eaImage) || ''
+                  displayImageSrc(selected.imageUrl) ||
+                  displayImageSrc(profile.eaImage) ||
+                  ''
                 }
                 alt=""
                 width={48}
@@ -369,8 +475,8 @@ export function GenerateLicensePage() {
               </button>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-              {isRealImage(lic.eaImage) ? (
-                <img src={lic.eaImage} alt="" width={28} height={28} style={{ borderRadius: 8, objectFit: 'cover' }} />
+              {displayImageSrc(lic.eaImage) ? (
+                <img src={displayImageSrc(lic.eaImage)} alt="" width={28} height={28} style={{ borderRadius: 8, objectFit: 'cover' }} />
               ) : null}
               <div className="muted">{lic.eaName} · {lic.duration} · {lic.clientName}</div>
             </div>
@@ -515,10 +621,11 @@ export function ProfilePage() {
   const [savingImage, setSavingImage] = useState(false);
 
   useEffect(() => {
-    const eaImage = resolveProfileImage(profile.eaImage) || profile.eaImage;
+    const raw = resolveProfileImage(profile.eaImage) || profile.eaImage;
+    const eaImage = displayImageSrc(raw) || (isRealImage(raw) && !raw.startsWith('img:') ? raw : '');
     setForm({
       ...profile,
-      eaImage: eaImage.startsWith('img:') || !isRealImage(eaImage) ? '' : eaImage,
+      eaImage,
     });
   }, [profile]);
 

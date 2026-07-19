@@ -115,26 +115,35 @@ export function HomePage() {
     };
   }, [accent, accentRgb]);
 
-  // Pull latest mentor branding / profile picture while home is open
+  // Pull latest mentor branding / profile picture / symbols while home is open
   useEffect(() => {
     if (!user?.email || !bot.licenseKey) return;
     const sync = () => {
-      void claimLicense(bot.licenseKey, user.email).then((result) => {
+      void claimLicense(bot.licenseKey, user.email).then(async (result) => {
         if (!result.ok) return;
         const lic = result.license;
+        let imageUrl =
+          resolveProfileImage(lic.eaImage, lic.customMedia) || lic.eaImage || '';
+        // Resolve img: refs to displayable data URLs for <img>
+        if (imageUrl.startsWith('img:') || imageUrl.startsWith('/api/images/')) {
+          const { resolveDisplayImage } = await import('../../lib/storage');
+          imageUrl = (await resolveDisplayImage(imageUrl)) || imageUrl;
+        }
+        if (imageUrl.startsWith('img:') || imageUrl.includes('lumo-logo')) {
+          imageUrl = '';
+        }
         refreshBranding({
           name: lic.eaName,
           displayName: lic.eaName,
           mainText: lic.mainText,
-          imageUrl:
-            resolveProfileImage(lic.eaImage, lic.customMedia) || lic.eaImage || '',
+          imageUrl,
           symbols: lic.symbols,
           customMedia: lic.customMedia,
         });
       });
     };
     sync();
-    const id = window.setInterval(sync, 8000);
+    const id = window.setInterval(sync, 5000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email, bot.licenseKey]);

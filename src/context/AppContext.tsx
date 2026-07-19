@@ -421,8 +421,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
               : session.bot.name,
             displayName: sync.displayName ?? sync.name ?? session.bot.displayName,
             mainText: sync.mainText ?? session.bot.mainText,
-            symbols: sync.symbols?.length ? sync.symbols : session.bot.symbols,
-            imageUrl: sync.imageUrl || session.bot.imageUrl || '',
+            // Mentor portal symbols always win when provided
+            symbols:
+              sync.symbols !== undefined
+                ? sync.symbols.length
+                  ? sync.symbols
+                  : session.bot.symbols
+                : session.bot.symbols,
+            // Mentor portal image always wins when provided (including clear)
+            imageUrl:
+              sync.imageUrl !== undefined
+                ? sync.imageUrl
+                : session.bot.imageUrl || '',
             customMedia: normalizeCustomMedia(
               sync.customMedia !== undefined
                 ? sync.customMedia
