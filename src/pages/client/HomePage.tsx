@@ -297,7 +297,7 @@ export function HomePage() {
               flex: 1,
               paddingBottom: 8,
               backgroundImage: customBg
-                ? `linear-gradient(rgba(10,10,16,0.78), rgba(10,10,16,0.92)), url(${customBg})`
+                ? `linear-gradient(rgba(10,10,16,0.28), rgba(10,10,16,0.45)), url(${customBg})`
                 : undefined,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
@@ -341,7 +341,7 @@ export function HomePage() {
                   bottom: 0,
                   padding: 16,
                   textAlign: 'center',
-                  background: 'linear-gradient(transparent, rgba(10,10,10,0.95))',
+                  background: 'linear-gradient(transparent, rgba(10,10,10,0.55))',
                 }}
               >
                 <div style={{ color: 'var(--electric)', fontFamily: 'var(--font-body)', fontSize: 17, fontWeight: 700 }}>

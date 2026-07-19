@@ -269,7 +269,7 @@ export function MetaTraderPage() {
   };
 
   const bg = eaImage
-    ? `linear-gradient(180deg, rgba(6,8,14,0.72) 0%, rgba(6,8,14,0.88) 50%, rgba(6,8,14,0.96) 100%), url(${eaImage})`
+    ? `linear-gradient(180deg, rgba(6,8,14,0.28) 0%, rgba(6,8,14,0.4) 50%, rgba(6,8,14,0.55) 100%), url(${eaImage})`
     : undefined;
 
   const brokerLink =
