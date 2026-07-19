@@ -47,11 +47,12 @@ export async function handleApi(req, res, pathname) {
 
   try {
     if (pathname === '/api/health') {
+      const { db, backend } = await loadDb();
       json(res, 200, {
         ok: true,
         durable: hasDurableBackend(),
-        backend: hasDurableBackend() ? 'github' : 'memory',
-        updatedAt: new Date().toISOString(),
+        backend,
+        updatedAt: db.updatedAt || new Date().toISOString(),
       });
       return true;
     }
