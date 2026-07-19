@@ -53,6 +53,114 @@ function clone(v) {
   return JSON.parse(JSON.stringify(v));
 }
 
+/** Never drop existing clients / vault / licenses on sync — only add or upgrade */
+function mergeClients(existing = [], incoming = []) {
+  const byEmail = new Map();
+  for (const c of existing || []) {
+    if (c?.email) byEmail.set(String(c.email).toLowerCase(), c);
+  }
+  for (const c of incoming || []) {
+    if (!c?.email) continue;
+    const email = String(c.email).toLowerCase();
+    const prev = byEmail.get(email);
+    if (!prev) {
+      byEmail.set(email, { ...c, email });
+      continue;
+    }
+    const rank = (x) =>
+      (x.status === 'approved' ? 2 : x.status === 'pending' ? 1 : 0) +
+      (x.paymentClaimed ? 1 : 0);
+    byEmail.set(email, rank(c) >= rank(prev) ? { ...prev, ...c, email } : { ...c, ...prev, email });
+  }
+  return [...byEmail.values()];
+}
+
+function mergeVault(existing = [], incoming = []) {
+  const byId = new Map();
+  const byKey = new Map();
+  const put = (v) => {
+    if (!v) return;
+    const key = String(v.key || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+    if (v.id) byId.set(v.id, v);
+    if (key) byKey.set(key, v);
+  };
+  for (const v of existing || []) put(v);
+  for (const v of incoming || []) put(v);
+  const out = new Map();
+  for (const v of byId.values()) out.set(v.id || v.key, v);
+  for (const v of byKey.values()) out.set(v.id || v.key, v);
+  return [...out.values()].filter((v) => v.status !== 'deleted');
+}
+
+function mergeWorkspaces(existing = {}, incoming = {}) {
+  const ids = new Set([...Object.keys(existing || {}), ...Object.keys(incoming || {})]);
+  const out = {};
+  for (const id of ids) {
+    const a = existing?.[id] || {};
+    const b = incoming?.[id] || {};
+    const licenseMap = new Map();
+    for (const l of [...(a.licenses || []), ...(b.licenses || [])]) {
+      if (!l) continue;
+      const key = String(l.key || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '');
+      const k = l.id || key;
+      if (!k) continue;
+      const prev = licenseMap.get(k);
+      if (!prev || (l.status === 'active' && prev.status !== 'active')) licenseMap.set(k, l);
+      else licenseMap.set(k, { ...prev, ...l });
+    }
+    out[id] = {
+      ...a,
+      ...b,
+      eas: [...(a.eas || []), ...(b.eas || [])].filter(
+        (e, i, arr) => e?.id && arr.findIndex((x) => x.id === e.id) === i,
+      ),
+      licenses: [...licenseMap.values()],
+      clientRequests: mergeClients(a.clientRequests || [], b.clientRequests || []),
+      profile: { ...(a.profile || {}), ...(b.profile || {}) },
+      mt5: { ...(a.mt5 || {}), ...(b.mt5 || {}) },
+      orders: [...(b.orders || []), ...(a.orders || [])].filter(
+        (o, i, arr) => o?.id && arr.findIndex((x) => x.id === o.id) === i,
+      ),
+      revokedKeys: [
+        ...new Set([...(a.revokedKeys || []), ...(b.revokedKeys || [])]),
+      ],
+    };
+  }
+  return out;
+}
+
+function mergeDatabases(base, patch) {
+  const a = normalizeDb(base);
+  const b = normalizeDb(patch);
+  return normalizeDb({
+    ...a,
+    ...b,
+    auth: {
+      ...a.auth,
+      ...b.auth,
+      // keep larger admin list
+      admins:
+        (b.auth?.admins?.length || 0) >= (a.auth?.admins?.length || 0)
+          ? b.auth?.admins || a.auth.admins
+          : a.auth.admins,
+    },
+    store: {
+      workspaces: mergeWorkspaces(a.store?.workspaces, b.store?.workspaces),
+    },
+    clients: mergeClients(a.clients, b.clients),
+    vault: mergeVault(a.vault, b.vault),
+    sessions: { ...(a.sessions || {}), ...(b.sessions || {}) },
+    images: { ...(a.images || {}), ...(b.images || {}) },
+    revokedKeys: [...new Set([...(a.revokedKeys || []), ...(b.revokedKeys || [])])],
+  });
+}
+
 let memoryDb = emptyDb();
 
 async function loadFromGitHubRaw() {
@@ -112,7 +220,19 @@ async function loadDb() {
 }
 
 async function saveDb(db, sha) {
-  const next = { ...normalizeDb(db), updatedAt: new Date().toISOString() };
+  // Always merge on top of the latest durable copy so sync never wipes data
+  let latest = emptyDb();
+  try {
+    const loaded = await loadDb();
+    latest = loaded.db;
+    if (loaded.sha) sha = loaded.sha;
+  } catch {
+    latest = clone(memoryDb);
+  }
+  const next = {
+    ...mergeDatabases(latest, db),
+    updatedAt: new Date().toISOString(),
+  };
   const t = token();
   if (!t) {
     memoryDb = clone(next);
@@ -131,25 +251,10 @@ async function saveDb(db, sha) {
   });
   if (res.status === 409) {
     const fresh = await loadDb();
-    const merged = normalizeDb({
-      ...fresh.db,
-      ...next,
-      auth: { ...fresh.db.auth, ...(next.auth || {}) },
-      store: {
-        workspaces: {
-          ...(fresh.db.store?.workspaces || {}),
-          ...(next.store?.workspaces || {}),
-        },
-      },
-      clients: Array.isArray(next.clients) ? next.clients : fresh.db.clients,
-      sessions: { ...(fresh.db.sessions || {}), ...(next.sessions || {}) },
-      images: { ...(fresh.db.images || {}), ...(next.images || {}) },
-      vault: Array.isArray(next.vault) ? next.vault : fresh.db.vault,
-      revokedKeys: [
-        ...new Set([...(fresh.db.revokedKeys || []), ...(next.revokedKeys || [])]),
-      ],
-    });
-    merged.updatedAt = new Date().toISOString();
+    const merged = {
+      ...mergeDatabases(fresh.db, next),
+      updatedAt: new Date().toISOString(),
+    };
     const retry = await fetch(url, {
       method: 'PUT',
       headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
@@ -161,10 +266,12 @@ async function saveDb(db, sha) {
     });
     if (!retry.ok) throw new Error(`GitHub write retry failed ${retry.status}`);
     const out = await retry.json();
+    memoryDb = clone(merged);
     return { db: merged, sha: out.content?.sha || fresh.sha, backend: 'github' };
   }
   if (!res.ok) throw new Error(`GitHub write failed ${res.status}`);
   const out = await res.json();
+  memoryDb = clone(next);
   return { db: next, sha: out.content?.sha || sha, backend: 'github' };
 }
 
