@@ -24,6 +24,45 @@ function token() {
   );
 }
 
+const FIREBASE_DB_URL = (
+  process.env.FIREBASE_DATABASE_URL ||
+  process.env.VITE_FIREBASE_DATABASE_URL ||
+  'https://lumoedge-61c02-default-rtdb.firebaseio.com'
+).replace(/\/$/, '');
+
+/** Env first, then Firebase secrets path (set without committing the key). */
+async function resolveChartScanConfig() {
+  const envKey =
+    process.env.CHART_SCAN_API_KEY || process.env.OPENAI_API_KEY || '';
+  const envUrl =
+    process.env.CHART_SCAN_API_URL ||
+    'https://api.openai.com/v1/chat/completions';
+  const envModel = process.env.CHART_SCAN_MODEL || 'gpt-4o';
+  if (envKey) {
+    return { apiKey: envKey, apiUrl: envUrl, model: envModel, source: 'env' };
+  }
+  try {
+    const res = await fetch(`${FIREBASE_DB_URL}/lumo/secrets/chartScan.json`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) {
+      return { apiKey: '', apiUrl: envUrl, model: envModel, source: 'none' };
+    }
+    const data = await res.json();
+    const apiKey = String(
+      (data && (data.apiKey || data.CHART_SCAN_API_KEY || data.key)) || '',
+    ).trim();
+    return {
+      apiKey,
+      apiUrl: String((data && data.apiUrl) || envUrl),
+      model: String((data && data.model) || envModel),
+      source: apiKey ? 'firebase' : 'none',
+    };
+  } catch {
+    return { apiKey: '', apiUrl: envUrl, model: envModel, source: 'none' };
+  }
+}
+
 function ghHeaders() {
   const t = token();
   const headers = {
@@ -642,14 +681,10 @@ export default async function handler(req, res) {
         return;
       }
 
-      const CHART_SCAN_API_KEY =
-        process.env.CHART_SCAN_API_KEY ||
-        process.env.OPENAI_API_KEY ||
-        '';
-      const CHART_SCAN_API_URL =
-        process.env.CHART_SCAN_API_URL ||
-        'https://api.openai.com/v1/chat/completions';
-      const CHART_SCAN_MODEL = process.env.CHART_SCAN_MODEL || 'gpt-4o';
+      const scanCfg = await resolveChartScanConfig();
+      const CHART_SCAN_API_KEY = scanCfg.apiKey;
+      const CHART_SCAN_API_URL = scanCfg.apiUrl;
+      const CHART_SCAN_MODEL = scanCfg.model;
 
       if (!CHART_SCAN_API_KEY) {
         const accuracy = 70 + Math.floor(Math.random() * 21);
@@ -663,7 +698,7 @@ export default async function handler(req, res) {
           symbol,
           timeframe: 'M15',
           direction,
-          summary: 'Demo mode — add CHART_SCAN_API_KEY on Vercel for live AI scans.',
+          summary: 'Demo mode — Chart Scanner API key not configured.',
         });
         return;
       }
@@ -778,17 +813,17 @@ export default async function handler(req, res) {
     }
 
     if (pathname === '/api/scan/status' && req.method === 'GET') {
-      const configured = Boolean(
-        process.env.CHART_SCAN_API_KEY || process.env.OPENAI_API_KEY,
-      );
+      const scanCfg = await resolveChartScanConfig();
+      const configured = Boolean(scanCfg.apiKey);
       send(res, 200, {
         configured,
-        model: process.env.CHART_SCAN_MODEL || 'gpt-4o',
-        url: process.env.CHART_SCAN_API_URL || 'https://api.openai.com/v1/chat/completions',
+        model: scanCfg.model,
+        url: scanCfg.apiUrl,
+        source: scanCfg.source,
         mt5Base: Boolean(process.env.MT5_API_BASE),
         hint: configured
-          ? 'Live AI scans enabled'
-          : 'Missing CHART_SCAN_API_KEY (or OPENAI_API_KEY) on Vercel Production — add it, enable Production, then Redeploy',
+          ? `Live AI scans enabled (${scanCfg.source})`
+          : 'Missing Chart Scanner API key',
       });
       return;
     }
