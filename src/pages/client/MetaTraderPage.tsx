@@ -8,6 +8,7 @@ import {
   Home,
   Monitor,
   RotateCcw,
+  ScanSearch,
   Search,
   Star,
 } from 'lucide-react';
@@ -288,14 +289,24 @@ export function MetaTraderPage() {
         </button>
       </div>
 
-      <div className="tabbar">
-        <button type="button" onClick={() => navigate('/app')}>
-          <Home size={20} /> Home
+      <nav className="lay-dock" aria-label="Main" style={{ margin: '8px 16px 14px' }}>
+        <button type="button" className="lay-dock-item" onClick={() => navigate('/app')}>
+          <span className="lay-dock-ico"><Home size={20} /></span>
+          <span>Home</span>
         </button>
-        <button type="button" className="active">
-          <Monitor size={20} /> MetaTrader
+        <button
+          type="button"
+          className="lay-dock-item"
+          onClick={() => alert('Open Chart Scanner from Home → Style → Chart Scanner')}
+        >
+          <span className="lay-dock-ico"><ScanSearch size={20} /></span>
+          <span>Scanner</span>
         </button>
-      </div>
+        <button type="button" className="lay-dock-item active">
+          <span className="lay-dock-ico"><Monitor size={20} /></span>
+          <span>MetaTrader</span>
+        </button>
+      </nav>
     </div>
   );
 }

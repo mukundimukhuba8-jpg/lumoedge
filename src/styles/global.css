@@ -888,38 +888,55 @@ a {
   box-shadow: 0 0 10px rgba(59, 130, 246, 0.35);
 }
 
-.lay-tabbar,
-.lay-vortex-tabbar {
+/* Floating Home / Scanner / MetaTrader dock (reference layouts) */
+.lay-dock {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  margin-top: 18px;
-  padding: 10px 4px 6px;
-  border-top: 1px solid rgba(59, 130, 246, 0.3);
-  background: rgba(8, 10, 16, 0.78);
-  backdrop-filter: blur(8px);
-  border-radius: 16px 16px 0 0;
-}
-
-.lay-vortex-tabbar {
   grid-template-columns: 1fr 1fr 1fr;
-}
-
-.lay-tabbar button,
-.lay-vortex-tabbar button {
-  background: transparent;
-  color: var(--muted);
-  display: grid;
+  align-items: center;
   gap: 4px;
-  justify-items: center;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 8px;
+  margin: 16px 8px 10px;
+  padding: 10px 12px 12px;
+  border-radius: 28px;
+  background: rgba(10, 14, 22, 0.92);
+  border: 1.4px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 0 18px rgba(59, 130, 246, 0.12);
+  backdrop-filter: blur(14px);
+  position: relative;
+  z-index: 5;
 }
 
-.lay-tabbar button.active,
-.lay-vortex-tabbar button.active {
+.lay-dock-item {
+  background: transparent;
+  color: rgba(226, 232, 240, 0.75);
+  display: grid;
+  gap: 5px;
+  justify-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 4px;
+  letter-spacing: 0.2px;
+}
+
+.lay-dock-ico {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1.4px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+}
+
+.lay-dock-item.active {
   color: var(--electric);
+}
+
+.lay-dock-item.active .lay-dock-ico {
+  border-color: var(--electric);
+  background: rgba(59, 130, 246, 0.18);
+  color: var(--electric);
+  box-shadow: 0 0 16px rgba(59, 130, 246, 0.45);
 }
 
 /* Terminal */

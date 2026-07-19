@@ -40,7 +40,7 @@ function bgStyle(eaImage: string, accentRgb: string) {
     `,
     backgroundSize: 'cover',
     backgroundPosition: 'center top',
-    padding: '28px 18px 16px',
+    padding: '28px 14px 8px',
     display: 'flex',
     flexDirection: 'column' as const,
     color: 'var(--text)',
@@ -120,11 +120,10 @@ export function FocusLayout(a: LayoutActions) {
         ))}
       </div>
 
-      <LayoutTabBar
-        active="home"
+      <LayoutDock
         onHome={a.onHomeTap}
+        onScanner={a.onScanner}
         onMetaTrader={a.onMetaTrader}
-        accentRgb={a.accentRgb}
       />
     </div>
   );
@@ -191,11 +190,10 @@ export function TerminalLayout(a: LayoutActions) {
         </div>
       </div>
 
-      <LayoutTabBar
-        active="home"
+      <LayoutDock
         onHome={a.onHomeTap}
+        onScanner={a.onScanner}
         onMetaTrader={a.onMetaTrader}
-        accentRgb={a.accentRgb}
       />
     </div>
   );
@@ -242,22 +240,13 @@ export function VortexLayout(a: LayoutActions) {
         <VortexOrb label="STYLE" onClick={a.onStyle} icon={<Box size={22} />} />
       </div>
 
-      <div style={{ flex: 1 }} />
+      <div style={{ flex: 1, minHeight: 24 }} />
 
-      <div className="lay-vortex-tabbar">
-        <button type="button" className="active" onClick={a.onHomeTap}>
-          <Home size={20} />
-          <span>Home</span>
-        </button>
-        <button type="button" onClick={a.onScanner}>
-          <ScanSearch size={20} />
-          <span>Scanner</span>
-        </button>
-        <button type="button" onClick={a.onMetaTrader}>
-          <Monitor size={20} />
-          <span>MetaTrader</span>
-        </button>
-      </div>
+      <LayoutDock
+        onHome={a.onHomeTap}
+        onScanner={a.onScanner}
+        onMetaTrader={a.onMetaTrader}
+      />
     </div>
   );
 }
@@ -287,30 +276,50 @@ function VortexOrb({
   );
 }
 
-function LayoutTabBar({
-  active,
+/** Floating pill dock — Home / Scanner / MetaTrader (matches reference layouts) */
+function LayoutDock({
   onHome,
+  onScanner,
   onMetaTrader,
-  accentRgb,
+  active = 'home',
 }: {
-  active: 'home' | 'mt';
   onHome: () => void;
+  onScanner: () => void;
   onMetaTrader: () => void;
-  accentRgb: string;
+  active?: 'home' | 'scanner' | 'mt';
 }) {
   return (
-    <div
-      className="lay-tabbar"
-      style={{ borderTopColor: `rgba(${accentRgb},0.35)` }}
-    >
-      <button type="button" className={active === 'home' ? 'active' : ''} onClick={onHome}>
-        <Home size={20} />
+    <nav className="lay-dock" aria-label="Main">
+      <button
+        type="button"
+        className={`lay-dock-item${active === 'home' ? ' active' : ''}`}
+        onClick={onHome}
+      >
+        <span className="lay-dock-ico">
+          <Home size={20} />
+        </span>
         <span>Home</span>
       </button>
-      <button type="button" className={active === 'mt' ? 'active' : ''} onClick={onMetaTrader}>
-        <Monitor size={20} />
+      <button
+        type="button"
+        className={`lay-dock-item${active === 'scanner' ? ' active' : ''}`}
+        onClick={onScanner}
+      >
+        <span className="lay-dock-ico">
+          <ScanSearch size={20} />
+        </span>
+        <span>Scanner</span>
+      </button>
+      <button
+        type="button"
+        className={`lay-dock-item${active === 'mt' ? ' active' : ''}`}
+        onClick={onMetaTrader}
+      >
+        <span className="lay-dock-ico">
+          <Monitor size={20} />
+        </span>
         <span>MetaTrader</span>
       </button>
-    </div>
+    </nav>
   );
 }

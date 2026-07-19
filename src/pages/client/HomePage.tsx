@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Home, Monitor, Pause, Play, Settings, Signal, Trash2 } from 'lucide-react';
+import { Home, Monitor, Pause, Play, ScanSearch, Settings, Signal, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
 import {
@@ -394,14 +394,24 @@ export function HomePage() {
             </p>
           </div>
 
-          <div className="tabbar">
-            <button type="button" className="active" onClick={onHomeTap}>
-              <Home size={20} /> Home
+          <nav className="lay-dock" aria-label="Main" style={{ margin: '8px 16px 14px' }}>
+            <button type="button" className="lay-dock-item active" onClick={onHomeTap}>
+              <span className="lay-dock-ico"><Home size={20} /></span>
+              <span>Home</span>
             </button>
-            <button type="button" onClick={() => navigate('/app/metatrader')}>
-              <Monitor size={20} /> MetaTrader
+            <button type="button" className="lay-dock-item" onClick={() => setScannerOpen(true)}>
+              <span className="lay-dock-ico"><ScanSearch size={20} /></span>
+              <span>Scanner</span>
             </button>
-          </div>
+            <button
+              type="button"
+              className="lay-dock-item"
+              onClick={() => navigate('/app/metatrader')}
+            >
+              <span className="lay-dock-ico"><Monitor size={20} /></span>
+              <span>MetaTrader</span>
+            </button>
+          </nav>
         </>
       ) : null}
 
