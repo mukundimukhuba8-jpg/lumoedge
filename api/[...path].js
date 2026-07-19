@@ -1,17 +1,368 @@
-import { handleApi } from '../_lib/handlers.mjs';
+const OWNER = process.env.LUMO_DATA_OWNER || 'mukundimukhuba8-jpg';
+const REPO = process.env.LUMO_DATA_REPO || 'lumoedge';
+const PATH = process.env.LUMO_DATA_PATH || 'cloud-data/db.json';
+
+function emptyDb() {
+  return {
+    auth: { admins: [], admin: null },
+    store: { workspaces: {} },
+    vault: [],
+    images: {},
+    clients: [],
+    sessions: {},
+    revokedKeys: [],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function token() {
+  return (
+    process.env.LUMO_DATA_TOKEN ||
+    process.env.GITHUB_TOKEN ||
+    process.env.GH_TOKEN ||
+    ''
+  );
+}
+
+function ghHeaders() {
+  const t = token();
+  const headers = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'lumo-edge-api',
+  };
+  if (t) headers.Authorization = `Bearer ${t}`;
+  return headers;
+}
+
+function normalizeDb(db) {
+  const base = emptyDb();
+  return {
+    ...base,
+    ...(db || {}),
+    auth: { ...base.auth, ...((db && db.auth) || {}) },
+    store: { workspaces: { ...((db && db.store && db.store.workspaces) || {}) } },
+    clients: Array.isArray(db && db.clients) ? db.clients : [],
+    sessions: db && db.sessions && typeof db.sessions === 'object' ? db.sessions : {},
+    vault: Array.isArray(db && db.vault) ? db.vault : [],
+    images: db && db.images && typeof db.images === 'object' ? db.images : {},
+    revokedKeys: Array.isArray(db && db.revokedKeys) ? db.revokedKeys : [],
+  };
+}
+
+function clone(v) {
+  return JSON.parse(JSON.stringify(v));
+}
+
+let memoryDb = emptyDb();
+
+async function loadDb() {
+  const t = token();
+  const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}`;
+  try {
+    const res = await fetch(url, { headers: ghHeaders() });
+    if (res.status === 404) {
+      if (!t) {
+        const rawRes = await fetch(
+          `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/${PATH}?t=${Date.now()}`,
+        );
+        if (rawRes.ok) {
+          memoryDb = normalizeDb(JSON.parse((await rawRes.text()) || '{}'));
+          return { db: clone(memoryDb), sha: null, backend: 'github-raw' };
+        }
+      }
+      return { db: emptyDb(), sha: null, backend: t ? 'github' : 'memory' };
+    }
+    if (!res.ok) {
+      if (!t) return { db: clone(memoryDb), sha: null, backend: 'memory' };
+      throw new Error(`GitHub read failed ${res.status}`);
+    }
+    const data = await res.json();
+    const raw = Buffer.from(String(data.content || '').replace(/\n/g, ''), 'base64').toString(
+      'utf8',
+    );
+    return { db: normalizeDb(JSON.parse(raw || '{}')), sha: data.sha, backend: 'github' };
+  } catch (err) {
+    if (!t) return { db: clone(memoryDb), sha: null, backend: 'memory' };
+    throw err;
+  }
+}
+
+async function saveDb(db, sha) {
+  const next = { ...normalizeDb(db), updatedAt: new Date().toISOString() };
+  const t = token();
+  if (!t) {
+    memoryDb = clone(next);
+    return { db: memoryDb, sha: 'memory', backend: 'memory' };
+  }
+  const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}`;
+  const payload = {
+    message: `chore(db): sync ${next.updatedAt}`,
+    content: Buffer.from(JSON.stringify(next, null, 2)).toString('base64'),
+    ...(sha ? { sha } : {}),
+  };
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (res.status === 409) {
+    const fresh = await loadDb();
+    const merged = normalizeDb({
+      ...fresh.db,
+      ...next,
+      auth: { ...fresh.db.auth, ...(next.auth || {}) },
+      store: {
+        workspaces: {
+          ...(fresh.db.store?.workspaces || {}),
+          ...(next.store?.workspaces || {}),
+        },
+      },
+      clients: Array.isArray(next.clients) ? next.clients : fresh.db.clients,
+      sessions: { ...(fresh.db.sessions || {}), ...(next.sessions || {}) },
+      images: { ...(fresh.db.images || {}), ...(next.images || {}) },
+      vault: Array.isArray(next.vault) ? next.vault : fresh.db.vault,
+      revokedKeys: [
+        ...new Set([...(fresh.db.revokedKeys || []), ...(next.revokedKeys || [])]),
+      ],
+    });
+    merged.updatedAt = new Date().toISOString();
+    const retry = await fetch(url, {
+      method: 'PUT',
+      headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: `chore(db): sync retry ${merged.updatedAt}`,
+        content: Buffer.from(JSON.stringify(merged, null, 2)).toString('base64'),
+        sha: fresh.sha,
+      }),
+    });
+    if (!retry.ok) throw new Error(`GitHub write retry failed ${retry.status}`);
+    const out = await retry.json();
+    return { db: merged, sha: out.content?.sha || fresh.sha, backend: 'github' };
+  }
+  if (!res.ok) throw new Error(`GitHub write failed ${res.status}`);
+  const out = await res.json();
+  return { db: next, sha: out.content?.sha || sha, backend: 'github' };
+}
+
+function send(res, status, data) {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.end(JSON.stringify(data));
+}
+
+async function readBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  if (!chunks.length) return {};
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function mirrorClientToSuper(db, entry) {
+  const sid = 'LM-004821';
+  db.store = db.store || { workspaces: {} };
+  db.store.workspaces = db.store.workspaces || {};
+  const ws = db.store.workspaces[sid] || {
+    eas: [],
+    licenses: [],
+    clientRequests: [],
+    mt5: {},
+    profile: {},
+    orders: [],
+    revokedKeys: [],
+  };
+  const rest = (ws.clientRequests || []).filter(
+    (c) => c.id !== entry.id && c.email !== entry.email,
+  );
+  ws.clientRequests = [entry, ...rest];
+  db.store.workspaces[sid] = ws;
+}
 
 export default async function handler(req, res) {
-  const host = req.headers.host || 'localhost';
-  const url = new URL(req.url || '/', `https://${host}`);
-  // On Vercel catch-all, path may be /api/... already
-  let pathname = url.pathname;
-  if (!pathname.startsWith('/api')) {
-    pathname = `/api${pathname.startsWith('/') ? pathname : `/${pathname}`}`;
-  }
-  const handled = await handleApi(req, res, pathname);
-  if (!handled) {
-    res.statusCode = 404;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'Not found', path: pathname }));
+  try {
+    const host = req.headers.host || 'localhost';
+    const url = new URL(req.url || '/', `https://${host}`);
+    let pathname = url.pathname;
+    if (!pathname.startsWith('/api')) {
+      pathname = `/api${pathname.startsWith('/') ? pathname : `/${pathname}`}`;
+    }
+
+    if (req.method === 'OPTIONS') {
+      send(res, 204, {});
+      return;
+    }
+
+    if (pathname === '/api/health' || pathname === '/api') {
+      const { db, backend } = await loadDb();
+      send(res, 200, {
+        ok: true,
+        durable: Boolean(token()),
+        backend,
+        updatedAt: db.updatedAt,
+      });
+      return;
+    }
+
+    if (pathname === '/api/db' && req.method === 'GET') {
+      const { db } = await loadDb();
+      send(res, 200, db);
+      return;
+    }
+
+    if (pathname === '/api/db' && req.method === 'PUT') {
+      const body = await readBody(req);
+      const { db, sha } = await loadDb();
+      const next = {
+        ...db,
+        ...body,
+        auth: { ...db.auth, ...(body.auth || {}) },
+        store: {
+          workspaces: {
+            ...(db.store?.workspaces || {}),
+            ...(body.store?.workspaces || {}),
+          },
+        },
+        vault: Array.isArray(body.vault) ? body.vault : db.vault,
+        images: { ...db.images, ...(body.images || {}) },
+        clients: Array.isArray(body.clients) ? body.clients : db.clients,
+        sessions: { ...db.sessions, ...(body.sessions || {}) },
+        revokedKeys: Array.isArray(body.revokedKeys)
+          ? [...new Set([...(db.revokedKeys || []), ...body.revokedKeys])]
+          : db.revokedKeys || [],
+      };
+      const saved = await saveDb(next, sha);
+      send(res, 200, saved.db);
+      return;
+    }
+
+    if (pathname === '/api/clients' && req.method === 'GET') {
+      const { db } = await loadDb();
+      send(res, 200, db.clients || []);
+      return;
+    }
+
+    if (pathname === '/api/clients' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { db, sha } = await loadDb();
+      const email = String(body.email || '')
+        .trim()
+        .toLowerCase();
+      if (!email || !body.firstName || !body.lastName) {
+        send(res, 400, { error: 'email, firstName, lastName required' });
+        return;
+      }
+      const existing = (db.clients || []).find((c) => c.email === email);
+      if (existing) {
+        send(res, 200, existing);
+        return;
+      }
+      const entry = {
+        id: `cli-${Date.now()}`,
+        email,
+        firstName: String(body.firstName).trim(),
+        lastName: String(body.lastName).trim(),
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        notifiedAt: new Date().toISOString(),
+        paymentClaimed: false,
+      };
+      db.clients = [entry, ...(db.clients || [])];
+      mirrorClientToSuper(db, entry);
+      const saved = await saveDb(db, sha);
+      const created = (saved.db.clients || []).find((c) => c.email === email) || entry;
+      send(res, 201, created);
+      return;
+    }
+
+    if (pathname.startsWith('/api/clients/') && req.method === 'PATCH') {
+      const id = decodeURIComponent(pathname.replace('/api/clients/', ''));
+      const body = await readBody(req);
+      const { db, sha } = await loadDb();
+      db.clients = (db.clients || []).map((c) => {
+        if (c.id !== id && c.email !== id) return c;
+        return {
+          ...c,
+          ...body,
+          id: c.id,
+          email: c.email,
+          paymentClaimed:
+            body.paymentClaimed === true || c.paymentClaimed === true
+              ? true
+              : Boolean(body.paymentClaimed ?? c.paymentClaimed),
+          paymentClaimedAt:
+            body.paymentClaimed === true
+              ? body.paymentClaimedAt || new Date().toISOString()
+              : c.paymentClaimedAt,
+        };
+      });
+      const updated =
+        db.clients.find((c) => c.id === id) || db.clients.find((c) => c.email === id);
+      if (updated) mirrorClientToSuper(db, updated);
+      await saveDb(db, sha);
+      send(res, 200, updated || null);
+      return;
+    }
+
+    if (pathname.startsWith('/api/clients/') && req.method === 'DELETE') {
+      const id = decodeURIComponent(pathname.replace('/api/clients/', ''));
+      const { db, sha } = await loadDb();
+      const before = (db.clients || []).length;
+      db.clients = (db.clients || []).filter((c) => c.id !== id && c.email !== id);
+      const sid = 'LM-004821';
+      const ws = db.store?.workspaces?.[sid];
+      if (ws) {
+        ws.clientRequests = (ws.clientRequests || []).filter(
+          (c) => c.id !== id && c.email !== id,
+        );
+      }
+      await saveDb(db, sha);
+      send(res, 200, { ok: true, removed: before - (db.clients || []).length });
+      return;
+    }
+
+    if (pathname.startsWith('/api/sessions/') && req.method === 'GET') {
+      const email = decodeURIComponent(pathname.replace('/api/sessions/', '')).toLowerCase();
+      const { db } = await loadDb();
+      send(res, 200, db.sessions?.[email] ?? null);
+      return;
+    }
+
+    if (pathname.startsWith('/api/sessions/') && req.method === 'PUT') {
+      const email = decodeURIComponent(pathname.replace('/api/sessions/', '')).toLowerCase();
+      const body = await readBody(req);
+      const { db, sha } = await loadDb();
+      db.sessions = { ...(db.sessions || {}), [email]: body };
+      await saveDb(db, sha);
+      send(res, 200, { ok: true });
+      return;
+    }
+
+    if (pathname === '/api/vault' && req.method === 'GET') {
+      const { db } = await loadDb();
+      send(res, 200, db.vault || []);
+      return;
+    }
+
+    if (pathname === '/api/vault' && req.method === 'PUT') {
+      const body = await readBody(req);
+      const { db, sha } = await loadDb();
+      db.vault = Array.isArray(body) ? body : body.vault || db.vault;
+      await saveDb(db, sha);
+      send(res, 200, db.vault);
+      return;
+    }
+
+    send(res, 404, { error: 'Not found', path: pathname });
+  } catch (err) {
+    send(res, 500, {
+      error: err instanceof Error ? err.message : 'API error',
+      durable: Boolean(token()),
+    });
   }
 }
