@@ -237,8 +237,14 @@ export function ChartScannerPage() {
         </div>
 
         <div className="scan-stage">
-          <div className={`scan-radar${scanning ? ' active' : ''}`}>
-            <ScanSearch size={36} color="var(--electric)" />
+          <div className={`scan-radar${scanning ? ' active' : ''}`} aria-hidden>
+            <span className="scan-orbit scan-orbit-a" />
+            <span className="scan-orbit scan-orbit-b" />
+            <span className="scan-orbit scan-orbit-c" />
+            <span className="scan-sweep" />
+            <span className="scan-radar-core">
+              <ScanSearch size={26} color="var(--electric)" />
+            </span>
           </div>
           <p className="scan-upload-label">Upload your MT5 chart</p>
           <div className="scan-actions">
@@ -248,7 +254,7 @@ export function ChartScannerPage() {
               disabled={scanning || scansLeft <= 0}
               onClick={() => cameraRef.current?.click()}
             >
-              <Camera size={22} />
+              <Camera size={18} />
               Camera
             </button>
             <button
@@ -257,7 +263,7 @@ export function ChartScannerPage() {
               disabled={scanning || scansLeft <= 0}
               onClick={() => uploadRef.current?.click()}
             >
-              <Upload size={22} />
+              <Upload size={18} />
               Upload
             </button>
           </div>
