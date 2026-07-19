@@ -16,9 +16,10 @@ export function ActivateLicensePage() {
   useEffect(() => {
     if (!user) navigate('/', { replace: true });
     else if (accessStatus === 'pending') navigate('/waiting', { replace: true });
-    else if (accessStatus === 'approved') navigate('/subscribe', { replace: true });
     else if (accessStatus === 'licensed') navigate('/app', { replace: true });
-    else if (accessStatus !== 'paid') navigate('/', { replace: true });
+    else if (accessStatus !== 'approved' && accessStatus !== 'paid') {
+      navigate('/', { replace: true });
+    }
   }, [user, accessStatus, navigate]);
 
   const onActivate = async (e: React.FormEvent) => {
@@ -68,7 +69,8 @@ export function ActivateLicensePage() {
         Activate your license
       </h1>
       <p className="muted" style={{ marginBottom: 24 }}>
-        Enter your short LUMO key from admin. Issued for {user?.email}.
+        Your account is approved. Enter your license key from admin to open the
+        app. Issued for {user?.email}.
       </p>
 
       <form className="glow-card" onSubmit={onActivate} style={{ textAlign: 'left' }}>

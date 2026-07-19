@@ -38,8 +38,9 @@ function ClientAppGate({ children }: { children: React.ReactNode }) {
 
   if (!user) return <Navigate to="/" replace />;
   if (accessStatus === 'pending') return <Navigate to="/waiting" replace />;
-  if (accessStatus === 'approved') return <Navigate to="/subscribe" replace />;
-  if (accessStatus === 'paid') return <Navigate to="/activate" replace />;
+  if (accessStatus === 'approved' || accessStatus === 'paid') {
+    return <Navigate to="/activate" replace />;
+  }
   if (accessStatus !== 'licensed') return <Navigate to="/" replace />;
 
   const custom = resolveCustomBackdrop(
@@ -79,8 +80,9 @@ function HomeRedirect() {
   const { user, accessStatus } = useApp();
   if (!user) return <RegisterPage />;
   if (accessStatus === 'licensed') return <Navigate to="/app" replace />;
-  if (accessStatus === 'paid') return <Navigate to="/activate" replace />;
-  if (accessStatus === 'approved') return <Navigate to="/subscribe" replace />;
+  if (accessStatus === 'approved' || accessStatus === 'paid') {
+    return <Navigate to="/activate" replace />;
+  }
   return <Navigate to="/waiting" replace />;
 }
 
