@@ -252,10 +252,18 @@ export function HomePage() {
       ) : null}
 
       {!specialLayout ? (
-        <>
+        <div
+          style={{
+            minHeight: '100dvh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxSizing: 'border-box',
+          }}
+        >
           <div
             className="page"
             style={{
+              flex: 1,
               paddingBottom: 8,
               backgroundImage: customBg
                 ? `linear-gradient(rgba(10,10,16,0.78), rgba(10,10,16,0.92)), url(${customBg})`
@@ -394,7 +402,7 @@ export function HomePage() {
             </p>
           </div>
 
-          <nav className="lay-dock" aria-label="Main" style={{ margin: '8px 16px 14px' }}>
+          <nav className="lay-dock" aria-label="Main">
             <button type="button" className="lay-dock-item active" onClick={onHomeTap}>
               <span className="lay-dock-ico"><Home size={20} /></span>
               <span>Home</span>
@@ -412,7 +420,7 @@ export function HomePage() {
               <span>MetaTrader</span>
             </button>
           </nav>
-        </>
+        </div>
       ) : null}
 
       {symbolsOpen ? (

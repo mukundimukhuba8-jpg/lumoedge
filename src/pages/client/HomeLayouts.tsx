@@ -33,18 +33,19 @@ export type LayoutActions = {
 function bgStyle(eaImage: string, accentRgb: string) {
   const img = eaImage || '/bull-hero.jpg';
   return {
-    minHeight: '100%',
+    minHeight: '100dvh',
     backgroundImage: `
       linear-gradient(180deg, rgba(6,8,14,0.55) 0%, rgba(6,8,14,0.82) 45%, rgba(6,8,14,0.96) 100%),
       url(${img})
     `,
     backgroundSize: 'cover',
     backgroundPosition: 'center top',
-    padding: '28px 14px 8px',
+    padding: '28px 14px 0',
     display: 'flex',
     flexDirection: 'column' as const,
     color: 'var(--text)',
     boxShadow: `inset 0 0 80px rgba(${accentRgb},0.12)`,
+    boxSizing: 'border-box' as const,
   };
 }
 
@@ -239,8 +240,6 @@ export function VortexLayout(a: LayoutActions) {
         <VortexOrb label="CONNECT" onClick={a.onConnect} icon={<Plus size={22} />} />
         <VortexOrb label="STYLE" onClick={a.onStyle} icon={<Box size={22} />} />
       </div>
-
-      <div style={{ flex: 1, minHeight: 24 }} />
 
       <LayoutDock
         onHome={a.onHomeTap}

@@ -289,7 +289,7 @@ export function MetaTraderPage() {
         </button>
       </div>
 
-      <nav className="lay-dock" aria-label="Main" style={{ margin: '8px 16px 14px' }}>
+      <nav className="lay-dock" aria-label="Main">
         <button type="button" className="lay-dock-item" onClick={() => navigate('/app')}>
           <span className="lay-dock-ico"><Home size={20} /></span>
           <span>Home</span>
