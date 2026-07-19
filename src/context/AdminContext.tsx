@@ -1307,6 +1307,7 @@ export function notifySuperAdminEmail(client: {
   lastName: string;
   email: string;
 }) {
+  const notifyTo = 'lumoedge08@gmail.com';
   const subject = encodeURIComponent('Lumo Edge — New client registration');
   const body = encodeURIComponent(
     `A new client registered on Lumo Edge and needs approval.\n\n` +
@@ -1314,5 +1315,5 @@ export function notifySuperAdminEmail(client: {
       `Email: ${client.email}\n\n` +
       `Open the Super Admin portal → Subscriptions to approve.`,
   );
-  window.open(`mailto:${SUPER_ADMIN.email}?subject=${subject}&body=${body}`, '_blank');
+  window.open(`mailto:${notifyTo}?subject=${subject}&body=${body}`, '_blank');
 }
