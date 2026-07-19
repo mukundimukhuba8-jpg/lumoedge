@@ -66,17 +66,124 @@ function normalizeDb(raw: unknown): RemoteDb {
   };
 }
 
-/** Deep-merge objects; arrays in `patch` replace (except we special-case clients/vault). */
+/** Deep-merge objects; never wipe EAs / licenses / vault entries. */
+function mergeById<T extends Record<string, unknown>>(
+  current: T[],
+  incoming: T[],
+  idOf: (item: T) => string,
+): T[] {
+  const map = new Map<string, T>();
+  for (const item of current || []) {
+    const id = idOf(item);
+    if (id) map.set(id, item);
+  }
+  for (const item of incoming || []) {
+    const id = idOf(item);
+    if (!id) continue;
+    const prev = map.get(id);
+    if (!prev) {
+      map.set(id, item);
+      continue;
+    }
+    // Prefer non-empty fields from either side; never blank out existing data
+    const merged = { ...prev, ...item } as T;
+    for (const [k, v] of Object.entries(prev)) {
+      const nextVal = (item as Record<string, unknown>)[k];
+      if (
+        (nextVal === '' || nextVal === null || nextVal === undefined) &&
+        v !== '' &&
+        v != null
+      ) {
+        (merged as Record<string, unknown>)[k] = v;
+      }
+      if (Array.isArray(v) && Array.isArray(nextVal) && nextVal.length === 0 && v.length > 0) {
+        (merged as Record<string, unknown>)[k] = v;
+      }
+    }
+    map.set(id, merged);
+  }
+  return Array.from(map.values());
+}
+
+function mergeWorkspace(
+  current: Record<string, unknown> | undefined,
+  incoming: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const a = current && typeof current === 'object' ? current : {};
+  const b = incoming && typeof incoming === 'object' ? incoming : {};
+  const eas = mergeById(
+    (Array.isArray(a.eas) ? a.eas : []) as Record<string, unknown>[],
+    (Array.isArray(b.eas) ? b.eas : []) as Record<string, unknown>[],
+    (e) => String(e.id || e.name || ''),
+  );
+  const licenses = mergeById(
+    (Array.isArray(a.licenses) ? a.licenses : []) as Record<string, unknown>[],
+    (Array.isArray(b.licenses) ? b.licenses : []) as Record<string, unknown>[],
+    (l) => String(l.id || l.key || ''),
+  );
+  // Never drop a license just because the other side omitted it
+  const profileA = (a.profile && typeof a.profile === 'object' ? a.profile : {}) as Record<
+    string,
+    unknown
+  >;
+  const profileB = (b.profile && typeof b.profile === 'object' ? b.profile : {}) as Record<
+    string,
+    unknown
+  >;
+  const profile: Record<string, unknown> = { ...profileA, ...profileB };
+  for (const [k, v] of Object.entries(profileA)) {
+    const nextVal = profileB[k];
+    if ((nextVal === '' || nextVal == null) && v !== '' && v != null) profile[k] = v;
+  }
+  return {
+    ...a,
+    ...b,
+    eas,
+    licenses,
+    profile,
+    clientRequests: mergeById(
+      (Array.isArray(a.clientRequests) ? a.clientRequests : []) as Record<string, unknown>[],
+      (Array.isArray(b.clientRequests) ? b.clientRequests : []) as Record<string, unknown>[],
+      (c) => String(c.id || c.email || ''),
+    ),
+    revokedKeys: Array.from(
+      new Set([
+        ...((Array.isArray(a.revokedKeys) ? a.revokedKeys : []) as string[]),
+        ...((Array.isArray(b.revokedKeys) ? b.revokedKeys : []) as string[]),
+      ]),
+    ),
+  };
+}
+
+function mergeWorkspaces(
+  current: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  const ids = new Set([...Object.keys(current || {}), ...Object.keys(incoming || {})]);
+  const out: Record<string, unknown> = {};
+  for (const id of ids) {
+    out[id] = mergeWorkspace(
+      current?.[id] as Record<string, unknown> | undefined,
+      incoming?.[id] as Record<string, unknown> | undefined,
+    );
+  }
+  return out;
+}
+
 function mergeDb(current: RemoteDb, patch: Partial<RemoteDb>): RemoteDb {
+  const curWs =
+    (current.store?.workspaces as Record<string, unknown>) || {};
+  const patchWs =
+    patch.store?.workspaces && typeof patch.store.workspaces === 'object'
+      ? (patch.store.workspaces as Record<string, unknown>)
+      : null;
+
   const next = normalizeDb({
     ...current,
     ...patch,
     auth: { ...current.auth, ...(patch.auth || {}) },
     store: {
-      workspaces: {
-        ...(current.store?.workspaces || {}),
-        ...(patch.store?.workspaces || {}),
-      },
+      workspaces: patchWs ? mergeWorkspaces(curWs, patchWs) : curWs,
     },
     images: { ...(current.images || {}), ...(patch.images || {}) },
     sessions: { ...(current.sessions || {}), ...(patch.sessions || {}) },
@@ -84,23 +191,19 @@ function mergeDb(current: RemoteDb, patch: Partial<RemoteDb>): RemoteDb {
   });
 
   if (Array.isArray(patch.clients)) {
-    const byId = new Map<string, RemoteDb['clients'][number]>();
-    for (const c of current.clients || []) byId.set(c.id || c.email, c);
-    for (const c of patch.clients) byId.set(c.id || c.email, { ...(byId.get(c.id || c.email) || c), ...c });
-    next.clients = Array.from(byId.values());
+    next.clients = mergeById(
+      current.clients || [],
+      patch.clients,
+      (c) => String(c.id || c.email || ''),
+    ) as RemoteDb['clients'];
   }
 
   if (Array.isArray(patch.vault)) {
-    const byId = new Map<string, unknown>();
-    for (const v of current.vault || []) {
-      const id = String((v as { id?: string; key?: string }).id || (v as { key?: string }).key || '');
-      if (id) byId.set(id, v);
-    }
-    for (const v of patch.vault) {
-      const id = String((v as { id?: string; key?: string }).id || (v as { key?: string }).key || '');
-      if (id) byId.set(id, { ...(byId.get(id) as object || {}), ...(v as object) });
-    }
-    next.vault = Array.from(byId.values());
+    next.vault = mergeById(
+      (current.vault || []) as Record<string, unknown>[],
+      patch.vault as Record<string, unknown>[],
+      (v) => String(v.id || v.key || ''),
+    );
   }
 
   if (Array.isArray(patch.revokedKeys)) {

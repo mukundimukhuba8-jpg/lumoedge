@@ -267,6 +267,77 @@ function normalizeWorkspace(
   };
 }
 
+/** Merge two workspaces — keep every EA and license from either side. */
+function mergeWorkspaceKeepAll(a: AdminWorkspace, b: AdminWorkspace): AdminWorkspace {
+  const easById = new Map<string, ManagedEA>();
+  for (const ea of [...(a.eas || []), ...(b.eas || [])]) {
+    if (!ea?.id) continue;
+    const prev = easById.get(ea.id);
+    easById.set(ea.id, prev ? { ...prev, ...ea, imageUrl: ea.imageUrl || prev.imageUrl || '' } : ea);
+  }
+  const licById = new Map<string, LicenseRecord>();
+  for (const lic of [...(a.licenses || []), ...(b.licenses || [])]) {
+    if (!lic?.id && !lic?.key) continue;
+    const id = lic.id || lic.key;
+    const prev = licById.get(id);
+    if (!prev) {
+      licById.set(id, lic);
+      continue;
+    }
+    // Prefer non-deleted; keep richer fields
+    const preferIncoming = lic.status !== 'deleted' && prev.status === 'deleted';
+    const base = preferIncoming ? { ...prev, ...lic } : { ...lic, ...prev, ...lic };
+    licById.set(id, {
+      ...base,
+      eaImage: lic.eaImage || prev.eaImage || '',
+      customMedia: normalizeCustomMedia(
+        (lic.customMedia?.length ? lic.customMedia : prev.customMedia) || [],
+      ),
+      assignedEmail: lic.assignedEmail || prev.assignedEmail,
+      assignedAt: lic.assignedAt || prev.assignedAt,
+      status: lic.status === 'deleted' || prev.status === 'deleted'
+        ? lic.status === 'deleted' && prev.status === 'deleted'
+          ? 'deleted'
+          : lic.status !== 'deleted'
+            ? lic.status
+            : prev.status
+        : lic.status || prev.status,
+    });
+  }
+  return normalizeWorkspace({
+    ...a,
+    ...b,
+    eas: Array.from(easById.values()),
+    licenses: Array.from(licById.values()).filter((l) => l.status !== 'deleted'),
+    profile: {
+      ...a.profile,
+      ...b.profile,
+      eaImage: b.profile?.eaImage || a.profile?.eaImage || '',
+      customMedia: normalizeCustomMedia(
+        b.profile?.customMedia?.length
+          ? b.profile.customMedia
+          : a.profile?.customMedia,
+      ),
+    },
+    revokedKeys: Array.from(new Set([...(a.revokedKeys || []), ...(b.revokedKeys || [])])),
+  });
+}
+
+function mergeStoresKeepAll(local: StoreState, remote: StoreState): StoreState {
+  const ids = new Set([
+    ...Object.keys(local.workspaces || {}),
+    ...Object.keys(remote.workspaces || {}),
+  ]);
+  const workspaces: StoreState['workspaces'] = {};
+  for (const id of ids) {
+    const a = local.workspaces[id];
+    const b = remote.workspaces[id];
+    if (a && b) workspaces[id] = mergeWorkspaceKeepAll(a, b);
+    else workspaces[id] = normalizeWorkspace(a || b, { id });
+  }
+  return { workspaces };
+}
+
 /** Find any live license already issued to this client email (any mentor). */
 function findLiveLicenseForEmail(
   email: string,
@@ -514,15 +585,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           saveVaultLocal(vault);
         }
         if (db.store?.workspaces && typeof db.store.workspaces === 'object') {
-          const workspaces: StoreState['workspaces'] = {};
+          const remoteWs: StoreState['workspaces'] = {};
           for (const [id, ws] of Object.entries(
             db.store.workspaces as StoreState['workspaces'],
           )) {
-            workspaces[id] = normalizeWorkspace(ws, { id } as AdminUser);
+            remoteWs[id] = normalizeWorkspace(ws, { id } as AdminUser);
           }
-          const nextStore = { workspaces };
-          setStore(nextStore);
-          saveJSON(STORE_KEY, nextStore);
+          // Merge — never let a thinner remote wipe local EAs / license keys
+          setStore((local) => {
+            const merged = mergeStoresKeepAll(local, { workspaces: remoteWs });
+            saveJSON(STORE_KEY, merged);
+            return merged;
+          });
         }
         if (db.images && typeof db.images === 'object') {
           saveJSON(IMAGE_STORE, db.images);
