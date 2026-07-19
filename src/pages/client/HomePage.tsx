@@ -11,6 +11,7 @@ import {
   type InterfacePrefs,
 } from '../../lib/interfaceStyle';
 import { loadJSON, normalizeLicenseKey, saveJSON } from '../../lib/storage';
+import { FocusLayout, TerminalLayout, VortexLayout } from './HomeLayouts';
 import { InterfaceStyleModal } from './InterfaceStyleModal';
 
 const ALL_SYMBOLS = [
@@ -158,208 +159,251 @@ export function HomePage() {
             ? 'iface-fx-night'
             : '';
 
+  const openSymbols = () => {
+    setLocalSymbols(bot.symbols);
+    setSymbolsOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (confirm('Delete this license from this device? You can connect a new key later.')) {
+      deleteBot();
+    }
+  };
+
+  const layoutActions = {
+    eaTitle,
+    eaImage,
+    mainText: bot.mainText || eaTitle,
+    isPaused,
+    accentRgb,
+    onPauseToggle: togglePause,
+    onSymbols: openSymbols,
+    onConnect: () => setLicenseOpen(true),
+    onStyle: () => setStyleOpen(true),
+    onDelete: confirmDelete,
+    onHomeTap,
+    onMetaTrader: () => navigate('/app/metatrader'),
+    onScanner: () => setScannerOpen(true),
+    onAvatarTap: () => setEaInfoOpen(true),
+  };
+
+  const specialLayout =
+    stylePrefs.layout === 'focus' ||
+    stylePrefs.layout === 'terminal' ||
+    stylePrefs.layout === 'vortex';
+
   return (
     <div className={`app-shell home-layout-${stylePrefs.layout}`}>
       {fxClass ? <div className={`iface-fx ${fxClass}`} aria-hidden /> : null}
 
-      {/* Floating avatar only — drag to move, tap for EA info */}
-      <button
-        type="button"
-        ref={floatRef}
-        aria-label="EA profile"
-        onPointerDown={onFloatPointerDown}
-        onPointerMove={onFloatPointerMove}
-        onPointerUp={onFloatPointerUp}
-        onPointerCancel={onFloatPointerUp}
-        style={{
-          position: 'fixed',
-          left: floatPos.x,
-          top: floatPos.y,
-          zIndex: 30,
-          touchAction: 'none',
-          cursor: dragging ? 'grabbing' : 'grab',
-          userSelect: 'none',
-          padding: 0,
-          width: 56,
-          height: 56,
-          borderRadius: '50%',
-          border: '2px solid var(--electric)',
-          background: '#0e1220',
-          boxShadow: `0 4px 18px rgba(${accentRgb},0.45)`,
-          overflow: 'hidden',
-        }}
-      >
-        <img
-          src={eaImage || '/bull-avatar.jpg'}
-          alt=""
-          width={56}
-          height={56}
-          draggable={false}
+      {/* Floating avatar — classic + focus/terminal (vortex has its own large avatar) */}
+      {stylePrefs.layout !== 'vortex' ? (
+        <button
+          type="button"
+          ref={floatRef}
+          aria-label="EA profile"
+          onPointerDown={onFloatPointerDown}
+          onPointerMove={onFloatPointerMove}
+          onPointerUp={onFloatPointerUp}
+          onPointerCancel={onFloatPointerUp}
           style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            pointerEvents: 'none',
-            display: 'block',
-          }}
-        />
-      </button>
-
-      <div
-        className="page"
-        style={{
-          paddingBottom: 8,
-          backgroundImage: customBg
-            ? `linear-gradient(rgba(10,10,16,0.78), rgba(10,10,16,0.92)), url(${customBg})`
-            : undefined,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
-      >
-        <h2
-          className="home-main-text"
-          style={{
-            textAlign: 'center',
-            color: 'var(--electric)',
-            fontFamily: 'var(--font-body)',
-            fontWeight: 700,
-            letterSpacing: 1,
-            marginTop: 8,
-          }}
-        >
-          {bot.mainText}
-        </h2>
-
-        <div
-          className="home-hero-wrap"
-          style={{
-            borderRadius: 24,
+            position: 'fixed',
+            left: floatPos.x,
+            top: floatPos.y,
+            zIndex: 30,
+            touchAction: 'none',
+            cursor: dragging ? 'grabbing' : 'grab',
+            userSelect: 'none',
+            padding: 0,
+            width: 56,
+            height: 56,
+            borderRadius: '50%',
+            border: '2px solid var(--electric)',
+            background: '#0e1220',
+            boxShadow: `0 4px 18px rgba(${accentRgb},0.45)`,
             overflow: 'hidden',
-            border: `1px solid rgba(${accentRgb},0.4)`,
-            position: 'relative',
-            marginTop: 12,
           }}
         >
           <img
-            className="home-hero"
-            src={eaImage || '/bull-hero.jpg'}
-            alt={bot.displayName}
-            style={{ width: '100%', display: 'block', maxHeight: 360, objectFit: 'cover' }}
+            src={eaImage || '/bull-avatar.jpg'}
+            alt=""
+            width={56}
+            height={56}
+            draggable={false}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              pointerEvents: 'none',
+              display: 'block',
+            }}
           />
+        </button>
+      ) : null}
+
+      {stylePrefs.layout === 'focus' ? (
+        <FocusLayout {...layoutActions} />
+      ) : null}
+      {stylePrefs.layout === 'terminal' ? (
+        <TerminalLayout {...layoutActions} />
+      ) : null}
+      {stylePrefs.layout === 'vortex' ? (
+        <VortexLayout {...layoutActions} />
+      ) : null}
+
+      {!specialLayout ? (
+        <>
           <div
+            className="page"
             style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              padding: 16,
-              textAlign: 'center',
-              background: 'linear-gradient(transparent, rgba(10,10,10,0.95))',
+              paddingBottom: 8,
+              backgroundImage: customBg
+                ? `linear-gradient(rgba(10,10,16,0.78), rgba(10,10,16,0.92)), url(${customBg})`
+                : undefined,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
             }}
           >
-            <div style={{ color: 'var(--electric)', fontFamily: 'var(--font-body)', fontSize: 24, fontWeight: 700 }}>
-              {eaTitle}
+            <h2
+              className="home-main-text"
+              style={{
+                textAlign: 'center',
+                color: 'var(--electric)',
+                fontFamily: 'var(--font-body)',
+                fontWeight: 700,
+                letterSpacing: 1,
+                marginTop: 8,
+              }}
+            >
+              {bot.mainText}
+            </h2>
+
+            <div
+              className="home-hero-wrap"
+              style={{
+                borderRadius: 24,
+                overflow: 'hidden',
+                border: `1px solid rgba(${accentRgb},0.4)`,
+                position: 'relative',
+                marginTop: 12,
+              }}
+            >
+              <img
+                className="home-hero"
+                src={eaImage || '/bull-hero.jpg'}
+                alt={bot.displayName}
+                style={{ width: '100%', display: 'block', maxHeight: 360, objectFit: 'cover' }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  padding: 16,
+                  textAlign: 'center',
+                  background: 'linear-gradient(transparent, rgba(10,10,10,0.95))',
+                }}
+              >
+                <div style={{ color: 'var(--electric)', fontFamily: 'var(--font-body)', fontSize: 24, fontWeight: 700 }}>
+                  {eaTitle}
+                </div>
+              </div>
             </div>
+
+            <p
+              style={{
+                textAlign: 'center',
+                color: 'var(--muted)',
+                fontFamily: 'var(--font-body)',
+                fontSize: 13,
+                letterSpacing: 0.5,
+                margin: '8px 0 6px',
+              }}
+            >
+              powered by LUMOEDGE
+            </p>
+
+            <div className="neon-action" style={{ marginTop: 0 }}>
+              <button type="button" onClick={confirmDelete}>
+                <span className="circle-btn"><Trash2 size={22} /></span>
+                DELETE
+              </button>
+              <button type="button" onClick={togglePause}>
+                <span className="circle-btn">{isPaused ? <Play size={22} /> : <Pause size={22} />}</span>
+                {isPaused ? 'RESUME' : 'PAUSE'}
+              </button>
+              <button type="button" onClick={openSymbols}>
+                <span className="circle-btn"><Signal size={22} /></span>
+                SYMBOLS
+              </button>
+            </div>
+
+            <div className="pill home-status-pill" style={{ marginBottom: 14 }}>
+              <img src={eaImage || '/bull-avatar.jpg'} width={36} height={36} style={{ borderRadius: '50%', objectFit: 'cover' }} alt="" />
+              <div>
+                <div style={{ fontWeight: 700, letterSpacing: 1.2 }}>{bot.name}</div>
+                <div style={{ color: 'var(--electric)', fontWeight: 600 }}>
+                  {isPaused ? 'PAUSED' : 'ACTIVE'}
+                </div>
+              </div>
+            </div>
+
+            <div className="pill" style={{ marginBottom: 0 }}>
+              <button
+                type="button"
+                onClick={() => setLicenseOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  flex: 1,
+                  background: 'transparent',
+                  color: 'var(--text)',
+                  textAlign: 'left',
+                  padding: 0,
+                }}
+              >
+                <span className="circle-btn" style={{ width: 44, height: 44 }}>+</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700 }}>Connect EA</div>
+                  <div className="muted" style={{ fontSize: 12 }}>Connect New License Key</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                aria-label="Interface Style"
+                onClick={() => setStyleOpen(true)}
+                style={{
+                  background: 'transparent',
+                  color: 'var(--electric)',
+                  padding: 8,
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                <Settings size={22} />
+              </button>
+            </div>
+
+            <p style={{ textAlign: 'center', color: 'var(--electric)', marginTop: 12, fontWeight: 600 }}>
+              Trading: {bot.symbols.join(' · ')}
+            </p>
+            <p className="muted" style={{ textAlign: 'center', marginTop: 4 }}>
+              {bot.licenseKey ? `License: ${bot.licenseKey}` : 'No license connected'}
+            </p>
           </div>
-        </div>
 
-        <p
-          style={{
-            textAlign: 'center',
-            color: 'var(--muted)',
-            fontFamily: 'var(--font-body)',
-            fontSize: 13,
-            letterSpacing: 0.5,
-            margin: '8px 0 6px',
-          }}
-        >
-          powered by LUMOEDGE
-        </p>
-
-        <div className="neon-action" style={{ marginTop: 0 }}>
-          <button type="button" onClick={() => deleteBot()}>
-            <span className="circle-btn"><Trash2 size={22} /></span>
-            DELETE
-          </button>
-          <button type="button" onClick={togglePause}>
-            <span className="circle-btn">{isPaused ? <Play size={22} /> : <Pause size={22} />}</span>
-            {isPaused ? 'RESUME' : 'PAUSE'}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setLocalSymbols(bot.symbols);
-              setSymbolsOpen(true);
-            }}
-          >
-            <span className="circle-btn"><Signal size={22} /></span>
-            SYMBOLS
-          </button>
-        </div>
-
-        <div className="pill home-status-pill" style={{ marginBottom: 14 }}>
-          <img src={eaImage || '/bull-avatar.jpg'} width={36} height={36} style={{ borderRadius: '50%', objectFit: 'cover' }} alt="" />
-          <div>
-            <div style={{ fontWeight: 700, letterSpacing: 1.2 }}>{bot.name}</div>
-            <div style={{ color: 'var(--electric)', fontWeight: 600 }}>
-              {isPaused ? 'PAUSED' : 'ACTIVE'}
-            </div>
+          <div className="tabbar">
+            <button type="button" className="active" onClick={onHomeTap}>
+              <Home size={20} /> Home
+            </button>
+            <button type="button" onClick={() => navigate('/app/metatrader')}>
+              <Monitor size={20} /> MetaTrader
+            </button>
           </div>
-        </div>
-
-        <div className="pill" style={{ marginBottom: 0 }}>
-          <button
-            type="button"
-            onClick={() => setLicenseOpen(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              flex: 1,
-              background: 'transparent',
-              color: 'var(--text)',
-              textAlign: 'left',
-              padding: 0,
-            }}
-          >
-            <span className="circle-btn" style={{ width: 44, height: 44 }}>+</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700 }}>Connect EA</div>
-              <div className="muted" style={{ fontSize: 12 }}>Connect New License Key</div>
-            </div>
-          </button>
-          <button
-            type="button"
-            aria-label="Interface Style"
-            onClick={() => setStyleOpen(true)}
-            style={{
-              background: 'transparent',
-              color: 'var(--electric)',
-              padding: 8,
-              display: 'grid',
-              placeItems: 'center',
-            }}
-          >
-            <Settings size={22} />
-          </button>
-        </div>
-
-        <p style={{ textAlign: 'center', color: 'var(--electric)', marginTop: 12, fontWeight: 600 }}>
-          Trading: {bot.symbols.join(' · ')}
-        </p>
-        <p className="muted" style={{ textAlign: 'center', marginTop: 4 }}>
-          {bot.licenseKey ? `License: ${bot.licenseKey}` : 'No license connected'}
-        </p>
-      </div>
-
-      <div className="tabbar">
-        <button type="button" className="active" onClick={onHomeTap}>
-          <Home size={20} /> Home
-        </button>
-        <button type="button" onClick={() => navigate('/app/metatrader')}>
-          <Monitor size={20} /> MetaTrader
-        </button>
-      </div>
+        </>
+      ) : null}
 
       {symbolsOpen ? (
         <Modal title="Select Symbols" onClose={() => setSymbolsOpen(false)}>
