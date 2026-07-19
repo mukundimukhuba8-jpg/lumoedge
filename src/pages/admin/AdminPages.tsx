@@ -7,13 +7,13 @@ import {
   MEDIA_ACCEPT,
   PROFILE_SLOTS,
   deleteMentorMedia,
-  fileToDataUrl,
   getMediaSlot,
   isAllowedMediaFile,
   mediaKey,
   normalizeCustomMedia,
   removeMediaSlot,
   uploadMentorMedia,
+  uploadMentorMediaFile,
   upsertMediaSlot,
   type MentorMediaSlotId,
 } from '../../lib/mentorMedia';
@@ -507,11 +507,21 @@ export function ProfilePage() {
     }
     try {
       setSavingSlot(slot);
-      const dataUrl =
-        check.kind === 'image'
-          ? await compressImageFile(file, 960, 0.78)
-          : await fileToDataUrl(file);
-      const { url } = await uploadMentorMedia(mediaKey(admin.id, slot), dataUrl);
+      const key = mediaKey(admin.id, slot);
+      let url = '';
+      if (check.kind === 'video') {
+        // Binary upload — keeps quality and enables Range streaming playback
+        ({ url } = await uploadMentorMediaFile(key, file));
+      } else {
+        const isBg = slot.startsWith('bg-');
+        // High-res for backgrounds; still light compress so sync stays fast
+        const dataUrl = await compressImageFile(
+          file,
+          isBg ? 1920 : 1400,
+          isBg ? 0.92 : 0.88,
+        );
+        ({ url } = await uploadMentorMedia(key, dataUrl));
+      }
       const customMedia = upsertMediaSlot(form.customMedia, {
         slot,
         kind: check.kind,
@@ -605,7 +615,8 @@ export function ProfilePage() {
           Upload <strong style={{ color: 'var(--text)' }}>2 profile</strong> and{' '}
           <strong style={{ color: 'var(--text)' }}>3 background</strong> pictures or
           videos. Clients see them under Interface Style → Custom — tap one to set it
-          as the app background.
+          as the app background. Prefer <strong style={{ color: 'var(--text)' }}>MP4</strong>{' '}
+          videos (H.264) up to 28 MB for best playback on iPhone.
         </p>
 
         <h4 style={{ margin: '10px 0 8px', fontSize: 14 }}>Profile picture / video</h4>

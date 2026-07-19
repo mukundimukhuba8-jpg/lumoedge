@@ -31,8 +31,8 @@ export const ALL_MEDIA_SLOTS = [...PROFILE_SLOTS, ...BACKGROUND_SLOTS];
 
 export const MEDIA_ACCEPT = 'image/*,video/*';
 
-const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 12 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 28 * 1024 * 1024;
 
 export function emptyCustomMedia(): MentorMediaItem[] {
   return [];
@@ -93,10 +93,10 @@ export function isAllowedMediaFile(file: File): { ok: true; kind: MentorMediaKin
     return { ok: false, error: 'Only pictures and videos are allowed.' };
   }
   if (isImage && file.size > MAX_IMAGE_BYTES) {
-    return { ok: false, error: 'Image must be under 4 MB.' };
+    return { ok: false, error: 'Image must be under 8 MB.' };
   }
   if (isVideo && file.size > MAX_VIDEO_BYTES) {
-    return { ok: false, error: 'Video must be under 12 MB.' };
+    return { ok: false, error: 'Video must be under 28 MB. Prefer MP4 (H.264).' };
   }
   return { ok: true, kind: isVideo ? 'video' : 'image' };
 }
@@ -129,6 +129,28 @@ export async function uploadMentorMedia(
   return data;
 }
 
+/** Upload original File as binary (needed for videos — browsers need Range streaming). */
+export async function uploadMentorMediaFile(
+  key: string,
+  file: File,
+): Promise<{ url: string; mime: string }> {
+  const res = await fetch('/api/media/binary', {
+    method: 'POST',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Media-Key': key,
+    },
+    body: file,
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(err?.error || 'Upload failed');
+  }
+  const data = (await res.json()) as { url: string; mime?: string };
+  if (!data.url) throw new Error('Upload failed');
+  return { url: data.url, mime: data.mime || file.type };
+}
+
 export async function deleteMentorMedia(key: string): Promise<void> {
   try {
     await fetch(`/api/media/${encodeURIComponent(key)}`, { method: 'DELETE' });
@@ -148,10 +170,19 @@ export function resolveCustomBackdrop(
 ): { src: string; kind: MentorMediaKind } | null {
   if (!customBg || customBg === 'default') return null;
   if (customBg === 'interface-1') {
-    return eaImage ? { src: eaImage, kind: 'image' } : null;
+    return eaImage
+      ? {
+          src: eaImage,
+          kind: looksLikeVideoUrl(eaImage) ? 'video' : 'image',
+        }
+      : null;
   }
   const hit = getMediaSlot(media, customBg as MentorMediaSlotId);
-  if (hit?.url) return { src: hit.url, kind: hit.kind };
+  if (hit?.url) {
+    const kind =
+      hit.kind === 'video' || looksLikeVideoUrl(hit.url) ? 'video' : 'image';
+    return { src: hit.url, kind };
+  }
   return null;
 }
 

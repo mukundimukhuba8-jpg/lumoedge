@@ -36,7 +36,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const MEDIA_DIR = path.join(DATA_DIR, 'media');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT || 4174);
-const MAX_MEDIA_BYTES = 14 * 1024 * 1024;
+const MAX_MEDIA_BYTES = 30 * 1024 * 1024;
 /** MT5API RESTFul — https://66.23.225.158/swagger/index.html */
 const MT5_API_BASE = (process.env.MT5_API_BASE || 'http://66.23.225.158').replace(/\/$/, '');
 /** Chart Scanner — put your OpenAI/OpenAPI key here or in env */
@@ -98,6 +98,81 @@ function safeMediaKey(key) {
     .slice(0, 120);
 }
 
+function readRawBody(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > maxBytes) {
+        reject(new Error('Payload too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+/** Stream media with HTTP Range support (required for mobile video playback). */
+function serveMediaFile(req, res, filePath) {
+  const stat = fs.statSync(filePath);
+  const size = stat.size;
+  const type = contentType(filePath);
+  const range = req.headers.range;
+
+  if (range) {
+    const m = /bytes=(\d*)-(\d*)/.exec(range);
+    if (!m) {
+      res.writeHead(416, { 'Content-Range': `bytes */${size}` }).end();
+      return;
+    }
+    let start = m[1] ? parseInt(m[1], 10) : 0;
+    let end = m[2] ? parseInt(m[2], 10) : size - 1;
+    if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= size) {
+      res.writeHead(416, { 'Content-Range': `bytes */${size}` }).end();
+      return;
+    }
+    end = Math.min(end, size - 1);
+    const chunk = end - start + 1;
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${size}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunk,
+      'Content-Type': type,
+      'Cache-Control': 'public, max-age=86400',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length',
+    });
+    fs.createReadStream(filePath, { start, end }).pipe(res);
+    return;
+  }
+
+  res.writeHead(200, {
+    'Content-Length': size,
+    'Accept-Ranges': 'bytes',
+    'Content-Type': type,
+    'Cache-Control': 'public, max-age=86400',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length',
+  });
+  fs.createReadStream(filePath).pipe(res);
+}
+
+function clearMediaKeyFiles(key) {
+  for (const name of fs.readdirSync(MEDIA_DIR)) {
+    if (name === key || name.startsWith(`${key}.`)) {
+      try {
+        fs.unlinkSync(path.join(MEDIA_DIR, name));
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
 function readDb() {
   ensureDb();
   try {
@@ -122,7 +197,8 @@ function sendJson(res, status, data) {
     'Cache-Control': 'no-store',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,PUT,POST,PATCH,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Media-Key',
+    'Access-Control-Expose-Headers': 'Content-Range, Accept-Ranges, Content-Length',
   });
   res.end(body);
 }
@@ -383,7 +459,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       if (parsed.buf.length > MAX_MEDIA_BYTES) {
-        sendJson(res, 413, { error: 'File too large (max 14 MB)' });
+        sendJson(res, 413, { error: 'File too large (max 30 MB)' });
         return;
       }
       const ext = extForMime(parsed.mime);
@@ -391,36 +467,75 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: `Unsupported type: ${parsed.mime}` });
         return;
       }
-      // Remove prior versions for this key
-      for (const name of fs.readdirSync(MEDIA_DIR)) {
-        if (name === `${key}${ext}` || name.startsWith(`${key}.`)) {
-          try {
-            fs.unlinkSync(path.join(MEDIA_DIR, name));
-          } catch {
-            // ignore
-          }
-        }
-      }
+      clearMediaKeyFiles(key);
       const filename = `${key}${ext}`;
       fs.writeFileSync(path.join(MEDIA_DIR, filename), parsed.buf);
       sendJson(res, 200, { ok: true, url: `/api/media/${filename}`, key, mime: parsed.mime });
       return;
     }
 
-    if (pathname.startsWith('/api/media/') && req.method === 'GET') {
+    // Binary upload (preferred for videos — no base64 bloat)
+    if (pathname === '/api/media/binary' && req.method === 'POST') {
       ensureDb();
-      const filename = safeMediaKey(pathname.replace('/api/media/', ''));
+      const key = safeMediaKey(req.headers['x-media-key']);
+      const mime = String(req.headers['content-type'] || '')
+        .split(';')[0]
+        .trim()
+        .toLowerCase();
+      if (!key) {
+        sendJson(res, 400, { error: 'X-Media-Key header required' });
+        return;
+      }
+      const isImage = mime.startsWith('image/');
+      const isVideo = mime.startsWith('video/');
+      if (!isImage && !isVideo) {
+        sendJson(res, 400, { error: 'Only image and video uploads are allowed' });
+        return;
+      }
+      const ext = extForMime(mime);
+      if (!ext) {
+        sendJson(res, 400, { error: `Unsupported type: ${mime}` });
+        return;
+      }
+      let buf;
+      try {
+        buf = await readRawBody(req, MAX_MEDIA_BYTES);
+      } catch (e) {
+        sendJson(res, 413, { error: e.message || 'Payload too large' });
+        return;
+      }
+      if (!buf.length) {
+        sendJson(res, 400, { error: 'Empty file' });
+        return;
+      }
+      clearMediaKeyFiles(key);
+      const filename = `${key}${ext}`;
+      fs.writeFileSync(path.join(MEDIA_DIR, filename), buf);
+      sendJson(res, 200, { ok: true, url: `/api/media/${filename}`, key, mime });
+      return;
+    }
+
+    if (pathname.startsWith('/api/media/') && (req.method === 'GET' || req.method === 'HEAD')) {
+      ensureDb();
+      const filename = safeMediaKey(decodeURIComponent(pathname.replace('/api/media/', '')));
       const filePath = path.join(MEDIA_DIR, filename);
       if (!filePath.startsWith(MEDIA_DIR) || !fs.existsSync(filePath)) {
         res.writeHead(404).end('Not found');
         return;
       }
-      res.writeHead(200, {
-        'Content-Type': contentType(filePath),
-        'Cache-Control': 'public, max-age=86400',
-        'Access-Control-Allow-Origin': '*',
-      });
-      fs.createReadStream(filePath).pipe(res);
+      if (req.method === 'HEAD') {
+        const stat = fs.statSync(filePath);
+        res.writeHead(200, {
+          'Content-Type': contentType(filePath),
+          'Content-Length': stat.size,
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'public, max-age=86400',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end();
+        return;
+      }
+      serveMediaFile(req, res, filePath);
       return;
     }
 

@@ -12,6 +12,7 @@ import {
   Signal,
   Trash2,
 } from 'lucide-react';
+import { BackdropMedia } from '../../components/BackdropMedia';
 import type { MentorMediaKind } from '../../lib/mentorMedia';
 
 export type LayoutActions = {
@@ -59,13 +60,13 @@ function LayoutBackdrop({
         display: 'flex',
         flexDirection: 'column',
         color: 'var(--text)',
-        boxShadow: `inset 0 0 80px rgba(${accentRgb},0.08)`,
+        boxShadow: `inset 0 0 80px rgba(${accentRgb},0.06)`,
         boxSizing: 'border-box',
         overflow: 'hidden',
         background: isVideo
-          ? undefined
+          ? '#05070d'
           : `
-            linear-gradient(180deg, rgba(6,8,14,0.22) 0%, rgba(6,8,14,0.35) 45%, rgba(6,8,14,0.5) 100%),
+            linear-gradient(180deg, rgba(6,8,14,0.12) 0%, rgba(6,8,14,0.22) 45%, rgba(6,8,14,0.38) 100%),
             url(${img})
           `,
         backgroundSize: 'cover',
@@ -73,18 +74,14 @@ function LayoutBackdrop({
       }}
     >
       {isVideo ? (
-        <>
-          <video
-            className="lay-bg-video"
-            src={img}
-            autoPlay
-            muted
-            loop
-            playsInline
-            aria-hidden
-          />
-          <div className="lay-bg-wash" aria-hidden />
-        </>
+        <BackdropMedia
+          src={img}
+          kind="video"
+          className="lay-bg-media"
+          videoClassName="lay-bg-video"
+          imageClassName="lay-bg-video"
+          washClassName="lay-bg-wash"
+        />
       ) : null}
       <div className="lay-bg-content">{children}</div>
     </div>
