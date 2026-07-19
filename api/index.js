@@ -829,11 +829,17 @@ export default async function handler(req, res) {
     }
 
     // Proxy → MT5API RESTFul (broker search, ConnectEx, account, trading)
+    // Swagger UI: https://66.23.225.158/swagger/index.html — API root is the host only
     if (pathname.startsWith('/api/mt5')) {
-      // Swagger UI: https://66.23.225.158/swagger/index.html — API root is the host only
-      const MT5_API_BASE = (
-        process.env.MT5_API_BASE || 'https://66.23.225.158'
-      ).replace(/\/$/, '');
+      const MT5_HOST = (process.env.MT5_API_HOST || '66.23.225.158').trim();
+      const envBase = String(process.env.MT5_API_BASE || '').replace(/\/$/, '');
+      // Try env base first, then https and http on the swagger host
+      const bases = [
+        ...(envBase ? [envBase] : []),
+        `https://${MT5_HOST}`,
+        `http://${MT5_HOST}`,
+      ].filter((b, i, arr) => arr.indexOf(b) === i);
+
       const override = String(url.searchParams.get('_mt5') || '').trim();
       const targetPath = override
         ? override.startsWith('/')
@@ -845,7 +851,6 @@ export default async function handler(req, res) {
       const forwardSearch = new URLSearchParams(url.searchParams);
       forwardSearch.delete('_mt5');
       const qs = forwardSearch.toString();
-      const targetUrl = `${MT5_API_BASE}${targetPath}${qs ? `?${qs}` : ''}`;
       const method = req.method || 'GET';
       const body =
         method === 'GET' || method === 'HEAD' ? undefined : await readRawBody(req);
@@ -855,34 +860,39 @@ export default async function handler(req, res) {
       if (req.headers['content-type']) {
         headers['Content-Type'] = req.headers['content-type'];
       }
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), 8000);
-      try {
-        const upstream = await fetch(targetUrl, {
-          method,
-          headers,
-          body,
-          signal: ac.signal,
-        });
-        const buf = Buffer.from(await upstream.arrayBuffer());
-        const ct = upstream.headers.get('content-type') || 'application/json';
-        res.statusCode = upstream.status;
-        res.setHeader('Content-Type', ct);
-        res.setHeader('Cache-Control', 'no-store');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET,PUT,POST,OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-        res.end(buf);
-      } catch (err) {
-        send(res, 502, {
-          error:
+
+      let lastErr = 'MT5 bridge unreachable';
+      for (const base of bases) {
+        const targetUrl = `${base}${targetPath}${qs ? `?${qs}` : ''}`;
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 9000);
+        try {
+          const upstream = await fetch(targetUrl, {
+            method,
+            headers,
+            body,
+            signal: ac.signal,
+          });
+          clearTimeout(timer);
+          const buf = Buffer.from(await upstream.arrayBuffer());
+          const ct = upstream.headers.get('content-type') || 'application/json';
+          res.statusCode = upstream.status;
+          res.setHeader('Content-Type', ct);
+          res.setHeader('Cache-Control', 'no-store');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET,PUT,POST,OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+          res.end(buf);
+          return;
+        } catch (err) {
+          clearTimeout(timer);
+          lastErr =
             err instanceof Error
-              ? `MT5 bridge unreachable: ${err.message}`
-              : 'MT5 bridge unreachable',
-        });
-      } finally {
-        clearTimeout(timer);
+              ? `MT5 bridge unreachable via ${base}: ${err.message}`
+              : `MT5 bridge unreachable via ${base}`;
+        }
       }
+      send(res, 502, { error: lastErr });
       return;
     }
 
