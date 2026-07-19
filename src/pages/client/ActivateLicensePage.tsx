@@ -39,6 +39,7 @@ export function ActivateLicensePage() {
         mainText: lic.mainText,
         imageUrl: lic.eaImage || '',
         symbols: lic.symbols,
+        customMedia: lic.customMedia,
       });
       navigate('/app');
     } finally {

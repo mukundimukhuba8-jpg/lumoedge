@@ -11,6 +11,7 @@ import {
   saveInterfacePrefs,
   type InterfacePrefs,
 } from '../../lib/interfaceStyle';
+import { resolveCustomBackdrop } from '../../lib/mentorMedia';
 import { loadJSON, normalizeLicenseKey, saveJSON } from '../../lib/storage';
 import { FocusLayout, TerminalLayout, VortexLayout } from './HomeLayouts';
 import { InterfaceStyleModal } from './InterfaceStyleModal';
@@ -26,7 +27,16 @@ type FloatPos = { x: number; y: number };
 
 export function HomePage() {
   const navigate = useNavigate();
-  const { bot, isPaused, togglePause, deleteBot, setSymbols, user, activateWithLicense } = useApp();
+  const {
+    bot,
+    isPaused,
+    togglePause,
+    deleteBot,
+    setSymbols,
+    user,
+    activateWithLicense,
+    refreshBranding,
+  } = useApp();
   const { openPortal, claimLicense } = useAdmin();
   const eaImage = bot.imageUrl || '';
   const [symbolsOpen, setSymbolsOpen] = useState(false);
@@ -54,10 +64,13 @@ export function HomePage() {
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
   const accent = accentHex(stylePrefs.accent);
   const accentRgb = hexToRgb(accent);
+  const customResolved = resolveCustomBackdrop(
+    stylePrefs.customBg,
+    eaImage,
+    bot.customMedia,
+  );
   const customBg =
-    stylePrefs.customBg === 'interface-1' && eaImage
-      ? eaImage
-      : '';
+    customResolved && customResolved.kind === 'image' ? customResolved.src : '';
 
   // Apply accent colour app-wide while on home
   useEffect(() => {
@@ -69,6 +82,24 @@ export function HomePage() {
       root.style.removeProperty('--accent-rgb');
     };
   }, [accent, accentRgb]);
+
+  // Pull latest mentor custom media when home opens
+  useEffect(() => {
+    if (!user?.email || !bot.licenseKey) return;
+    void claimLicense(bot.licenseKey, user.email).then((result) => {
+      if (!result.ok) return;
+      const lic = result.license;
+      refreshBranding({
+        name: lic.eaName,
+        displayName: lic.eaName,
+        mainText: lic.mainText,
+        imageUrl: lic.eaImage,
+        symbols: lic.symbols,
+        customMedia: lic.customMedia,
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.email, bot.licenseKey]);
 
   const updateStylePrefs = (next: InterfacePrefs) => {
     setStylePrefs(next);
@@ -489,6 +520,7 @@ export function HomePage() {
                 mainText: lic.mainText,
                 imageUrl: lic.eaImage,
                 symbols: lic.symbols,
+                customMedia: lic.customMedia,
               });
               setLicenseOpen(false);
             }}
@@ -545,6 +577,7 @@ export function HomePage() {
         onChange={updateStylePrefs}
         avatarUrl={eaImage || '/bull-avatar.jpg'}
         mentorBgUrl={eaImage}
+        mentorMedia={bot.customMedia}
         onOpenScanner={() => {
           setStyleOpen(false);
           navigate('/app/scanner');

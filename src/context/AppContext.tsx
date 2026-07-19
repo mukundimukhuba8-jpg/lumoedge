@@ -7,6 +7,11 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import {
+  emptyCustomMedia,
+  normalizeCustomMedia,
+  type MentorMediaItem,
+} from '../lib/mentorMedia';
 import { fetchSession, pushSession } from '../lib/remote';
 import { loadJSON, saveJSON } from '../lib/storage';
 
@@ -22,6 +27,7 @@ export type EABot = {
   status: 'active' | 'paused';
   symbols: string[];
   imageUrl: string;
+  customMedia: MentorMediaItem[];
 };
 
 export type LicenseSync = {
@@ -30,6 +36,7 @@ export type LicenseSync = {
   mainText?: string;
   symbols?: string[];
   imageUrl?: string;
+  customMedia?: MentorMediaItem[];
 };
 
 type Session = {
@@ -48,6 +55,7 @@ const DEFAULT_BOT: EABot = {
   status: 'paused',
   symbols: ['XAUUSD'],
   imageUrl: '',
+  customMedia: emptyCustomMedia(),
 };
 
 const RANK: Record<AccessStatus, number> = {
@@ -67,6 +75,8 @@ type Ctx = {
   registerLocal: (u: UserProfile) => Promise<void>;
   markPaid: () => void;
   activateWithLicense: (key: string, sync?: LicenseSync) => void;
+  /** Update branding/media from mentor without changing pause/access */
+  refreshBranding: (sync: LicenseSync) => void;
   togglePause: () => void;
   deleteBot: () => void;
   setSymbols: (s: string[]) => void;
@@ -80,7 +90,11 @@ function migrateSession(): Session {
     return {
       user: v2.user ?? null,
       accessStatus: v2.accessStatus ?? 'none',
-      bot: { ...DEFAULT_BOT, ...(v2.bot ?? {}) },
+      bot: {
+        ...DEFAULT_BOT,
+        ...(v2.bot ?? {}),
+        customMedia: normalizeCustomMedia(v2.bot?.customMedia),
+      },
     };
   }
   const v1 = loadJSON<{ user: UserProfile | null; paid?: boolean; bot?: EABot }>(
@@ -115,6 +129,11 @@ function mergeSessions(local: Session, remote: Session | null): Session {
       ...remote.bot,
       imageUrl: remote.bot?.imageUrl || local.bot.imageUrl || '',
       licenseKey: remote.bot?.licenseKey || local.bot.licenseKey || '',
+      customMedia: normalizeCustomMedia(
+        remote.bot?.customMedia?.length
+          ? remote.bot.customMedia
+          : local.bot.customMedia,
+      ),
     },
   };
 }
@@ -140,7 +159,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (
         merged.accessStatus !== session.accessStatus ||
         merged.bot.licenseKey !== session.bot.licenseKey ||
-        merged.bot.imageUrl !== session.bot.imageUrl
+        merged.bot.imageUrl !== session.bot.imageUrl ||
+        JSON.stringify(merged.bot.customMedia) !==
+          JSON.stringify(session.bot.customMedia)
       ) {
         setSession(merged);
         saveJSON(KEY, merged);
@@ -189,6 +210,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
             mainText: sync?.mainText ?? session.bot.mainText,
             symbols: sync?.symbols?.length ? sync.symbols : session.bot.symbols,
             imageUrl: sync?.imageUrl || session.bot.imageUrl || '',
+            customMedia: normalizeCustomMedia(
+              sync?.customMedia !== undefined
+                ? sync.customMedia
+                : session.bot.customMedia,
+            ),
+          },
+        });
+      },
+      refreshBranding: (sync) => {
+        persist({
+          ...session,
+          bot: {
+            ...session.bot,
+            name: sync.name
+              ? sync.name.replace(/\s+/g, '').toUpperCase()
+              : session.bot.name,
+            displayName: sync.displayName ?? sync.name ?? session.bot.displayName,
+            mainText: sync.mainText ?? session.bot.mainText,
+            symbols: sync.symbols?.length ? sync.symbols : session.bot.symbols,
+            imageUrl: sync.imageUrl || session.bot.imageUrl || '',
+            customMedia: normalizeCustomMedia(
+              sync.customMedia !== undefined
+                ? sync.customMedia
+                : session.bot.customMedia,
+            ),
           },
         });
       },
@@ -204,7 +250,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         persist({
           ...session,
           accessStatus: 'paid',
-          bot: { ...session.bot, status: 'paused', licenseKey: '', imageUrl: '' },
+          bot: {
+            ...session.bot,
+            status: 'paused',
+            licenseKey: '',
+            imageUrl: '',
+            customMedia: emptyCustomMedia(),
+          },
         }),
       setSymbols: (symbols) =>
         persist({ ...session, bot: { ...session.bot, symbols } }),

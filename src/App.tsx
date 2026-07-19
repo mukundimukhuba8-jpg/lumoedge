@@ -1,7 +1,13 @@
+import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { EaBackdrop } from './components/EaBackdrop';
 import { useAdmin } from './context/AdminContext';
 import { useApp } from './context/AppContext';
+import {
+  loadInterfacePrefs,
+  subscribeInterfacePrefs,
+} from './lib/interfaceStyle';
+import { resolveCustomBackdrop } from './lib/mentorMedia';
 import { AdminAuthPage } from './pages/admin/AdminAuthPage';
 import {
   ApproveAdminsPage,
@@ -26,14 +32,27 @@ import { WaitingApprovalPage } from './pages/client/WaitingApprovalPage';
 function ClientAppGate({ children }: { children: React.ReactNode }) {
   const { user, accessStatus, bot } = useApp();
   const location = useLocation();
+  const [prefs, setPrefs] = useState(() => loadInterfacePrefs());
+
+  useEffect(() => subscribeInterfacePrefs(() => setPrefs(loadInterfacePrefs())), []);
+
   if (!user) return <Navigate to="/" replace />;
   if (accessStatus === 'pending') return <Navigate to="/waiting" replace />;
   if (accessStatus === 'approved') return <Navigate to="/subscribe" replace />;
   if (accessStatus === 'paid') return <Navigate to="/activate" replace />;
   if (accessStatus !== 'licensed') return <Navigate to="/" replace />;
+
+  const custom = resolveCustomBackdrop(
+    prefs.customBg,
+    bot.imageUrl || '',
+    bot.customMedia,
+  );
+  const backdropSrc = custom?.src || bot.imageUrl || '/bull-hero.jpg';
+  const backdropKind = custom?.kind || 'image';
+
   return (
     <>
-      <EaBackdrop src={bot.imageUrl || '/bull-hero.jpg'} />
+      <EaBackdrop src={backdropSrc} kind={backdropKind} />
       <div key={location.pathname} className="page-enter">
         {children}
       </div>

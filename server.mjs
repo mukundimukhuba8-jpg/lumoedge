@@ -33,8 +33,10 @@ loadEnvFile();
 
 const DIST = path.join(__dirname, 'dist');
 const DATA_DIR = path.join(__dirname, 'data');
+const MEDIA_DIR = path.join(DATA_DIR, 'media');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT || 4174);
+const MAX_MEDIA_BYTES = 14 * 1024 * 1024;
 /** MT5API RESTFul — https://66.23.225.158/swagger/index.html */
 const MT5_API_BASE = (process.env.MT5_API_BASE || 'http://66.23.225.158').replace(/\/$/, '');
 /** Chart Scanner — put your OpenAI/OpenAPI key here or in env */
@@ -60,9 +62,40 @@ const emptyDb = () => ({
 
 function ensureDb() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
   if (!fs.existsSync(DB_FILE)) {
     fs.writeFileSync(DB_FILE, JSON.stringify(emptyDb(), null, 2));
   }
+}
+
+function parseDataUrl(dataUrl) {
+  const m = /^data:([^;]+);base64,(.+)$/s.exec(String(dataUrl || ''));
+  if (!m) return null;
+  const mime = m[1].toLowerCase();
+  const buf = Buffer.from(m[2], 'base64');
+  return { mime, buf };
+}
+
+function extForMime(mime) {
+  return (
+    {
+      'image/jpeg': '.jpg',
+      'image/jpg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+      'image/gif': '.gif',
+      'video/mp4': '.mp4',
+      'video/webm': '.webm',
+      'video/quicktime': '.mov',
+      'video/x-m4v': '.m4v',
+    }[mime] || ''
+  );
+}
+
+function safeMediaKey(key) {
+  return String(key || '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .slice(0, 120);
 }
 
 function readDb() {
@@ -88,7 +121,7 @@ function sendJson(res, status, data) {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS',
+    'Access-Control-Allow-Methods': 'GET,PUT,POST,PATCH,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   });
   res.end(body);
@@ -122,10 +155,40 @@ function contentType(filePath) {
       '.jpeg': 'image/jpeg',
       '.png': 'image/png',
       '.webp': 'image/webp',
+      '.gif': 'image/gif',
       '.svg': 'image/svg+xml',
       '.ico': 'image/x-icon',
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.mov': 'video/quicktime',
+      '.m4v': 'video/x-m4v',
     }[ext] || 'application/octet-stream'
   );
+}
+
+function readBodyLimited(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > maxBytes) {
+        reject(new Error('Payload too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      try {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch (e) {
+        reject(e);
+      }
+    });
+    req.on('error', reject);
+  });
 }
 
 function serveStatic(req, res, urlPath) {
@@ -294,6 +357,88 @@ const server = http.createServer(async (req, res) => {
       db.vault = Array.isArray(body) ? body : body.vault || db.vault;
       writeDb(db);
       sendJson(res, 200, db.vault);
+      return;
+    }
+
+    // Mentor custom media (images / videos) — stored as files, not in db.json
+    if (pathname === '/api/media' && req.method === 'POST') {
+      ensureDb();
+      let body;
+      try {
+        body = await readBodyLimited(req, Math.floor(MAX_MEDIA_BYTES * 1.4));
+      } catch (e) {
+        sendJson(res, 413, { error: e.message || 'Payload too large' });
+        return;
+      }
+      const key = safeMediaKey(body.key);
+      const parsed = parseDataUrl(body.dataUrl);
+      if (!key || !parsed) {
+        sendJson(res, 400, { error: 'key and dataUrl (base64) required' });
+        return;
+      }
+      const isImage = parsed.mime.startsWith('image/');
+      const isVideo = parsed.mime.startsWith('video/');
+      if (!isImage && !isVideo) {
+        sendJson(res, 400, { error: 'Only image and video uploads are allowed' });
+        return;
+      }
+      if (parsed.buf.length > MAX_MEDIA_BYTES) {
+        sendJson(res, 413, { error: 'File too large (max 14 MB)' });
+        return;
+      }
+      const ext = extForMime(parsed.mime);
+      if (!ext) {
+        sendJson(res, 400, { error: `Unsupported type: ${parsed.mime}` });
+        return;
+      }
+      // Remove prior versions for this key
+      for (const name of fs.readdirSync(MEDIA_DIR)) {
+        if (name === `${key}${ext}` || name.startsWith(`${key}.`)) {
+          try {
+            fs.unlinkSync(path.join(MEDIA_DIR, name));
+          } catch {
+            // ignore
+          }
+        }
+      }
+      const filename = `${key}${ext}`;
+      fs.writeFileSync(path.join(MEDIA_DIR, filename), parsed.buf);
+      sendJson(res, 200, { ok: true, url: `/api/media/${filename}`, key, mime: parsed.mime });
+      return;
+    }
+
+    if (pathname.startsWith('/api/media/') && req.method === 'GET') {
+      ensureDb();
+      const filename = safeMediaKey(pathname.replace('/api/media/', ''));
+      const filePath = path.join(MEDIA_DIR, filename);
+      if (!filePath.startsWith(MEDIA_DIR) || !fs.existsSync(filePath)) {
+        res.writeHead(404).end('Not found');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': contentType(filePath),
+        'Cache-Control': 'public, max-age=86400',
+        'Access-Control-Allow-Origin': '*',
+      });
+      fs.createReadStream(filePath).pipe(res);
+      return;
+    }
+
+    if (pathname.startsWith('/api/media/') && req.method === 'DELETE') {
+      ensureDb();
+      const key = safeMediaKey(pathname.replace('/api/media/', ''));
+      let removed = 0;
+      for (const name of fs.readdirSync(MEDIA_DIR)) {
+        if (name === key || name.startsWith(`${key}.`)) {
+          try {
+            fs.unlinkSync(path.join(MEDIA_DIR, name));
+            removed += 1;
+          } catch {
+            // ignore
+          }
+        }
+      }
+      sendJson(res, 200, { ok: true, removed });
       return;
     }
 

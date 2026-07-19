@@ -15,6 +15,11 @@ import {
   pushDb,
 } from '../lib/remote';
 import {
+  emptyCustomMedia,
+  normalizeCustomMedia,
+  type MentorMediaItem,
+} from '../lib/mentorMedia';
+import {
   findInVault,
   getEaImage,
   isRevokedKey,
@@ -75,6 +80,7 @@ export type LicenseRecord = {
   eaImage: string;
   mainText: string;
   symbols: string[];
+  customMedia: MentorMediaItem[];
   ownerAdminId: string;
   clientName: string;
   clientEmail: string;
@@ -104,6 +110,8 @@ export type AdminProfile = {
   eaDisplayName: string;
   mainText: string;
   eaImage: string;
+  /** 2 profile + 3 background media slots (image/video) */
+  customMedia: MentorMediaItem[];
 };
 
 export type CopyOrder = {
@@ -185,6 +193,7 @@ function emptyProfile(seed?: {
     eaDisplayName: seed?.eaName ?? '',
     mainText: seed?.mainText ?? '',
     eaImage: '',
+    customMedia: emptyCustomMedia(),
   };
 }
 
@@ -227,11 +236,23 @@ function normalizeWorkspace(
     ...base,
     ...ws,
     eas: ws.eas ?? [],
-    licenses: (ws.licenses ?? []).filter((l) => l.status !== 'deleted'),
+    licenses: (ws.licenses ?? [])
+      .filter((l) => l.status !== 'deleted')
+      .map((l) => ({
+        ...l,
+        customMedia: normalizeCustomMedia(l.customMedia),
+      })),
     clientRequests: ws.clientRequests ?? [],
     orders: ws.orders ?? [],
     revokedKeys: ws.revokedKeys ?? [],
-    profile: { ...base.profile, ...(ws.profile ?? {}) },
+    profile: {
+      ...base.profile,
+      ...(ws.profile ?? {}),
+      customMedia: normalizeCustomMedia(
+        (ws.profile as AdminProfile | undefined)?.customMedia ??
+          base.profile.customMedia,
+      ),
+    },
     mt5: { ...base.mt5, ...(ws.mt5 ?? {}) },
   };
 }
@@ -783,6 +804,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           profileImage ||
           getEaImage(`ea-${ea.id}`) ||
           '';
+        const customMedia = normalizeCustomMedia(ws.profile.customMedia);
         const id = `lic-${Date.now()}`;
         const key = uniqueKey(allLicenses);
         const mainText = ws.profile.mainText || '';
@@ -795,6 +817,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           eaImage,
           mainText,
           symbols: ea.symbols,
+          customMedia,
           ownerAdminId: adminId,
           clientName,
           clientEmail,
@@ -815,6 +838,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           mainText,
           symbols: ea.symbols,
           eaImage,
+          customMedia,
           duration: input.duration,
           ownerAdminId: adminId,
           eaId: ea.id,
@@ -978,6 +1002,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             eaImage: vault.eaImage,
             mainText: vault.mainText,
             symbols: vault.symbols ?? [],
+            customMedia: normalizeCustomMedia(vault.customMedia),
             ownerAdminId: vault.ownerAdminId,
             clientName: vault.clientName,
             clientEmail: vault.email,
@@ -1031,6 +1056,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             : ownerEa?.symbols?.length
               ? ownerEa.symbols
               : ['XAUUSD'];
+        const resolvedMedia = normalizeCustomMedia(
+          ownerWs?.profile.customMedia?.length
+            ? ownerWs.profile.customMedia
+            : license.customMedia,
+        );
 
         license = {
           ...license,
@@ -1038,6 +1068,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           eaName: resolvedName,
           mainText: resolvedMain,
           symbols: resolvedSymbols,
+          customMedia: resolvedMedia,
         };
 
         if (license.status === 'assigned') {
@@ -1078,6 +1109,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           mainText: updated.mainText,
           symbols: updated.symbols,
           eaImage: updated.eaImage,
+          customMedia: updated.customMedia,
           duration: updated.duration,
           ownerAdminId: updated.ownerAdminId,
           eaId: updated.eaId,
@@ -1106,6 +1138,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             eaId: vault.eaId,
             eaName: vault.eaName,
             eaImage: vault.eaImage,
+            customMedia: normalizeCustomMedia(vault.customMedia),
             mainText: vault.mainText,
             symbols: vault.symbols,
             ownerAdminId: vault.ownerAdminId,
@@ -1129,11 +1162,49 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           saveEaImage(`profile-${adminId}`, patch.eaImage);
         }
         patchWorkspace(adminId, (ws) => {
-          const nextProfile = { ...ws.profile, ...patch };
+          const nextProfile: AdminProfile = {
+            ...ws.profile,
+            ...patch,
+            customMedia: normalizeCustomMedia(
+              patch.customMedia !== undefined
+                ? patch.customMedia
+                : ws.profile.customMedia,
+            ),
+          };
           const image = nextProfile.eaImage || '';
+          const media = nextProfile.customMedia;
+          // Push custom media onto live licenses + vault so clients see updates
+          const nextLicenses = ws.licenses.map((lic) => ({
+            ...lic,
+            eaImage: image || lic.eaImage,
+            mainText: nextProfile.mainText || lic.mainText,
+            eaName: nextProfile.eaDisplayName || lic.eaName,
+            customMedia: media,
+          }));
+          for (const lic of nextLicenses) {
+            if (lic.status === 'deleted') continue;
+            upsertVault({
+              id: lic.id,
+              key: lic.key,
+              email: lic.clientEmail,
+              clientName: lic.clientName,
+              eaName: lic.eaName,
+              mainText: lic.mainText,
+              symbols: lic.symbols,
+              eaImage: lic.eaImage,
+              customMedia: lic.customMedia,
+              duration: lic.duration,
+              ownerAdminId: lic.ownerAdminId,
+              eaId: lic.eaId,
+              status: lic.status,
+              assignedEmail: lic.assignedEmail,
+              assignedAt: lic.assignedAt,
+            });
+          }
           return {
             ...ws,
             profile: nextProfile,
+            licenses: nextLicenses,
             // Sync branding image onto every EA for this admin
             eas: image
               ? ws.eas.map((ea) => {

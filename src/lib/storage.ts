@@ -1,3 +1,5 @@
+import type { MentorMediaItem } from './mentorMedia';
+
 export function loadJSON<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -66,6 +68,7 @@ export type VaultLicense = {
   mainText: string;
   symbols: string[];
   eaImage: string;
+  customMedia?: MentorMediaItem[];
   duration: string;
   ownerAdminId: string;
   eaId: string;

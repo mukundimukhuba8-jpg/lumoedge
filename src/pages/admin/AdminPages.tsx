@@ -1,6 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Copy, Plus, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
+import {
+  ALL_MEDIA_SLOTS,
+  BACKGROUND_SLOTS,
+  MEDIA_ACCEPT,
+  PROFILE_SLOTS,
+  deleteMentorMedia,
+  fileToDataUrl,
+  getMediaSlot,
+  isAllowedMediaFile,
+  mediaKey,
+  normalizeCustomMedia,
+  removeMediaSlot,
+  uploadMentorMedia,
+  upsertMediaSlot,
+  type MentorMediaSlotId,
+} from '../../lib/mentorMedia';
 import { compressImageFile } from '../../lib/storage';
 import { Placeholder } from './AdminShell';
 
@@ -447,13 +463,18 @@ export function OpenOrdersPage() {
 }
 
 export function ProfilePage() {
-  const { profile, updateProfile } = useAdmin();
+  const { admin, profile, updateProfile } = useAdmin();
   const [form, setForm] = useState(profile);
   const [imageError, setImageError] = useState('');
   const [savingImage, setSavingImage] = useState(false);
+  const [mediaError, setMediaError] = useState('');
+  const [savingSlot, setSavingSlot] = useState<MentorMediaSlotId | null>(null);
 
   useEffect(() => {
-    setForm(profile);
+    setForm({
+      ...profile,
+      customMedia: normalizeCustomMedia(profile.customMedia),
+    });
   }, [profile]);
 
   const onPickImage = async (file: File | null) => {
@@ -474,6 +495,51 @@ export function ProfilePage() {
     } finally {
       setSavingImage(false);
     }
+  };
+
+  const onPickMedia = async (slot: MentorMediaSlotId, file: File | null) => {
+    setMediaError('');
+    if (!file || !admin?.id) return;
+    const check = isAllowedMediaFile(file);
+    if (!check.ok) {
+      setMediaError(check.error);
+      return;
+    }
+    try {
+      setSavingSlot(slot);
+      const dataUrl =
+        check.kind === 'image'
+          ? await compressImageFile(file, 960, 0.78)
+          : await fileToDataUrl(file);
+      const { url } = await uploadMentorMedia(mediaKey(admin.id, slot), dataUrl);
+      const customMedia = upsertMediaSlot(form.customMedia, {
+        slot,
+        kind: check.kind,
+        url,
+      });
+      const next = {
+        ...form,
+        customMedia,
+        // Keep classic EA image in sync with first profile still image
+        eaImage:
+          slot === 'profile-1' && check.kind === 'image' ? url : form.eaImage,
+      };
+      setForm(next);
+      updateProfile(next);
+    } catch (e) {
+      setMediaError(e instanceof Error ? e.message : 'Could not upload media.');
+    } finally {
+      setSavingSlot(null);
+    }
+  };
+
+  const onClearMedia = async (slot: MentorMediaSlotId) => {
+    if (!admin?.id) return;
+    await deleteMentorMedia(mediaKey(admin.id, slot));
+    const customMedia = removeMediaSlot(form.customMedia, slot);
+    const next = { ...form, customMedia };
+    setForm(next);
+    updateProfile(next);
   };
 
   return (
@@ -532,16 +598,115 @@ export function ProfilePage() {
         )}
         {imageError ? <p className="error">{imageError}</p> : null}
       </div>
+
+      <div className="glow-card">
+        <h3 style={{ marginTop: 0 }}>Custom Media (5 spots)</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Upload <strong style={{ color: 'var(--text)' }}>2 profile</strong> and{' '}
+          <strong style={{ color: 'var(--text)' }}>3 background</strong> pictures or
+          videos. Clients see them under Interface Style → Custom — tap one to set it
+          as the app background.
+        </p>
+
+        <h4 style={{ margin: '10px 0 8px', fontSize: 14 }}>Profile picture / video</h4>
+        <div className="media-slot-grid">
+          {PROFILE_SLOTS.map((slot) => {
+            const item = getMediaSlot(form.customMedia, slot.id);
+            return (
+              <MediaSlotCard
+                key={slot.id}
+                label={slot.label}
+                item={item}
+                busy={savingSlot === slot.id}
+                onPick={(file) => void onPickMedia(slot.id, file)}
+                onClear={() => void onClearMedia(slot.id)}
+              />
+            );
+          })}
+        </div>
+
+        <h4 style={{ margin: '16px 0 8px', fontSize: 14 }}>Background features</h4>
+        <div className="media-slot-grid">
+          {BACKGROUND_SLOTS.map((slot) => {
+            const item = getMediaSlot(form.customMedia, slot.id);
+            return (
+              <MediaSlotCard
+                key={slot.id}
+                label={slot.label}
+                item={item}
+                busy={savingSlot === slot.id}
+                onPick={(file) => void onPickMedia(slot.id, file)}
+                onClear={() => void onClearMedia(slot.id)}
+              />
+            );
+          })}
+        </div>
+        {savingSlot ? (
+          <p className="muted">Uploading {ALL_MEDIA_SLOTS.find((s) => s.id === savingSlot)?.label}…</p>
+        ) : null}
+        {mediaError ? <p className="error">{mediaError}</p> : null}
+      </div>
+
       <button
         className="btn btn-blue"
         type="button"
         onClick={() => {
           updateProfile(form);
-          alert('Profile updated — EA name & image sync on new license keys');
+          alert('Profile updated — branding & custom media sync to licensed clients');
         }}
       >
         Update Profile
       </button>
+    </div>
+  );
+}
+
+function MediaSlotCard({
+  label,
+  item,
+  busy,
+  onPick,
+  onClear,
+}: {
+  label: string;
+  item?: { url: string; kind: 'image' | 'video' };
+  busy: boolean;
+  onPick: (file: File | null) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="media-slot-card">
+      <div className="media-slot-preview">
+        {item?.kind === 'video' ? (
+          <video src={item.url} muted playsInline />
+        ) : item?.url ? (
+          <img src={item.url} alt="" />
+        ) : (
+          <span>Empty</span>
+        )}
+      </div>
+      <div className="media-slot-meta">
+        <strong>{label}</strong>
+        <span className="muted">{item ? item.kind : 'image / video'}</span>
+        <label className="btn btn-ghost media-slot-upload">
+          {busy ? 'Saving…' : item ? 'Replace' : 'Upload'}
+          <input
+            type="file"
+            accept={MEDIA_ACCEPT}
+            disabled={busy}
+            hidden
+            onChange={(e) => {
+              onPick(e.target.files?.[0] ?? null);
+              e.target.value = '';
+            }}
+          />
+        </label>
+        {item ? (
+          <button type="button" className="btn btn-ghost" style={{ padding: '6px 10px' }} onClick={onClear}>
+            Clear
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

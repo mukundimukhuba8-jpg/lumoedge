@@ -1,3 +1,4 @@
+import { ALL_MEDIA_SLOTS, type MentorMediaSlotId } from './mentorMedia';
 import { loadJSON, saveJSON } from './storage';
 
 export type LayoutId =
@@ -32,7 +33,7 @@ export type AccentId =
   | 'silver'
   | 'white';
 
-export type CustomBgId = 'default' | 'interface-1';
+export type CustomBgId = 'default' | 'interface-1' | MentorMediaSlotId;
 
 export type StyleTab = 'layouts' | 'effects' | 'colours' | 'custom';
 
@@ -45,12 +46,19 @@ export type InterfacePrefs = {
 
 const KEY = 'ub-web/interface-style-v1';
 
+const PREF_LISTENERS = new Set<() => void>();
+
 export const DEFAULT_PREFS: InterfacePrefs = {
   layout: 'classic',
   effect: 'none',
   accent: 'blue',
   customBg: 'default',
 };
+
+function isCustomBgId(v: unknown): v is CustomBgId {
+  if (v === 'default' || v === 'interface-1') return true;
+  return ALL_MEDIA_SLOTS.some((s) => s.id === v);
+}
 
 export const LAYOUTS: {
   id: LayoutId;
@@ -108,12 +116,20 @@ export function loadInterfacePrefs(): InterfacePrefs {
       ? (raw.effect as EffectId)
       : DEFAULT_PREFS.effect,
     accent: ACCENTS.some((a) => a.id === raw.accent) ? (raw.accent as AccentId) : DEFAULT_PREFS.accent,
-    customBg: raw.customBg === 'interface-1' ? 'interface-1' : 'default',
+    customBg: isCustomBgId(raw.customBg) ? raw.customBg : DEFAULT_PREFS.customBg,
   };
 }
 
 export function saveInterfacePrefs(prefs: InterfacePrefs) {
   saveJSON(KEY, prefs);
+  PREF_LISTENERS.forEach((cb) => cb());
+}
+
+export function subscribeInterfacePrefs(cb: () => void) {
+  PREF_LISTENERS.add(cb);
+  return () => {
+    PREF_LISTENERS.delete(cb);
+  };
 }
 
 export function accentHex(id: AccentId): string {

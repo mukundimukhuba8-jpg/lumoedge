@@ -22,6 +22,10 @@ import {
   type StyleTab,
   accentHex,
 } from '../../lib/interfaceStyle';
+import {
+  ALL_MEDIA_SLOTS,
+  type MentorMediaItem,
+} from '../../lib/mentorMedia';
 
 type Props = {
   open: boolean;
@@ -30,6 +34,7 @@ type Props = {
   onChange: (next: InterfacePrefs) => void;
   avatarUrl: string;
   mentorBgUrl: string;
+  mentorMedia?: MentorMediaItem[];
   onOpenScanner: () => void;
 };
 
@@ -140,10 +145,15 @@ export function InterfaceStyleModal({
   onChange,
   avatarUrl,
   mentorBgUrl,
+  mentorMedia = [],
   onOpenScanner,
 }: Props) {
   const [tab, setTab] = useState<StyleTab>('layouts');
   const accent = accentHex(prefs.accent);
+  const uploaded = ALL_MEDIA_SLOTS.map((slot) => ({
+    ...slot,
+    item: mentorMedia.find((m) => m.slot === slot.id),
+  })).filter((s) => Boolean(s.item?.url));
 
   const tabs = useMemo(
     () =>
@@ -315,9 +325,9 @@ export function InterfaceStyleModal({
           {tab === 'custom' ? (
             <>
               <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
-                Choose a background image uploaded by your mentor. Select{' '}
-                <strong style={{ color: 'var(--text)' }}>Default</strong> to remove a custom
-                background.
+                Tap a picture or video from your mentor to set it as the platform
+                background. Choose{' '}
+                <strong style={{ color: 'var(--text)' }}>Default</strong> to clear it.
               </p>
               <div className="iface-custom-row">
                 <button
@@ -353,10 +363,42 @@ export function InterfaceStyleModal({
                     {prefs.customBg === 'interface-1' ? (
                       <Check size={14} color="var(--electric)" />
                     ) : null}
-                    <span>Interface 1</span>
+                    <span>EA Image</span>
                   </div>
                 </button>
+                {uploaded.map((slot) => {
+                  const active = prefs.customBg === slot.id;
+                  const item = slot.item!;
+                  return (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      className={`iface-custom-card${active ? ' active' : ''}`}
+                      onClick={() => setCustomBg(slot.id)}
+                    >
+                      <div className="iface-custom-preview">
+                        {item.kind === 'video' ? (
+                          <video src={item.url} muted playsInline />
+                        ) : (
+                          <span
+                            className="iface-custom-preview-img"
+                            style={{ backgroundImage: `url(${item.url})` }}
+                          />
+                        )}
+                      </div>
+                      <div className="iface-custom-meta">
+                        {active ? <Check size={14} color="var(--electric)" /> : null}
+                        <span>{slot.label}</span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
+              {uploaded.length === 0 ? (
+                <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
+                  No custom uploads yet — your mentor can add them in Admin → Profile.
+                </p>
+              ) : null}
             </>
           ) : null}
         </div>
