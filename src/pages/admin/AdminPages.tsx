@@ -723,15 +723,38 @@ function MediaSlotCard({
 }
 
 export function ApproveAdminsPage() {
-  const { admins, approveAdmin } = useAdmin();
-  const pending = admins.filter((a) => a.role === 'pending');
-  const approved = admins.filter((a) => a.role === 'admin');
+  const { admins, approveAdmin, deleteAdmin } = useAdmin();
+  const [q, setQ] = useState('');
+  const query = q.trim().toLowerCase();
+  const match = (a: { fullName: string; email: string; id: string; eaName?: string }) => {
+    if (!query) return true;
+    return [a.fullName, a.email, a.id, a.eaName || '']
+      .join(' ')
+      .toLowerCase()
+      .includes(query);
+  };
+  const pending = admins.filter((a) => a.role === 'pending').filter(match);
+  const approved = admins.filter((a) => a.role === 'admin').filter(match);
+
+  const onDelete = (id: string, label: string) => {
+    if (!confirm(`Delete ${label}? This cannot be undone.`)) return;
+    deleteAdmin(id);
+  };
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div>
         <h2 className="title-blue" style={{ fontSize: 17, margin: 0 }}>Approve Admins</h2>
         <p className="muted">Pending requests and admins already approved. Each admin gets their own empty portal.</p>
+      </div>
+
+      <div className="field" style={{ marginBottom: 0 }}>
+        <label>Search</label>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search name, email, ID…"
+        />
       </div>
 
       <div className="stat-grid">
@@ -750,9 +773,19 @@ export function ApproveAdminsPage() {
               <div className="muted">{a.email}</div>
               <div className="muted">ID {a.id}{a.eaName ? ` · EA ${a.eaName}` : ''}</div>
               <div style={{ color: 'var(--orange)', fontWeight: 700, marginTop: 4 }}>PENDING</div>
-              <button className="btn btn-blue" type="button" style={{ marginTop: 10 }} onClick={() => approveAdmin(a.id)}>
-                Approve
-              </button>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <button className="btn btn-blue" type="button" style={{ flex: 1 }} onClick={() => approveAdmin(a.id)}>
+                  Approve
+                </button>
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  style={{ flex: 1, borderColor: 'var(--red)', color: 'var(--red)' }}
+                  onClick={() => onDelete(a.id, a.email)}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))
         )}
@@ -769,6 +802,14 @@ export function ApproveAdminsPage() {
               <div className="muted">{a.email}</div>
               <div className="muted">ID {a.id}{a.eaName ? ` · EA ${a.eaName}` : ''}</div>
               <div style={{ color: 'var(--green)', fontWeight: 700, marginTop: 4 }}>APPROVED</div>
+              <button
+                className="btn btn-ghost"
+                type="button"
+                style={{ marginTop: 10, borderColor: 'var(--red)', color: 'var(--red)' }}
+                onClick={() => onDelete(a.id, a.email)}
+              >
+                Delete
+              </button>
             </div>
           ))
         )}
@@ -778,9 +819,20 @@ export function ApproveAdminsPage() {
 }
 
 export function SubscriptionsPage() {
-  const { clientRequests, approveClient, rejectClient, stats } = useAdmin();
-  const pending = clientRequests.filter((c) => c.status === 'pending');
-  const approved = clientRequests.filter((c) => c.status === 'approved');
+  const { clientRequests, approveClient, deleteClient, stats } = useAdmin();
+  const [q, setQ] = useState('');
+  const query = q.trim().toLowerCase();
+  const match = (c: { firstName: string; lastName: string; email: string }) => {
+    if (!query) return true;
+    return `${c.firstName} ${c.lastName} ${c.email}`.toLowerCase().includes(query);
+  };
+  const pending = clientRequests.filter((c) => c.status === 'pending').filter(match);
+  const approved = clientRequests.filter((c) => c.status === 'approved').filter(match);
+
+  const onDelete = (id: string, email: string) => {
+    if (!confirm(`Delete ${email}? This removes them from the queue.`)) return;
+    deleteClient(id);
+  };
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -789,6 +841,15 @@ export function SubscriptionsPage() {
         <p className="muted">
           New Lumo Edge registrations land here (saved on server — survives new preview links). Approve to unlock payment.
         </p>
+      </div>
+
+      <div className="field" style={{ marginBottom: 0 }}>
+        <label>Search</label>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search name or email…"
+        />
       </div>
 
       <div className="stat-grid">
@@ -829,9 +890,9 @@ export function SubscriptionsPage() {
                   className="btn btn-ghost"
                   type="button"
                   style={{ flex: 1, borderColor: 'var(--red)', color: 'var(--red)' }}
-                  onClick={() => rejectClient(c.id)}
+                  onClick={() => onDelete(c.id, c.email)}
                 >
-                  Reject
+                  Delete
                 </button>
               </div>
             </div>
@@ -850,6 +911,14 @@ export function SubscriptionsPage() {
                 {c.firstName} {c.lastName}
               </strong>
               <div className="muted">{c.email}</div>
+              <button
+                className="btn btn-ghost"
+                type="button"
+                style={{ marginTop: 8, borderColor: 'var(--red)', color: 'var(--red)' }}
+                onClick={() => onDelete(c.id, c.email)}
+              >
+                Delete
+              </button>
             </div>
           ))
         )}

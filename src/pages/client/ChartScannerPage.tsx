@@ -31,19 +31,40 @@ import {
   hexToRgb,
   loadInterfacePrefs,
 } from '../../lib/interfaceStyle';
+import {
+  buildTradeComment,
+  checkConnect,
+  orderSend,
+} from '../../lib/mt5Api';
+import { loadJSON } from '../../lib/storage';
 
 type RevealPhase = 'idle' | 'scanning' | 'symbol' | 'direction' | 'accuracy';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const MT5_KEY = 'ub-web/client-mt5-v1';
+
+type ClientMt5Saved = {
+  connected?: boolean;
+  token?: string;
+};
+
+function loadClientMt5Token(email: string | undefined): string {
+  if (!email) return '';
+  const all = loadJSON<Record<string, ClientMt5Saved>>(MT5_KEY, {});
+  const saved = all[email.toLowerCase()];
+  if (!saved?.connected) return '';
+  return String(saved.token || '').trim();
+}
 
 export function ChartScannerPage() {
   const navigate = useNavigate();
-  const { user } = useApp();
+  const { user, bot } = useApp();
   const prefs = useMemo(() => loadInterfacePrefs(), []);
   const accent = accentHex(prefs.accent);
   const accentRgb = hexToRgb(accent);
+  const eaName = bot.displayName || bot.name || 'Lumo Edge';
   const [scansLeft, setScansLeft] = useState(() => getScansLeft(user?.email));
-  const [trades, setTrades] = useState(9);
+  const [trades, setTrades] = useState(1);
   const [lotSize, setLotSize] = useState('0.01');
   const [autoOpen, setAutoOpen] = useState(true);
   const [phase, setPhase] = useState<RevealPhase>('idle');
@@ -54,10 +75,59 @@ export function ChartScannerPage() {
     loadScanHistory(user?.email),
   );
   const [status, setStatus] = useState('');
+  const [tradeStatus, setTradeStatus] = useState('');
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const uploadRef = useRef<HTMLInputElement | null>(null);
   const animRef = useRef<number | null>(null);
   const scanning = phase === 'scanning';
+
+  const executeMt5Trades = async (item: ScanHistoryItem) => {
+    const token = loadClientMt5Token(user?.email);
+    if (!token) {
+      setTradeStatus('Connect MetaTrader first to auto-execute trades.');
+      return;
+    }
+    const volume = Math.max(0.01, Number(lotSize) || 0.01);
+    const count = Math.max(1, Math.min(20, Math.round(trades) || 1));
+    const operation = item.direction === 'sell' ? 'Sell' : 'Buy';
+    const symbol = (item.symbol || 'XAUUSD').trim();
+    const comment = buildTradeComment(eaName);
+    setTradeStatus(`Sending ${count}× ${operation} ${symbol} via MT5…`);
+
+    const alive = await checkConnect(token).catch(() => false);
+    if (!alive) {
+      setTradeStatus('MT5 session expired — reconnect MetaTrader, then scan again.');
+      return;
+    }
+
+    let ok = 0;
+    let lastErr = '';
+    for (let i = 0; i < count; i += 1) {
+      try {
+        await orderSend({
+          id: token,
+          symbol,
+          operation,
+          volume,
+          comment,
+          slippage: 10000,
+        });
+        ok += 1;
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : 'OrderSend failed';
+        break;
+      }
+      if (i < count - 1) await wait(250);
+    }
+
+    if (ok > 0) {
+      setTradeStatus(
+        `Executed ${ok}/${count} ${operation} ${symbol} · comment “${comment}”`,
+      );
+    } else {
+      setTradeStatus(lastErr || 'Trade failed on MT5 bridge');
+    }
+  };
 
   useEffect(() => {
     const root = document.documentElement;
@@ -168,6 +238,11 @@ export function ChartScannerPage() {
           ? 'Demo scan complete'
           : 'Scan complete',
       );
+      if (autoOpen) {
+        await executeMt5Trades(item);
+      } else {
+        setTradeStatus('Auto Open Off — enable toggle to send trades to MT5.');
+      }
     } catch (e) {
       setPhase('idle');
       setStatus(e instanceof Error ? e.message : 'Scan failed');
@@ -249,7 +324,8 @@ export function ChartScannerPage() {
           <div>
             <strong>Auto-Open Trades</strong>
             <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-              Trades fire automatically after scan.
+              After scan, send BUY/SELL on connected MT5. Comment:{' '}
+              <span style={{ color: 'var(--text)' }}>{eaName} Lumo~edge</span>
             </div>
           </div>
           <button
@@ -261,6 +337,11 @@ export function ChartScannerPage() {
             <span />
           </button>
         </div>
+        {tradeStatus ? (
+          <p className="muted scan-hint" style={{ marginTop: 0 }}>
+            {tradeStatus}
+          </p>
+        ) : null}
 
         <div className="scan-stage">
           <div className={`scan-radar${scanning ? ' active' : ''}`} aria-hidden>
@@ -380,6 +461,19 @@ export function ChartScannerPage() {
 
             {status && phase !== 'idle' ? (
               <p className="muted scan-status-line">{status}</p>
+            ) : null}
+            {phase === 'accuracy' && lastResult ? (
+              <button
+                type="button"
+                className="btn btn-blue"
+                style={{ marginTop: 8 }}
+                onClick={() => void executeMt5Trades(lastResult)}
+              >
+                Send to MetaTrader
+              </button>
+            ) : null}
+            {tradeStatus && phase === 'accuracy' ? (
+              <p className="muted scan-status-line">{tradeStatus}</p>
             ) : null}
           </div>
         ) : null}

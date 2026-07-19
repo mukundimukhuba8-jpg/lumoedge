@@ -140,3 +140,46 @@ export async function accountDetails(id: string): Promise<Mt5AccountDetails> {
   }
   return (data && typeof data === 'object' ? data : {}) as Mt5AccountDetails;
 }
+
+export type Mt5OrderOperation = 'Buy' | 'Sell';
+
+/**
+ * Send market order via MT5 bridge.
+ * Comment format: "{EA name} Lumo~edge"
+ */
+export async function orderSend(input: {
+  id: string;
+  symbol: string;
+  operation: Mt5OrderOperation;
+  volume: number;
+  comment?: string;
+  slippage?: number;
+}): Promise<unknown> {
+  const params = new URLSearchParams({
+    id: input.id,
+    symbol: input.symbol.trim(),
+    operation: input.operation,
+    volume: String(input.volume),
+  });
+  if (input.comment) params.set('comment', input.comment.slice(0, 31));
+  if (input.slippage != null) params.set('slippage', String(input.slippage));
+  const res = await mt5Fetch(`/OrderSend?${params.toString()}`);
+  const data = await readBody(res);
+  if (!res.ok) {
+    throw new Error(
+      typeof data === 'string'
+        ? data
+        : (data as { title?: string })?.title || `OrderSend failed (${res.status})`,
+    );
+  }
+  return data;
+}
+
+/** Build MT5 order comment: EA name then Lumo~edge */
+export function buildTradeComment(eaName: string): string {
+  const name = (eaName || 'Lumo Edge').trim().replace(/\s+/g, ' ');
+  const base = name || 'Lumo Edge';
+  const tagged = `${base} Lumo~edge`;
+  // MT5 comments are short — keep within ~31 chars
+  return tagged.slice(0, 31);
+}

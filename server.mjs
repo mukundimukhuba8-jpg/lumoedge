@@ -405,6 +405,21 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (pathname.startsWith('/api/clients/') && req.method === 'DELETE') {
+      const id = pathname.replace('/api/clients/', '');
+      const db = readDb();
+      const before = (db.clients || []).length;
+      db.clients = (db.clients || []).filter((c) => c.id !== id);
+      const sid = 'LM-004821';
+      const ws = db.store?.workspaces?.[sid];
+      if (ws) {
+        ws.clientRequests = (ws.clientRequests || []).filter((c) => c.id !== id);
+      }
+      writeDb(db);
+      sendJson(res, 200, { ok: true, removed: before - (db.clients || []).length });
+      return;
+    }
+
     if (pathname.startsWith('/api/sessions/') && req.method === 'GET') {
       const email = decodeURIComponent(pathname.replace('/api/sessions/', '')).toLowerCase();
       const session = readDb().sessions?.[email] || null;

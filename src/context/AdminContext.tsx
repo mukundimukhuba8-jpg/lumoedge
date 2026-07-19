@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  deleteClientRemote,
   fetchClients,
   fetchDb,
   patchClient,
@@ -384,6 +385,7 @@ type Ctx = {
   registerAdmin: (data: Omit<AdminUser, 'id' | 'role'> & { password: string }) => string | null;
   logout: () => void;
   approveAdmin: (id: string) => void;
+  deleteAdmin: (id: string) => void;
   clientRequests: ClientRequest[];
   submitClientRegistration: (input: {
     email: string;
@@ -392,6 +394,7 @@ type Ctx = {
   }) => ClientRequest;
   approveClient: (id: string) => void;
   rejectClient: (id: string) => void;
+  deleteClient: (id: string) => void;
   getClientByEmail: (email: string) => ClientRequest | undefined;
   eas: ManagedEA[];
   licenses: LicenseRecord[];
@@ -643,6 +646,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ...auth,
           admins: auth.admins.map((a) => (a.id === id ? { ...a, role: 'admin' } : a)),
         }),
+      deleteAdmin: (id) => {
+        if (id === SUPER_ADMIN.user.id) return;
+        const nextAdmins = auth.admins.filter((a) => a.id !== id);
+        const nextWorkspaces = { ...store.workspaces };
+        delete nextWorkspaces[id];
+        saveStore({ ...store, workspaces: nextWorkspaces });
+        saveAuth({
+          ...auth,
+          admins: nextAdmins,
+          admin: auth.admin?.id === id ? null : auth.admin,
+        });
+      },
       // Platform subscriptions are Super Admin only — mentors never see shared queue
       clientRequests: isSuper ? clients : [],
       submitClientRegistration: (input) => {
@@ -729,6 +744,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           clientRequests: ws.clientRequests.map((c) =>
             c.id === id ? { ...c, status: 'rejected' } : c,
           ),
+        }));
+      },
+      deleteClient: (id) => {
+        setClients((prev) => prev.filter((c) => c.id !== id));
+        void deleteClientRemote(id).catch(() => undefined);
+        const sid = SUPER_ADMIN.user.id;
+        patchWorkspace(sid, (ws) => ({
+          ...ws,
+          clientRequests: ws.clientRequests.filter((c) => c.id !== id),
         }));
       },
       getClientByEmail: (email) => {

@@ -81,6 +81,12 @@ export async function patchClient(
   });
 }
 
+export async function deleteClientRemote(id: string) {
+  return req<{ ok: boolean; removed: number }>(`/api/clients/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function fetchSession<T>(email: string): Promise<T | null> {
   try {
     return await req<T | null>(`/api/sessions/${encodeURIComponent(email.toLowerCase())}`);
