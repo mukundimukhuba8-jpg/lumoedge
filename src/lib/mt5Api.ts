@@ -37,14 +37,20 @@ export type Mt5AccountDetails = {
 };
 
 async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: {
-      Accept: 'application/json, text/plain, */*',
-      ...(init?.headers || {}),
-    },
-  });
-  return res;
+  const ac = new AbortController();
+  const timer = window.setTimeout(() => ac.abort(), 10_000);
+  try {
+    return await fetch(`${BASE}${path}`, {
+      ...init,
+      signal: init?.signal ?? ac.signal,
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+        ...(init?.headers || {}),
+      },
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 async function readBody(res: Response): Promise<unknown> {
@@ -120,6 +126,41 @@ function offlineBrokerMatches(q: string): Mt5Company[] {
     {
       company: 'FTMO',
       results: [{ name: 'FTMO-Server', site: 'https://ftmo.com' }],
+    },
+    {
+      company: 'Pepperstone',
+      results: [
+        { name: 'Pepperstone-MT5-Live', site: 'https://pepperstone.com' },
+        { name: 'Pepperstone-MT5-Demo', site: 'https://pepperstone.com' },
+      ],
+    },
+    {
+      company: 'FBS',
+      results: [
+        { name: 'FBS-Real', site: 'https://fbs.com' },
+        { name: 'FBS-Demo', site: 'https://fbs.com' },
+      ],
+    },
+    {
+      company: 'RoboForex',
+      results: [
+        { name: 'RoboForex-Pro', site: 'https://roboforex.com' },
+        { name: 'RoboForex-Demo', site: 'https://roboforex.com' },
+      ],
+    },
+    {
+      company: 'Tickmill',
+      results: [
+        { name: 'Tickmill-Live', site: 'https://tickmill.com' },
+        { name: 'Tickmill-Demo', site: 'https://tickmill.com' },
+      ],
+    },
+    {
+      company: 'Admiral Markets',
+      results: [
+        { name: 'AdmiralsGroup-Demo', site: 'https://admiralmarkets.com' },
+        { name: 'AdmiralsGroup-Live', site: 'https://admiralmarkets.com' },
+      ],
     },
   ];
   const needle = q.toLowerCase();

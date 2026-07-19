@@ -354,10 +354,16 @@ export default async function handler(req, res) {
   try {
     const host = req.headers.host || 'localhost';
     const url = new URL(req.url || '/', `https://${host}`);
-    let pathname = url.pathname;
+    // vercel.json rewrites /api/foo/bar → /api?__path=foo/bar (keeps other query params)
+    const rewritePath = String(url.searchParams.get('__path') || '').trim();
+    let pathname = rewritePath
+      ? `/api/${rewritePath.replace(/^\/+/, '')}`
+      : url.pathname;
     if (!pathname.startsWith('/api')) {
       pathname = `/api${pathname.startsWith('/') ? pathname : `/${pathname}`}`;
     }
+    // Strip internal rewrite param before proxying upstream
+    url.searchParams.delete('__path');
 
     if (req.method === 'OPTIONS') {
       send(res, 204, {});
@@ -787,8 +793,18 @@ export default async function handler(req, res) {
       const MT5_API_BASE = (
         process.env.MT5_API_BASE || 'http://66.23.225.158'
       ).replace(/\/$/, '');
-      const targetPath = pathname === '/api/mt5' ? '/' : pathname.slice('/api/mt5'.length);
-      const targetUrl = `${MT5_API_BASE}${targetPath}${url.search}`;
+      const override = String(url.searchParams.get('_mt5') || '').trim();
+      const targetPath = override
+        ? override.startsWith('/')
+          ? override
+          : `/${override}`
+        : pathname === '/api/mt5'
+          ? '/'
+          : pathname.slice('/api/mt5'.length);
+      const forwardSearch = new URLSearchParams(url.searchParams);
+      forwardSearch.delete('_mt5');
+      const qs = forwardSearch.toString();
+      const targetUrl = `${MT5_API_BASE}${targetPath}${qs ? `?${qs}` : ''}`;
       const method = req.method || 'GET';
       const body =
         method === 'GET' || method === 'HEAD' ? undefined : await readRawBody(req);
@@ -798,11 +814,14 @@ export default async function handler(req, res) {
       if (req.headers['content-type']) {
         headers['Content-Type'] = req.headers['content-type'];
       }
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 8000);
       try {
         const upstream = await fetch(targetUrl, {
           method,
           headers,
           body,
+          signal: ac.signal,
         });
         const buf = Buffer.from(await upstream.arrayBuffer());
         const ct = upstream.headers.get('content-type') || 'application/json';
@@ -820,6 +839,8 @@ export default async function handler(req, res) {
               ? `MT5 bridge unreachable: ${err.message}`
               : 'MT5 bridge unreachable',
         });
+      } finally {
+        clearTimeout(timer);
       }
       return;
     }
