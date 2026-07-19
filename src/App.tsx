@@ -9,7 +9,6 @@ import {
   DashboardPage,
   GenerateLicensePage,
   ManageEAsPage,
-  MetaTraderPage,
   OpenOrdersPage,
   ProfilePage,
   SubscriptionsPage,
@@ -17,6 +16,7 @@ import {
 import { AdminShell } from './pages/admin/AdminShell';
 import { ActivateLicensePage } from './pages/client/ActivateLicensePage';
 import { HomePage } from './pages/client/HomePage';
+import { MetaTraderPage } from './pages/client/MetaTraderPage';
 import { RegisterPage } from './pages/client/RegisterPage';
 import { SubscribePage } from './pages/client/SubscribePage';
 import { WaitingApprovalPage } from './pages/client/WaitingApprovalPage';

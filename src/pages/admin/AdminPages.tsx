@@ -682,15 +682,6 @@ export function SubscriptionsPage() {
   );
 }
 
-export function MetaTraderPage() {
-  return (
-    <div className="page" style={{ textAlign: 'center', paddingTop: 60 }}>
-      <h2 className="title-blue">MetaTrader</h2>
-      <p className="muted">Pair MT4 / MT5 terminals and sync live EA status.</p>
-    </div>
-  );
-}
-
 export function ComingSoonPage({ title }: { title: string }) {
   return <Placeholder title={title}>Full tooling for this section comes next.</Placeholder>;
 }

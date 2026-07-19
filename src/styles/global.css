@@ -1150,3 +1150,316 @@ a {
 .home-layout-vortex .tabbar {
   display: none;
 }
+
+/* —— Client MetaTrader (full-size) —— */
+.mt5-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mt5-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 16px 12px;
+  min-height: 0;
+  position: relative;
+}
+
+.mt5-header {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.mt5-titles {
+  text-align: center;
+}
+
+.mt5-brand {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  color: #f4f4f6;
+  line-height: 1.1;
+}
+
+.mt5-brand .accent {
+  color: var(--electric);
+}
+
+.mt5-ea {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.mt5-unlink {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #e11d2e;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 16px rgba(225, 29, 46, 0.55);
+}
+
+.mt5-card {
+  flex: 1;
+  background: rgba(14, 18, 28, 0.92);
+  border: 1.6px solid rgba(59, 130, 246, 0.55);
+  border-radius: 28px;
+  padding: 18px 16px 20px;
+  box-shadow: 0 0 28px rgba(59, 130, 246, 0.28);
+  backdrop-filter: blur(10px);
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 170px);
+  overflow: auto;
+}
+
+.mt5-card-title {
+  margin: 0 0 16px;
+  text-align: center;
+  color: var(--electric);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.mt5-recommended {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1.5px solid var(--gold);
+  background: rgba(245, 215, 110, 0.08);
+  color: var(--gold);
+  margin-bottom: 16px;
+}
+
+.mt5-star {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid var(--gold);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.mt5-rec-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+}
+
+.mt5-rec-name {
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  margin-top: 2px;
+}
+
+.mt5-field {
+  margin-bottom: 14px;
+  position: relative;
+}
+
+.mt5-field label {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  margin-bottom: 6px;
+}
+
+.mt5-input {
+  width: 100%;
+  background: #12161f;
+  border: 1.4px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  color: var(--text);
+  padding: 14px 14px;
+  font-size: 16px;
+  outline: none;
+  appearance: none;
+}
+
+.mt5-input:focus {
+  border-color: var(--electric);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+}
+
+.mt5-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.mt5-input-icon {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.mt5-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  background: #151a26;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.mt5-dropdown button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mt5-dropdown button:hover {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.mt5-pass-wrap {
+  position: relative;
+}
+
+.mt5-pass-wrap .mt5-input {
+  padding-right: 48px;
+}
+
+.mt5-eye {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  color: var(--muted);
+  padding: 6px;
+  display: grid;
+  place-items: center;
+}
+
+.mt5-connect {
+  margin-top: auto;
+  width: 100%;
+  border-radius: 16px;
+  padding: 16px;
+  font-size: 17px;
+  font-weight: 800;
+  background: var(--electric);
+  color: #061018;
+  box-shadow: 0 0 22px rgba(59, 130, 246, 0.45);
+}
+
+.mt5-connected {
+  position: relative;
+  margin-top: 8px;
+}
+
+.mt5-connected-box {
+  background: rgba(8, 12, 20, 0.9);
+  border: 1.4px solid rgba(59, 130, 246, 0.4);
+  border-radius: 18px;
+  padding: 18px 88px 18px 16px;
+  text-align: left;
+}
+
+.mt5-connected-box strong {
+  color: var(--electric);
+  font-size: 17px;
+}
+
+.mt5-connected-avatar {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2.5px solid var(--electric);
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.5);
+}
+
+.mt5-fab {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--electric);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 22px rgba(59, 130, 246, 0.55);
+  z-index: 3;
+}
+
+/* Enlarge Focus / Terminal / Vortex so nothing feels minimized */
+.lay-focus-row {
+  padding: 16px 18px;
+  min-height: 64px;
+  border-radius: 20px;
+}
+.lay-focus-label {
+  font-size: 17px;
+}
+.lay-focus-ico {
+  width: 42px;
+  height: 42px;
+}
+.lay-avatar-lg {
+  width: 110px;
+  height: 110px;
+}
+.lay-avatar-xl {
+  width: 132px;
+  height: 132px;
+}
+.lay-title {
+  font-size: 28px;
+}
+.lay-term-window {
+  margin-top: 24px;
+  min-height: 420px;
+}
+.lay-term-line {
+  padding: 12px 6px;
+  font-size: 15px;
+}
+.lay-vortex-circle {
+  width: 60px;
+  height: 60px;
+}
+.lay-vortex-orb.large .lay-vortex-circle {
+  width: 76px;
+  height: 76px;
+}
+.lay-vortex-label {
+  font-size: 11px;
+}
+.iface-sheet {
+  max-height: 92vh;
+}
+.iface-layout-circle {
+  width: 76px;
+  height: 76px;
+}
