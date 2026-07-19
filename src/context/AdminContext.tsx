@@ -45,7 +45,11 @@ import {
   upsertVault,
   type VaultLicense,
 } from '../lib/storage';
-import { firebaseFetchImage, firebaseSaveImage } from '../lib/firebaseDb';
+import {
+  firebaseFetchImage,
+  firebaseSaveImage,
+  firebaseUploadDataUrl,
+} from '../lib/firebaseDb';
 
 export type AdminRole = 'super' | 'admin' | 'pending';
 
@@ -252,7 +256,9 @@ async function syncPortalBrandingToClients(
           bot: {
             ...bot,
             licenseKey: key || lic.key,
-            imageUrl: imageRef || String(bot.imageUrl || ''),
+            // Owner's current image is authoritative — empty clears stale
+            // pictures so one mentor's photo can never stick to another's clients
+            imageUrl: imageRef,
             displayName: lic.eaName || String(bot.displayName || ''),
             name: String(lic.eaName || bot.name || '')
               .replace(/\s+/g, '')
@@ -1800,9 +1806,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               if (item.url.startsWith('blob:')) continue;
               if (item.url.startsWith('data:')) {
                 const mediaKeyId = `${adminId}-${item.slot}`;
-                await firebaseSaveImage(mediaKeyId, item.url);
-                saveEaImage(mediaKeyId, item.url);
-                nextMedia.push({ ...item, url: item.url });
+                // Firebase Storage first (same path per slot → replaces old
+                // file); store only the download URL. RTDB is the fallback.
+                const hosted = await firebaseUploadDataUrl(
+                  `media/${mediaKeyId}`,
+                  item.url,
+                );
+                if (hosted) {
+                  saveEaImage(mediaKeyId, hosted);
+                  nextMedia.push({ ...item, url: hosted });
+                } else {
+                  await firebaseSaveImage(mediaKeyId, item.url);
+                  saveEaImage(mediaKeyId, item.url);
+                  nextMedia.push({ ...item, url: item.url });
+                }
               } else {
                 nextMedia.push(item);
               }

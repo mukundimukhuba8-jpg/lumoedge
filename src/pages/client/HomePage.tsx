@@ -143,8 +143,16 @@ export function HomePage() {
       });
     };
     sync();
-    const id = window.setInterval(sync, 5000);
-    return () => window.clearInterval(id);
+    // Real-time: refresh instantly when any mentor portal pushes an update
+    let unwatch = () => {};
+    void import('../../lib/firebaseDb').then(({ firebaseWatchUpdates }) => {
+      unwatch = firebaseWatchUpdates(sync);
+    });
+    const id = window.setInterval(sync, 15000);
+    return () => {
+      window.clearInterval(id);
+      unwatch();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email, bot.licenseKey]);
 
