@@ -344,7 +344,7 @@ export function HomePage() {
                   background: 'linear-gradient(transparent, rgba(10,10,10,0.95))',
                 }}
               >
-                <div style={{ color: 'var(--electric)', fontFamily: 'var(--font-body)', fontSize: 24, fontWeight: 700 }}>
+                <div style={{ color: 'var(--electric)', fontFamily: 'var(--font-body)', fontSize: 17, fontWeight: 700 }}>
                   {eaTitle}
                 </div>
               </div>
@@ -549,7 +549,7 @@ export function HomePage() {
               style={{
                 color: 'var(--electric)',
                 fontWeight: 700,
-                fontSize: 22,
+                fontSize: 16,
                 marginBottom: 8,
               }}
             >

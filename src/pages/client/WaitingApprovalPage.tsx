@@ -32,7 +32,7 @@ export function WaitingApprovalPage() {
 
   return (
     <div className="page" style={{ textAlign: 'center', paddingTop: 64 }}>
-      <h1 className="title-blue" style={{ fontSize: 28 }}>
+      <h1 className="title-blue" style={{ fontSize: 18 }}>
         Waiting for approval
       </h1>
       <p className="muted" style={{ marginTop: 12, lineHeight: 1.5 }}>

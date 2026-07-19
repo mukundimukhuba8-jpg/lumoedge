@@ -64,7 +64,7 @@ export function ActivateLicensePage() {
       >
         <KeyRound color="#3b82f6" />
       </div>
-      <h1 className="title-blue" style={{ fontSize: 26, marginBottom: 10 }}>
+      <h1 className="title-blue" style={{ fontSize: 18, marginBottom: 8 }}>
         Activate your license
       </h1>
       <p className="muted" style={{ marginBottom: 24 }}>

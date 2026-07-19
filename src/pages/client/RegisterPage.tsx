@@ -67,7 +67,7 @@ export function RegisterPage() {
           style={{ borderRadius: 22, display: 'block' }}
         />
       </button>
-      <h1 className="title-blue" style={{ fontSize: 34, margin: '0 0 8px' }}>
+      <h1 className="title-blue" style={{ fontSize: 22, margin: '0 0 6px' }}>
         Lumo Edge
       </h1>
       <p className="muted" style={{ marginBottom: 28 }}>

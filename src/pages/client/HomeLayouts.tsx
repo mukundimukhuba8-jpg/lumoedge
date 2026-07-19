@@ -40,7 +40,7 @@ function bgStyle(eaImage: string, accentRgb: string) {
     `,
     backgroundSize: 'cover',
     backgroundPosition: 'center top',
-    padding: '28px 14px 0',
+    padding: '16px 12px 0',
     display: 'flex',
     flexDirection: 'column' as const,
     color: 'var(--text)',
