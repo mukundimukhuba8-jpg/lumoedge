@@ -1,14 +1,10 @@
 /**
- * Client for MT5API RESTFul — Swagger: https://66.23.225.158/swagger/index.html
- * Brokers connect DIRECTLY to the swagger host from the user's device
- * (that is how it worked before); the /api/mt5 server proxy is the backup.
+ * Client for the brokers API (MT5API RESTFul swagger host).
+ * All broker operations — search, connect, account info, trades —
+ * talk straight to this API from the user's device.
  */
 
-const DIRECT_BASE = 'https://66.23.225.158';
-const PROXY_BASE = '/api/mt5';
-
-/** Remember which base worked so later calls are fast */
-let preferredBase: string | null = null;
+const BROKER_API_BASE = 'https://66.23.225.158';
 
 export type Mt5ServerResult = {
   name: string;
@@ -60,15 +56,11 @@ export type Mt5OpenedOrder = {
   [key: string]: unknown;
 };
 
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit | undefined,
-  timeoutMs: number,
-): Promise<Response> {
+async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
   const ac = new AbortController();
-  const timer = window.setTimeout(() => ac.abort(), timeoutMs);
+  const timer = window.setTimeout(() => ac.abort(), 15_000);
   try {
-    return await fetch(url, {
+    return await fetch(`${BROKER_API_BASE}${path}`, {
       ...init,
       signal: init?.signal ?? ac.signal,
       headers: {
@@ -76,45 +68,17 @@ async function fetchWithTimeout(
         ...(init?.headers || {}),
       },
     });
+  } catch (err) {
+    throw new Error(
+      err instanceof Error && /certificate|Failed to fetch|network|abort/i.test(err.message)
+        ? 'Cannot reach the broker server. Check your connection and try again.'
+        : err instanceof Error
+          ? err.message
+          : 'Broker server unreachable',
+    );
   } finally {
     window.clearTimeout(timer);
   }
-}
-
-/** 502 from our proxy means the bridge blocked the datacenter IP */
-function isBridgeBlocked(res: Response): boolean {
-  return res.status === 502 || res.status === 504;
-}
-
-async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
-  const bases = preferredBase
-    ? [preferredBase, ...[DIRECT_BASE, PROXY_BASE].filter((b) => b !== preferredBase)]
-    : [DIRECT_BASE, PROXY_BASE];
-  let lastError: unknown = null;
-  for (const base of bases) {
-    try {
-      const res = await fetchWithTimeout(
-        `${base}${path}`,
-        init,
-        base === PROXY_BASE ? 12_000 : 10_000,
-      );
-      if (base === PROXY_BASE && isBridgeBlocked(res)) {
-        lastError = new Error('MT5 bridge unreachable from server');
-        continue; // try direct browser connection
-      }
-      preferredBase = base;
-      return res;
-    } catch (err) {
-      lastError = err;
-    }
-  }
-  throw new Error(
-    lastError instanceof Error && /certificate|Failed to fetch|network|abort/i.test(lastError.message)
-      ? 'Cannot reach the broker server. Check your connection and try again.'
-      : lastError instanceof Error
-        ? lastError.message
-        : 'Broker server unreachable',
-  );
 }
 
 async function readBody(res: Response): Promise<unknown> {
