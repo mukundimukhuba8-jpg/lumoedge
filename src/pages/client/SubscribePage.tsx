@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, CreditCard, ExternalLink } from 'lucide-react';
+import { CheckCircle2, CreditCard } from 'lucide-react';
+import { SubscriptionPaymentInfo } from '../../components/SubscriptionPaymentInfo';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
 
@@ -8,7 +9,6 @@ export function SubscribePage() {
   const { user, accessStatus, markPaid, setAccessStatus } = useApp();
   const { getClientByEmail } = useAdmin();
   const navigate = useNavigate();
-  const [pendingPay, setPendingPay] = useState(false);
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
@@ -55,21 +55,13 @@ export function SubscribePage() {
       <h1 className="title-blue" style={{ fontSize: 18, marginBottom: 8 }}>
         Complete your subscription payment
       </h1>
-      <p className="muted" style={{ marginBottom: 28 }}>
-        Your account was approved. Complete payment below to continue, then enter
-        your unique license key.
+      <p className="muted" style={{ marginBottom: 8 }}>
+        Your account was approved. Pay into the account below, send proof to{' '}
+        <strong style={{ color: 'var(--electric)' }}>Lumoedge08@gmail.com</strong>, then
+        continue to enter your license key.
       </p>
 
-      <button
-        className="btn btn-blue"
-        type="button"
-        onClick={() => {
-          setPendingPay(true);
-          window.open('https://buy.stripe.com/test_unlimited_bull', '_blank');
-        }}
-      >
-        <ExternalLink size={18} /> Pay Now
-      </button>
+      <SubscriptionPaymentInfo />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '22px 0' }}>
         <div style={{ flex: 1, height: 1, background: '#333' }} />
@@ -81,31 +73,10 @@ export function SubscribePage() {
         className="btn btn-ghost"
         type="button"
         disabled={checking}
-        onClick={async () => {
-          if (!pendingPay) {
-            setPendingPay(true);
-            return;
-          }
-          await unlockPaid();
-        }}
+        onClick={() => void unlockPaid()}
       >
         <CheckCircle2 size={18} /> I've Paid — Continue
       </button>
-
-      {pendingPay ? (
-        <div
-          className="glow-card"
-          style={{
-            marginTop: 20,
-            borderColor: 'rgba(245,158,11,0.45)',
-            background: 'rgba(245,158,11,0.12)',
-            color: '#f59e0b',
-            fontWeight: 600,
-          }}
-        >
-          Confirm payment, then continue to activate with your admin license key.
-        </div>
-      ) : null}
     </div>
   );
 }

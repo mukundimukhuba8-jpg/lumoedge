@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { SubscriptionPaymentInfo } from '../../components/SubscriptionPaymentInfo';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
 
@@ -50,10 +51,7 @@ export function WaitingApprovalPage() {
           Status: {(client?.status ?? 'pending').toUpperCase()}
         </div>
       </div>
-      <p className="muted" style={{ marginTop: 20 }}>
-        After approval you’ll complete your subscription payment, then enter a unique
-        license key from your admin.
-      </p>
+      <SubscriptionPaymentInfo />
       <button
         type="button"
         className="btn btn-ghost"
