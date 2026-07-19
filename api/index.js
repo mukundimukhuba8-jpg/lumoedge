@@ -790,8 +790,9 @@ export default async function handler(req, res) {
 
     // Proxy → MT5API RESTFul (broker search, ConnectEx, account, trading)
     if (pathname.startsWith('/api/mt5')) {
+      // Swagger UI: https://66.23.225.158/swagger/index.html — API root is the host only
       const MT5_API_BASE = (
-        process.env.MT5_API_BASE || 'http://66.23.225.158'
+        process.env.MT5_API_BASE || 'https://66.23.225.158'
       ).replace(/\/$/, '');
       const override = String(url.searchParams.get('_mt5') || '').trim();
       const targetPath = override

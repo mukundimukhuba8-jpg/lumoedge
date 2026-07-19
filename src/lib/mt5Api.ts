@@ -1,4 +1,4 @@
-/** Client for MT5API RESTFul (proxied via /api/mt5 → http://66.23.225.158) */
+/** Client for MT5API RESTFul (proxied via /api/mt5 → https://66.23.225.158) */
 
 const BASE = '/api/mt5';
 
