@@ -866,6 +866,80 @@ export default async function handler(req, res) {
       return;
     }
 
+    if (pathname === '/api/auth/admins' && req.method === 'GET') {
+      const { db } = await loadDb();
+      send(res, 200, db.auth?.admins || []);
+      return;
+    }
+
+    if (pathname === '/api/auth/register' && req.method === 'POST') {
+      const body = await readBody(req);
+      const email = String(body.email || '')
+        .trim()
+        .toLowerCase();
+      const fullName = String(body.fullName || '').trim();
+      const password = String(body.password || '');
+      if (!email || !password || !fullName) {
+        send(res, 400, { error: 'email, password, fullName required' });
+        return;
+      }
+      if (email === 'mukundimukhuba8@gmail.com') {
+        send(res, 403, { error: 'This email is reserved for Super Admin.' });
+        return;
+      }
+      const { db, sha } = await loadDb();
+      const admins = db.auth?.admins || [];
+      const existing = admins.find((a) => String(a.email || '').toLowerCase() === email);
+      if (existing) {
+        send(res, 200, existing);
+        return;
+      }
+      const entry = {
+        id: `LM-${Math.floor(100000 + Math.random() * 900000)}`,
+        email,
+        fullName,
+        password,
+        role: 'pending',
+        mentorName: String(body.mentorName || '').trim(),
+        eaName: String(body.eaName || '').trim(),
+        phone: String(body.phone || '').trim(),
+        mainText: String(body.mainText || '').trim(),
+      };
+      const nameParts = fullName.split(/\s+/).filter(Boolean);
+      const workspace = {
+        eas: [],
+        licenses: [],
+        clientRequests: [],
+        mt5: {},
+        profile: {
+          firstName: nameParts[0] || '',
+          lastName: nameParts.slice(1).join(' '),
+          email,
+          phone: entry.phone,
+          mentorName: entry.mentorName,
+          mentorId: entry.id,
+          eaDisplayName: entry.eaName,
+          mainText: entry.mainText,
+          eaImage: '',
+          customMedia: [],
+        },
+        orders: [],
+        revokedKeys: [],
+      };
+      db.auth = db.auth || { admins: [], admin: null };
+      db.auth.admins = mergeAdmins(admins, [entry]);
+      db.store = db.store || { workspaces: {} };
+      db.store.workspaces = db.store.workspaces || {};
+      db.store.workspaces[entry.id] = workspace;
+      const saved = await saveDb(db, sha);
+      const created =
+        (saved.db.auth?.admins || []).find(
+          (a) => String(a.email || '').toLowerCase() === email,
+        ) || entry;
+      send(res, 201, created);
+      return;
+    }
+
     if (pathname === '/api/clients' && req.method === 'GET') {
       const { db } = await loadDb();
       send(res, 200, db.clients || []);

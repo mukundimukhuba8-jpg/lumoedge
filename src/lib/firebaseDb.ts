@@ -401,6 +401,87 @@ export async function firebaseFetchClients(): Promise<RemoteDb['clients'] | null
   return db?.clients ?? null;
 }
 
+export async function firebaseFetchAdmins(): Promise<
+  RemoteDb['auth']['admins'] | null
+> {
+  if (!isFirebaseConfigured()) return null;
+  try {
+    const auth = await getPath<RemoteDb['auth']>(`${ROOT}/auth`);
+    return auth?.admins ?? [];
+  } catch (err) {
+    console.warn('[firebase] fetchAdmins failed', err);
+    return null;
+  }
+}
+
+export async function firebasePostMentorRegistration(input: {
+  email: string;
+  password: string;
+  fullName: string;
+  mentorName?: string;
+  eaName?: string;
+  phone?: string;
+  mainText?: string;
+}): Promise<Record<string, unknown> | null> {
+  if (!isFirebaseConfigured()) return null;
+  return enqueueWrite(async () => {
+    try {
+      const email = input.email.trim().toLowerCase();
+      const curAuth =
+        (await getPath<RemoteDb['auth']>(`${ROOT}/auth`)) || emptyDb().auth;
+      const curAdmins = (curAuth.admins || []) as AdminLike[];
+      const existing = curAdmins.find((a) => String(a.email || '').toLowerCase() === email);
+      if (existing) return existing;
+
+      const fullName = input.fullName.trim();
+      const nameParts = fullName.split(/\s+/).filter(Boolean);
+      const entry = {
+        id: `LM-${Math.floor(100000 + Math.random() * 900000)}`,
+        email,
+        fullName,
+        password: input.password,
+        role: 'pending',
+        mentorName: String(input.mentorName || '').trim(),
+        eaName: String(input.eaName || '').trim(),
+        phone: String(input.phone || '').trim(),
+        mainText: String(input.mainText || '').trim(),
+      };
+      const workspace = {
+        eas: [],
+        licenses: [],
+        clientRequests: [],
+        mt5: {},
+        profile: {
+          firstName: nameParts[0] || '',
+          lastName: nameParts.slice(1).join(' '),
+          email,
+          phone: entry.phone,
+          mentorName: entry.mentorName,
+          mentorId: entry.id,
+          eaDisplayName: entry.eaName,
+          mainText: entry.mainText,
+          eaImage: '',
+          customMedia: [],
+        },
+        orders: [],
+        revokedKeys: [],
+      };
+      await update(ref(getFirebaseDb(), ROOT), {
+        auth: {
+          admins: mergeAdmins(curAdmins, [entry]),
+          admin: null,
+        },
+        [`store/workspaces/${entry.id}`]: workspace,
+        updatedAt: new Date().toISOString(),
+      });
+      return entry;
+    } catch (err) {
+      console.warn('[firebase] postMentorRegistration failed', err);
+      return null;
+    }
+  });
+}
+
 /** Lightweight read of the deleted-subscriptions tombstone list. */
 export async function firebaseFetchDeletedClients(): Promise<string[]> {
   if (!isFirebaseConfigured()) return [];

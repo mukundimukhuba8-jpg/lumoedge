@@ -11,12 +11,15 @@ import {
 import {
   claimLicenseRemote,
   deleteClientRemote,
+  fetchAdmins,
   fetchClients,
   fetchDb,
   patchClient,
   postClient,
+  postMentorRegistration,
   publishLicensesRemote,
   pushDb,
+  pushSession,
   type RemoteDb,
 } from '../lib/remote';
 import {
@@ -975,12 +978,11 @@ function mergeClientRecord(prev: ClientRequest, incoming: ClientRequest): Client
 
 function adminsMatch(a: AdminUser[], b: AdminUser[]) {
   if (a.length !== b.length) return false;
-  const byId = new Map(b.map((x) => [x.id, x]));
+  const byEmail = new Map(b.map((x) => [x.email.toLowerCase(), x]));
   return a.every((x) => {
-    const y = byId.get(x.id);
+    const y = byEmail.get(x.email.toLowerCase());
     return (
       y &&
-      y.email.toLowerCase() === x.email.toLowerCase() &&
       y.role === x.role &&
       y.fullName === x.fullName
     );
@@ -1003,7 +1005,9 @@ function applyRemoteAdmins(
   }
   let admin = prev.admin;
   if (admin && admin.role !== 'super') {
-    const remote = admins.find((a) => a.id === admin!.id);
+    const remote = admins.find(
+      (a) => a.email.toLowerCase() === admin!.email.toLowerCase(),
+    );
     if (!remote || remote.role !== 'admin') admin = null;
   }
   return { portalOpen: prev.portalOpen, admin, admins };
@@ -1174,9 +1178,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (booting) return;
     const tick = async () => {
-      const db = await fetchDb();
-      if (!Array.isArray(db?.auth?.admins)) return;
-      const remoteAdmins = db.auth!.admins as AdminUser[];
+      const remoteAdmins = (await fetchAdmins()) as AdminUser[] | null;
+      if (!remoteAdmins) return;
       setAuth((prev) => {
         const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
         if (adminsMatch(prev.admins, nextAuth.admins)) return prev;
@@ -1492,27 +1495,33 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         if (email === SUPER_ADMIN.email.toLowerCase()) {
           return 'This email is reserved for Super Admin.';
         }
-        const db = await fetchDb();
-        const remoteAdmins = (db?.auth?.admins || []) as AdminUser[];
-        const knownEmails = new Set(
-          [...auth.admins, ...remoteAdmins].map((a) => a.email.toLowerCase()),
-        );
-        if (knownEmails.has(email)) {
+        if (auth.admins.some((a) => a.email.toLowerCase() === email)) {
           return 'An admin with this email already registered.';
         }
-        const entry: AdminUser = {
-          ...form,
+        const serverEntry = await postMentorRegistration({
           email,
-          id: `LM-${Math.floor(100000 + Math.random() * 900000)}`,
+          password: form.password,
+          fullName: form.fullName.trim(),
+          mentorName: form.mentorName,
+          eaName: form.eaName,
+          phone: form.phone,
+          mainText: form.mainText,
+        });
+        if (!serverEntry) {
+          return 'Could not save registration. Check your connection and try again.';
+        }
+        const entry: AdminUser = {
+          ...(serverEntry as AdminUser),
+          email,
           role: 'pending',
         };
         const workspace = createEmptyWorkspace(entry);
-        const nextAdmins = [...auth.admins, entry];
+        const nextAdmins = mergeAdmins(auth.admins, [entry]);
         const nextStore = {
           ...store,
           workspaces: {
             ...store.workspaces,
-            [entry.id]: workspace,
+            [entry.id]: store.workspaces[entry.id] || workspace,
           },
         };
         const nextAuth = { ...auth, admins: nextAdmins };
@@ -1520,10 +1529,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         saveJSON(STORE_KEY, nextStore);
         setAuth(nextAuth);
         saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
-        await pushDb({
-          auth: { admins: nextAdmins, admin: null },
-          store: { workspaces: { [entry.id]: workspace } },
-        }).catch(() => undefined);
         return null;
       },
       logout: () => saveAuth({ ...auth, admin: null, portalOpen: false }),
@@ -1668,19 +1673,37 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const hit = clients.find((c) => c.id === id);
         if (!hit) return;
         const email = hit.email.toLowerCase();
-        const approved: ClientRequest = { ...hit, status: 'approved' };
+        const claimedAt = hit.paymentClaimedAt || new Date().toISOString();
+        const approved: ClientRequest = {
+          ...hit,
+          status: 'approved',
+          paymentClaimed: true,
+          paymentClaimedAt: claimedAt,
+        };
         setClients((prev) => mergeClientLists(prev, [approved]));
         const sid = SUPER_ADMIN.user.id;
         patchWorkspace(sid, (ws) => ({
           ...ws,
           clientRequests: mergeClientLists(ws.clientRequests, [approved]),
         }));
-        void patchClient(email, { status: 'approved' })
-          .then((server) => {
-            if (!server) return;
-            setClients((prev) =>
-              mergeClientLists(prev, [{ ...(server as ClientRequest), status: 'approved' }]),
-            );
+        void patchClient(email, {
+          status: 'approved',
+          paymentClaimed: true,
+          paymentClaimedAt: claimedAt,
+        })
+          .then(async (server) => {
+            const merged = server
+              ? ({ ...(server as ClientRequest), status: 'approved' } as ClientRequest)
+              : approved;
+            setClients((prev) => mergeClientLists(prev, [merged]));
+            const db = await fetchDb();
+            const session = db?.sessions?.[email] as Record<string, unknown> | undefined;
+            if (session) {
+              await pushSession(email, {
+                ...session,
+                accessStatus: 'approved',
+              });
+            }
           })
           .catch(() => undefined);
       },
