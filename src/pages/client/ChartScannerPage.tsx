@@ -84,6 +84,7 @@ export function ChartScannerPage() {
   const [tradeStatus, setTradeStatus] = useState('');
   const [aiLive, setAiLive] = useState<boolean | null>(null);
   const [editSymbol, setEditSymbol] = useState('');
+  const [scanPreview, setScanPreview] = useState('');
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const uploadRef = useRef<HTMLInputElement | null>(null);
   const animRef = useRef<number | null>(null);
@@ -241,6 +242,8 @@ export function ChartScannerPage() {
 
     try {
       const dataUrl = await fileToScanDataUrl(file);
+      // Show the uploaded chart inside the radar while it scans
+      setScanPreview(dataUrl);
       const result = await runChartScan(dataUrl);
       if (!result.ok) {
         throw new Error(result.error || 'Scan failed');
@@ -285,6 +288,8 @@ export function ChartScannerPage() {
       setStatus(e instanceof Error ? e.message : 'Scan failed');
       alert(e instanceof Error ? e.message : 'Scan failed');
     } finally {
+      // Radar returns to its normal circle after the scan
+      setScanPreview('');
       if (cameraRef.current) cameraRef.current.value = '';
       if (uploadRef.current) uploadRef.current.value = '';
     }
@@ -409,7 +414,19 @@ export function ChartScannerPage() {
         ) : null}
 
         <div className="scan-stage">
-          <div className={`scan-radar${scanning ? ' active' : ''}`} aria-hidden>
+          <div
+            className={`scan-radar${scanning ? ' active' : ''}${
+              scanning && scanPreview ? ' has-image' : ''
+            }`}
+            aria-hidden
+          >
+            {scanning && scanPreview ? (
+              <>
+                <img className="scan-radar-img" src={scanPreview} alt="" />
+                <span className="scan-radar-grid" />
+                <span className="scan-beam" />
+              </>
+            ) : null}
             <span className="scan-orbit scan-orbit-a" />
             <span className="scan-orbit scan-orbit-b" />
             <span className="scan-orbit scan-orbit-c" />
