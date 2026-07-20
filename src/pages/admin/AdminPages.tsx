@@ -839,7 +839,7 @@ export function ProfilePage() {
 }
 
 export function ApproveAdminsPage() {
-  const { admins, approveAdmin, deleteAdmin } = useAdmin();
+  const { admins, approveAdmin, approveAdmins, deleteAdmin } = useAdmin();
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
   const match = (a: { fullName: string; email: string; id: string; eaName?: string }) => {
@@ -879,7 +879,18 @@ export function ApproveAdminsPage() {
       </div>
 
       <div className="glow-card">
-        <h3 style={{ marginTop: 0 }}>Pending</h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <h3 style={{ marginTop: 0, marginBottom: 0 }}>Pending</h3>
+          {pending.length > 1 ? (
+            <button
+              className="btn btn-blue"
+              type="button"
+              onClick={() => approveAdmins(pending.map((a) => a.id))}
+            >
+              Approve all ({pending.length})
+            </button>
+          ) : null}
+        </div>
         {pending.length === 0 ? (
           <p className="muted">No pending admin requests.</p>
         ) : (

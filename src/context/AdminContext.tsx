@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -635,6 +636,7 @@ type Ctx = {
   registerAdmin: (data: Omit<AdminUser, 'id' | 'role'> & { password: string }) => string | null;
   logout: () => void;
   approveAdmin: (id: string) => void;
+  approveAdmins: (ids: string[]) => void;
   deleteAdmin: (id: string) => void;
   clientRequests: ClientRequest[];
   submitClientRegistration: (input: {
@@ -898,6 +900,64 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     void pushDb({ store: { workspaces: next.workspaces } });
   }, []);
 
+  /** Batch rapid approvals into one state update + one Firebase write. */
+  const approveQueueRef = useRef(new Set<string>());
+  const approveFlushScheduledRef = useRef(false);
+
+  const flushApproveQueue = useCallback(() => {
+    approveFlushScheduledRef.current = false;
+    const ids = [...approveQueueRef.current];
+    approveQueueRef.current.clear();
+    if (!ids.length) return;
+    const idSet = new Set(ids);
+
+    setAuth((prev) => {
+      const mentorsToSeed: AdminUser[] = [];
+      const nextAdmins = prev.admins.map((a) => {
+        if (idSet.has(a.id) && a.role !== 'admin') {
+          mentorsToSeed.push(a);
+          return { ...a, role: 'admin' as const };
+        }
+        return a;
+      });
+      const next = { ...prev, admins: nextAdmins };
+      saveJSON(AUTH_KEY, { ...next, portalOpen: false });
+      void pushDb({ auth: { admins: nextAdmins, admin: null } }).catch(() => undefined);
+
+      if (mentorsToSeed.length) {
+        setStore((storePrev) => {
+          const workspaces = { ...storePrev.workspaces };
+          const patch: Record<string, AdminWorkspace> = {};
+          let changed = false;
+          for (const m of mentorsToSeed) {
+            if (!workspaces[m.id]) {
+              workspaces[m.id] = createEmptyWorkspace(m);
+              patch[m.id] = workspaces[m.id];
+              changed = true;
+            }
+          }
+          if (!changed) return storePrev;
+          const nextStore = { ...storePrev, workspaces };
+          saveJSON(STORE_KEY, nextStore);
+          void pushDb({ store: { workspaces: patch } }).catch(() => undefined);
+          return nextStore;
+        });
+      }
+
+      return next;
+    });
+  }, []);
+
+  const queueApproveAdmins = useCallback(
+    (ids: string[]) => {
+      for (const id of ids) approveQueueRef.current.add(id);
+      if (approveFlushScheduledRef.current) return;
+      approveFlushScheduledRef.current = true;
+      queueMicrotask(() => flushApproveQueue());
+    },
+    [flushApproveQueue],
+  );
+
   const patchWorkspace = useCallback(
     (adminId: string, updater: (ws: AdminWorkspace) => AdminWorkspace, seed?: AdminUser) => {
       setStore((prev) => {
@@ -1029,39 +1089,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         return null;
       },
       logout: () => saveAuth({ ...auth, admin: null, portalOpen: false }),
-      approveAdmin: (id) => {
-        let mentor: AdminUser | undefined;
-        setAuth((prev) => {
-          mentor = prev.admins.find((a) => a.id === id);
-          if (!mentor || mentor.role === 'admin') return prev;
-          const nextAdmins = prev.admins.map((a) =>
-            a.id === id ? { ...a, role: 'admin' as const } : a,
-          );
-          const next = { ...prev, admins: nextAdmins };
-          saveJSON(AUTH_KEY, { ...next, portalOpen: false });
-          void pushDb({ auth: { admins: nextAdmins, admin: null } }).catch(
-            () => undefined,
-          );
-          return next;
-        });
-        if (mentor) {
-          setStore((prev) => {
-            if (prev.workspaces[id]) return prev;
-            const next = {
-              ...prev,
-              workspaces: {
-                ...prev.workspaces,
-                [id]: createEmptyWorkspace(mentor!),
-              },
-            };
-            saveJSON(STORE_KEY, next);
-            void pushDb({ store: { workspaces: { [id]: next.workspaces[id] } } }).catch(
-              () => undefined,
-            );
-            return next;
-          });
-        }
-      },
+      approveAdmin: (id) => queueApproveAdmins([id]),
+      approveAdmins: (ids) => queueApproveAdmins(ids),
       deleteAdmin: (id) => {
         if (id === SUPER_ADMIN.user.id) return;
         const nextAdmins = auth.admins.filter((a) => a.id !== id);
@@ -2060,7 +2089,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           : workspace.licenses.filter((l) => l.status === 'assigned').length,
       },
     };
-  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses]);
+  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, queueApproveAdmins]);
 
   if (booting) {
     return <WelcomeSplash />;
