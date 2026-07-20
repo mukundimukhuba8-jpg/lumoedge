@@ -69,6 +69,43 @@ function normalizeDb(raw: unknown): RemoteDb {
   };
 }
 
+type AdminLike = { id?: string; role?: string; [key: string]: unknown };
+
+function adminRoleRank(role: string | undefined): number {
+  if (role === 'super') return 3;
+  if (role === 'admin') return 2;
+  return 1;
+}
+
+/** Merge mentor registry — approved role always beats pending (never revert approvals). */
+export function mergeAdmins<T extends AdminLike>(
+  current: T[],
+  incoming: T[],
+): T[] {
+  const map = new Map<string, T>();
+  for (const item of [...(current || []), ...(incoming || [])]) {
+    const id = String(item.id || '');
+    if (!id) continue;
+    const prev = map.get(id);
+    if (!prev) {
+      map.set(id, item);
+      continue;
+    }
+    const merged = { ...prev, ...item } as T;
+    const prevRank = adminRoleRank(String(prev.role));
+    const itemRank = adminRoleRank(String(item.role));
+    merged.role = (prevRank >= itemRank ? prev.role : item.role) as T['role'];
+    for (const [k, v] of Object.entries(prev)) {
+      const nextVal = (item as Record<string, unknown>)[k];
+      if ((nextVal === '' || nextVal == null) && v !== '' && v != null) {
+        (merged as Record<string, unknown>)[k] = v;
+      }
+    }
+    map.set(id, merged);
+  }
+  return Array.from(map.values());
+}
+
 /** Deep-merge objects; never wipe EAs / licenses / vault entries. */
 function mergeById<T extends Record<string, unknown>>(
   current: T[],
@@ -215,11 +252,13 @@ export async function firebasePushDb(
       if (partial.auth) {
         const curAuth =
           (await getPath<RemoteDb['auth']>(`${ROOT}/auth`)) || emptyDb().auth;
+        const curAdmins = (curAuth.admins || []) as AdminLike[];
+        const incoming = Array.isArray(partial.auth.admins)
+          ? (partial.auth.admins as AdminLike[])
+          : [];
         // Never persist a shared logged-in user — login is per-device only
         patch.auth = {
-          admins: Array.isArray(partial.auth.admins)
-            ? partial.auth.admins
-            : curAuth.admins || [],
+          admins: mergeAdmins(curAdmins, incoming),
           admin: null,
         };
       }

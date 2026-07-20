@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -49,6 +50,7 @@ import {
   firebaseFetchImage,
   firebaseSaveImage,
   firebaseUploadDataUrl,
+  mergeAdmins,
 } from '../lib/firebaseDb';
 import { WelcomeSplash } from '../components/WelcomeSplash';
 
@@ -634,6 +636,7 @@ type Ctx = {
   registerAdmin: (data: Omit<AdminUser, 'id' | 'role'> & { password: string }) => string | null;
   logout: () => void;
   approveAdmin: (id: string) => void;
+  approveAdmins: (ids: string[]) => void;
   deleteAdmin: (id: string) => void;
   clientRequests: ClientRequest[];
   submitClientRegistration: (input: {
@@ -765,7 +768,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           // Never take remote "admin" (logged-in user) — that is per-device only.
           // Syncing it made Super Admin and mentors overwrite each other.
           setAuth((prev) => {
-            const admins = db.auth!.admins as AdminUser[];
+            const remoteAdmins = db.auth!.admins as AdminUser[];
+            // Merge — never let a stale remote "pending" wipe a local approval
+            const admins = mergeAdmins(prev.admins, remoteAdmins);
+            const healed = admins.some((a) => {
+              const remote = remoteAdmins.find((r) => r.id === a.id);
+              return remote && a.role === 'admin' && remote.role === 'pending';
+            });
+            if (healed) {
+              void pushDb({ auth: { admins, admin: null } }).catch(() => undefined);
+            }
             // If this device's logged-in mentor was un-approved or deleted
             // remotely, kick them out of the portal immediately
             let admin = prev.admin;
@@ -887,6 +899,64 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     // Push each workspace path-scoped (merge on server) — avoids full-tree races
     void pushDb({ store: { workspaces: next.workspaces } });
   }, []);
+
+  /** Batch rapid approvals into one state update + one Firebase write. */
+  const approveQueueRef = useRef(new Set<string>());
+  const approveFlushScheduledRef = useRef(false);
+
+  const flushApproveQueue = useCallback(() => {
+    approveFlushScheduledRef.current = false;
+    const ids = [...approveQueueRef.current];
+    approveQueueRef.current.clear();
+    if (!ids.length) return;
+    const idSet = new Set(ids);
+
+    setAuth((prev) => {
+      const mentorsToSeed: AdminUser[] = [];
+      const nextAdmins = prev.admins.map((a) => {
+        if (idSet.has(a.id) && a.role !== 'admin') {
+          mentorsToSeed.push(a);
+          return { ...a, role: 'admin' as const };
+        }
+        return a;
+      });
+      const next = { ...prev, admins: nextAdmins };
+      saveJSON(AUTH_KEY, { ...next, portalOpen: false });
+      void pushDb({ auth: { admins: nextAdmins, admin: null } }).catch(() => undefined);
+
+      if (mentorsToSeed.length) {
+        setStore((storePrev) => {
+          const workspaces = { ...storePrev.workspaces };
+          const patch: Record<string, AdminWorkspace> = {};
+          let changed = false;
+          for (const m of mentorsToSeed) {
+            if (!workspaces[m.id]) {
+              workspaces[m.id] = createEmptyWorkspace(m);
+              patch[m.id] = workspaces[m.id];
+              changed = true;
+            }
+          }
+          if (!changed) return storePrev;
+          const nextStore = { ...storePrev, workspaces };
+          saveJSON(STORE_KEY, nextStore);
+          void pushDb({ store: { workspaces: patch } }).catch(() => undefined);
+          return nextStore;
+        });
+      }
+
+      return next;
+    });
+  }, []);
+
+  const queueApproveAdmins = useCallback(
+    (ids: string[]) => {
+      for (const id of ids) approveQueueRef.current.add(id);
+      if (approveFlushScheduledRef.current) return;
+      approveFlushScheduledRef.current = true;
+      queueMicrotask(() => flushApproveQueue());
+    },
+    [flushApproveQueue],
+  );
 
   const patchWorkspace = useCallback(
     (adminId: string, updater: (ws: AdminWorkspace) => AdminWorkspace, seed?: AdminUser) => {
@@ -1019,22 +1089,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         return null;
       },
       logout: () => saveAuth({ ...auth, admin: null, portalOpen: false }),
-      approveAdmin: (id) => {
-        const mentor = auth.admins.find((a) => a.id === id);
-        if (mentor && !store.workspaces[id]) {
-          saveStore({
-            ...store,
-            workspaces: {
-              ...store.workspaces,
-              [id]: createEmptyWorkspace(mentor),
-            },
-          });
-        }
-        saveAuth({
-          ...auth,
-          admins: auth.admins.map((a) => (a.id === id ? { ...a, role: 'admin' } : a)),
-        });
-      },
+      approveAdmin: (id) => queueApproveAdmins([id]),
+      approveAdmins: (ids) => queueApproveAdmins(ids),
       deleteAdmin: (id) => {
         if (id === SUPER_ADMIN.user.id) return;
         const nextAdmins = auth.admins.filter((a) => a.id !== id);
@@ -2033,7 +2089,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           : workspace.licenses.filter((l) => l.status === 'assigned').length,
       },
     };
-  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses]);
+  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, queueApproveAdmins]);
 
   if (booting) {
     return <WelcomeSplash />;
