@@ -5,6 +5,13 @@
  * app server if the device route is blocked.
  */
 
+import {
+  BROKER_TERMINALS,
+  getTerminalUrl,
+  searchLocalBrokers,
+  type BrokerTerminalEntry,
+} from './brokerTerminals';
+
 const BROKER_API_BASE = 'https://66.23.225.158';
 const PROXY_BASE = '/api/mt5';
 
@@ -16,6 +23,8 @@ export type Mt5ServerResult = {
   logo_url?: string;
   site?: string;
   access?: string[];
+  /** Web terminal URL when broker supports browser MT5 */
+  terminalUrl?: string;
 };
 
 export type Mt5Company = {
@@ -136,20 +145,77 @@ export async function pingMt5(): Promise<boolean> {
   }
 }
 
-/** Search existing broker companies / MT5 server names (live results only) */
+function localEntriesToCompanies(entries: BrokerTerminalEntry[]): Mt5Company[] {
+  const grouped = new Map<string, Mt5ServerResult[]>();
+  for (const entry of entries) {
+    const list = grouped.get(entry.company) ?? [];
+    list.push({
+      name: entry.server,
+      site: entry.site,
+      terminalUrl: entry.terminalUrl,
+      access: [entry.accountMode],
+    });
+    grouped.set(entry.company, list);
+  }
+  return Array.from(grouped.entries()).map(([company, results]) => ({
+    company,
+    results,
+  }));
+}
+
+/** Attach known web terminal URLs to remote search results */
+function enrichWithTerminals(companies: Mt5Company[]): Mt5Company[] {
+  return companies.map((co) => ({
+    ...co,
+    results: (co.results || []).map((r) => ({
+      ...r,
+      terminalUrl: r.terminalUrl || getTerminalUrl(r.name),
+    })),
+  }));
+}
+
+/** Merge remote API results with local registry (dedupe by server name) */
+function mergeBrokerLists(remote: Mt5Company[], local: Mt5Company[]): Mt5Company[] {
+  const serverNames = new Set(
+    remote.flatMap((co) => (co.results || []).map((r) => r.name.toLowerCase())),
+  );
+  const extraLocal = local
+    .map((co) => ({
+      ...co,
+      results: (co.results || []).filter((r) => !serverNames.has(r.name.toLowerCase())),
+    }))
+    .filter((co) => co.results.length > 0);
+
+  return enrichWithTerminals([...remote, ...extraLocal]);
+}
+
+/** All supported broker terminals (for dropdown when search is empty) */
+export function listKnownBrokers(): Mt5Company[] {
+  return localEntriesToCompanies(BROKER_TERMINALS);
+}
+
+/** Search broker companies — remote API plus local terminal registry fallback */
 export async function searchBrokers(company: string): Promise<Mt5Company[]> {
   const q = company.trim();
   if (q.length < 2) return [];
-  const res = await mt5Fetch(`/Search?company=${encodeURIComponent(q)}`);
-  const data = await readBody(res);
-  if (!res.ok) {
-    throw brokerError(res.status, data, 'Broker search failed');
+  const local = localEntriesToCompanies(searchLocalBrokers(q));
+
+  try {
+    const res = await mt5Fetch(`/Search?company=${encodeURIComponent(q)}`);
+    const data = await readBody(res);
+    if (!res.ok) {
+      return local.length ? local : [];
+    }
+    const remote = Array.isArray(data) ? (data as Mt5Company[]) : [];
+    if (!remote.length) return local;
+    return mergeBrokerLists(remote, local);
+  } catch {
+    return local;
   }
-  return Array.isArray(data) ? (data as Mt5Company[]) : [];
 }
 
 /**
- * Connect using MT5 terminal server name (e.g. RazorMarkets-Live).
+ * Connect using MT5 terminal server name (e.g. razormarkets-live).
  * Returns session token for further /Account* calls.
  */
 export async function connectEx(input: {
