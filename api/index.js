@@ -570,16 +570,17 @@ export default async function handler(req, res) {
         toClaimPayload,
         validateEmailAccess,
       } = await import('./_lib/licenseClaim.mjs');
+      const KEY_ERR = 'Invalid key';
       const body = await readBody(req);
       const email = String(body.email || '').trim().toLowerCase();
       const key = normalizeLicenseKey(String(body.key || ''));
       if (!email || !key) {
-        send(res, 400, { ok: false, error: 'License key and email are required.' });
+        send(res, 400, { ok: false, error: KEY_ERR });
         return;
       }
       const fp = keyFingerprint(key);
       if (!fp || fp.length < 16) {
-        send(res, 400, { ok: false, error: 'Enter a full LUMO-XXXX-XXXX-XXXX key.' });
+        send(res, 400, { ok: false, error: KEY_ERR });
         return;
       }
 
@@ -590,10 +591,7 @@ export default async function handler(req, res) {
       ]);
       const revoked = dbList(revokedRaw);
       if (revoked.some((k) => keysMatch(String(k || ''), key))) {
-        send(res, 403, {
-          ok: false,
-          error: 'This license key was deleted and is no longer valid. Generate a new one.',
-        });
+        send(res, 403, { ok: false, error: KEY_ERR });
         return;
       }
 
@@ -612,17 +610,13 @@ export default async function handler(req, res) {
       }
 
       if (!entry) {
-        send(res, 404, {
-          ok: false,
-          error:
-            'Invalid license key. Copy the new key from Admin → Generate License (deleted keys never work).',
-        });
+        send(res, 404, { ok: false, error: KEY_ERR });
         return;
       }
 
       const emailErr = validateEmailAccess(entry, email, vault, workspaces);
       if (emailErr) {
-        send(res, 403, { ok: false, error: emailErr });
+        send(res, 403, { ok: false, error: KEY_ERR });
         return;
       }
 
@@ -677,7 +671,7 @@ export default async function handler(req, res) {
       const wsOk = writeResults[1];
       if (!vaultOk) {
         console.error('[license:claim] vault write failed', { email, key });
-        send(res, 503, { ok: false, error: 'Could not save activation. Check your connection and try again.' });
+        send(res, 503, { ok: false, error: KEY_ERR });
         return;
       }
 
@@ -696,7 +690,7 @@ export default async function handler(req, res) {
 
       if (!wsOk) {
         console.error('[license:claim] workspace write failed', { email, key, ownerId });
-        send(res, 503, { ok: false, error: 'Could not save activation. Check your connection and try again.' });
+        send(res, 503, { ok: false, error: KEY_ERR });
         return;
       }
 

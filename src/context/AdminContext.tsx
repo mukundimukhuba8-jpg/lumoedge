@@ -58,6 +58,7 @@ import {
 import { WelcomeSplash } from '../components/WelcomeSplash';
 import {
   findLicenseByKey,
+  INVALID_KEY_MESSAGE,
   isClaimableKey,
   prepareAssignedLicense,
   releaseOtherAssignedForEmail,
@@ -1883,14 +1884,19 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         upsertVault(licenseToVaultEntry(record));
         licenseLog('generate', 'saved locally', { key, clientEmail });
 
-        // Cloud sync runs in the background — clients read Firebase, not this browser
-        void pushLicensesToRemote(adminId, nextWs).catch((err) => {
-          licenseError('generate', 'background cloud push failed', {
+        try {
+          await pushLicensesToRemote(adminId, nextWs);
+        } catch (err) {
+          licenseError('generate', 'cloud push failed', {
             error: err instanceof Error ? err.message : String(err),
             key,
             clientEmail,
           });
-        });
+          return {
+            ok: false,
+            error: 'Could not save to cloud. Check connection and tap Generate again.',
+          };
+        }
 
         licenseLog('generate', 'success', { key, clientEmail });
         return { ok: true, license: { ...record, eaImage: displayBytes || eaImage } };
@@ -1972,7 +1978,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const normalizedKey = normalizeLicenseKey(key);
 
         const formatErr = isClaimableKey(key);
-        if (formatErr) return { ok: false, error: formatErr };
+        if (formatErr) return { ok: false, error: INVALID_KEY_MESSAGE };
 
         licenseLog('claim', 'start', { email: normalizedEmail, key: normalizedKey });
 
@@ -2064,7 +2070,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           localHit = resolveLocal();
         }
 
-        if (localHit && !localHit.ok) return localHit;
+        if (localHit && !localHit.ok) {
+          licenseWarn('claim', 'local rejected', { error: localHit.error });
+          return { ok: false, error: INVALID_KEY_MESSAGE };
+        }
 
         // Key already in database — activate instantly, sync assignment in background
         if (localHit?.ok) {
@@ -2086,16 +2095,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
 
         if (server.status && server.status >= 400 && server.status < 500 && !server.retryable) {
-          return { ok: false, error: server.error };
+          licenseWarn('claim', 'server rejected', { error: server.error, status: server.status });
+          return { ok: false, error: INVALID_KEY_MESSAGE };
         }
 
         licenseError('claim', 'failed', { email: normalizedEmail, key: normalizedKey, error: server.error });
-        return {
-          ok: false,
-          error:
-            server.error ||
-            'License key not found yet. Wait a few seconds after admin generates it, then try again.',
-        };
+        return { ok: false, error: INVALID_KEY_MESSAGE };
       },
       resyncLicenses,
       warmLicenseCache,

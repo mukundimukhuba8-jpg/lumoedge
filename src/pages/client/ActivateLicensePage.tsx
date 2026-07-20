@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { KeyRound, Loader2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
-import { isClaimableKey } from '../../lib/licenseClaim';
+import { INVALID_KEY_MESSAGE, isClaimableKey } from '../../lib/licenseClaim';
 import { resolveProfileImage } from '../../lib/mentorMedia';
 import { normalizeLicenseKey } from '../../lib/storage';
 
@@ -45,7 +45,7 @@ export function ActivateLicensePage() {
     if (!user || busy) return;
     const formatErr = isClaimableKey(key);
     if (formatErr) {
-      setError(formatErr);
+      setError(INVALID_KEY_MESSAGE);
       return;
     }
     setBusy(true);
@@ -69,12 +69,8 @@ export function ActivateLicensePage() {
         customMedia: lic.customMedia,
       });
       navigate('/app', { replace: true });
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Activation failed. Check your connection and try again.',
-      );
+    } catch {
+      setError(INVALID_KEY_MESSAGE);
     } finally {
       window.clearTimeout(slowTimer);
       setSlow(false);
@@ -121,7 +117,6 @@ export function ActivateLicensePage() {
         </div>
         {error ? (
           <div className="license-status-banner license-status-error" role="alert">
-            <strong>Activation failed</strong>
             <p>{error}</p>
           </div>
         ) : null}

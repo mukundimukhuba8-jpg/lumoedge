@@ -8,6 +8,9 @@ import {
   type VaultLicense,
 } from './storage';
 
+/** Single client-facing message for any failed activation. */
+export const INVALID_KEY_MESSAGE = 'Invalid key';
+
 export type ClaimLicenseRecord = {
   id: string;
   key: string;
