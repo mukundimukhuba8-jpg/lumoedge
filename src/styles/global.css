@@ -2673,6 +2673,35 @@ a {
   flex-shrink: 0;
 }
 
+/* SL / TP ladder chips on the scan result */
+.scan-sltp {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.scan-sltp-chip {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.scan-sltp-chip.sl {
+  color: #fca5a5;
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.scan-sltp-chip.tp {
+  color: #86efac;
+  border: 1px solid rgba(52, 211, 153, 0.5);
+  background: rgba(52, 211, 153, 0.1);
+}
+
 .scan-direction-big {
   display: inline-flex;
   align-items: center;

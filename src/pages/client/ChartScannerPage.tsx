@@ -19,6 +19,7 @@ import { useApp } from '../../context/AppContext';
 import {
   DAILY_SCAN_LIMIT,
   consumeScan,
+  buildTpLadder,
   fileToScanDataUrl,
   getScansLeft,
   loadScanHistory,
@@ -111,9 +112,14 @@ export function ChartScannerPage() {
     }
     const volume = Math.max(0.01, Number(lotSize) || 0.01);
     const count = Math.max(1, Math.min(20, Math.round(trades) || 1));
-    const operation = item.direction === 'sell' ? 'Sell' : 'Buy';
+    const direction: TradeDirection = item.direction === 'sell' ? 'sell' : 'buy';
+    const operation = direction === 'sell' ? 'Sell' : 'Buy';
     const symbol = (item.symbol || 'XAUUSD').trim();
     const comment = buildTradeComment(eaName);
+    // Same protective stop for all trades; TP laddered by risk:reward
+    const stopLoss = Number(item.stopLoss) || 0;
+    const entry = Number(item.entryPrice) || 0;
+    const tps = buildTpLadder(entry, stopLoss, direction, count);
     setTradeStatus(`Sending ${count}× ${operation} ${symbol} via MT5…`);
 
     const alive = await checkConnect(token).catch(() => false);
@@ -133,6 +139,8 @@ export function ChartScannerPage() {
           volume,
           comment,
           slippage: 10000,
+          stopLoss: stopLoss || undefined,
+          takeProfit: tps[i] || undefined,
         });
         ok += 1;
       } catch (e) {
@@ -144,7 +152,11 @@ export function ChartScannerPage() {
 
     if (ok > 0) {
       setTradeStatus(
-        `Executed ${ok}/${count} ${operation} ${symbol} · comment “${comment}”`,
+        tps.length
+          ? `Executed ${ok}/${count} ${operation} ${symbol} · SL ${stopLoss} · TP ${tps
+              .slice(0, ok)
+              .join(' / ')}`
+          : `Executed ${ok}/${count} ${operation} ${symbol} · no SL/TP (chart scale unreadable)`,
       );
     } else {
       setTradeStatus(lastErr || 'Trade failed on MT5 bridge');
@@ -250,6 +262,8 @@ export function ChartScannerPage() {
         symbol: result.symbol || 'XAUUSD',
         timeframe: result.timeframe,
         direction,
+        entryPrice: result.entryPrice,
+        stopLoss: result.stopLoss,
         summary: result.summary,
         createdAt: new Date().toISOString(),
       };
@@ -503,6 +517,27 @@ export function ChartScannerPage() {
                   {trades} trade{trades === 1 ? '' : 's'} · lot {lotSize}
                   {autoOpen ? ' · auto-open on' : ''}
                 </div>
+                {lastResult.entryPrice && lastResult.stopLoss ? (
+                  <div className="scan-sltp">
+                    <span className="scan-sltp-chip sl">
+                      SL {lastResult.stopLoss}
+                    </span>
+                    {buildTpLadder(
+                      Number(lastResult.entryPrice),
+                      Number(lastResult.stopLoss),
+                      lastResult.direction === 'sell' ? 'sell' : 'buy',
+                      Math.max(1, Math.min(3, trades)),
+                    ).map((tp, i, arr) => (
+                      <span key={`tp-${i}`} className="scan-sltp-chip tp">
+                        TP{arr.length > 1 ? i + 1 : ''} {tp}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+                    SL/TP unavailable — price scale not readable on this image
+                  </div>
+                )}
               </div>
             ) : null}
 
