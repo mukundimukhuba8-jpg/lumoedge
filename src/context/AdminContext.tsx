@@ -863,7 +863,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       portalOpen: auth.portalOpen,
       admin: auth.admin,
       admins: auth.admins,
-      openPortal: () => setAuth((a) => ({ ...a, portalOpen: true })),
+      openPortal: () =>
+        // Entering the portal always asks for email + password — never
+        // auto-resume a saved Super Admin / mentor session from this device
+        setAuth((a) => {
+          const next = { ...a, admin: null, portalOpen: true };
+          saveJSON(AUTH_KEY, { ...next, portalOpen: false });
+          return next;
+        }),
       closePortal: () => setAuth((a) => ({ ...a, portalOpen: false })),
       login: (email, password) => {
         const normalized = email.trim().toLowerCase();
