@@ -58,6 +58,12 @@ const MT5_KEY = 'ub-web/client-mt5-v1';
 
 const ACCOUNT_TYPES = ['Standard Live', 'Raw Spread', 'Demo'];
 
+/**
+ * Broker CONNECT is temporarily disabled (broker API subscription expired).
+ * Search stays available. Flip to false the moment the API is renewed.
+ */
+const CONNECT_DISABLED = true;
+
 const EMPTY: ClientMt5 = {
   broker: '',
   server: '',
@@ -262,6 +268,12 @@ export function MetaTraderPage() {
   };
 
   const connect = async () => {
+    if (CONNECT_DISABLED) {
+      setStatus(
+        'Broker connection is temporarily unavailable — we are upgrading the trading bridge. Search brokers now; connecting will be back shortly.',
+      );
+      return;
+    }
     if (!form.login.trim() || !form.password.trim()) {
       alert('Enter login and password');
       return;
@@ -582,6 +594,20 @@ export function MetaTraderPage() {
                 </div>
               </div>
 
+              {CONNECT_DISABLED ? (
+                <p
+                  style={{
+                    marginTop: 0,
+                    fontSize: 12,
+                    color: '#fbbf24',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Broker connection is temporarily unavailable while we upgrade
+                  the trading bridge. You can still search brokers and servers —
+                  connecting will be re-enabled soon.
+                </p>
+              ) : null}
               {status ? (
                 <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
                   {status}
@@ -592,13 +618,16 @@ export function MetaTraderPage() {
                 type="button"
                 className="mt5-connect"
                 onClick={() => void connect()}
-                disabled={connecting}
+                disabled={connecting || CONNECT_DISABLED}
+                style={CONNECT_DISABLED ? { opacity: 0.45 } : undefined}
               >
                 {connecting ? (
                   <>
                     <Loader2 size={18} className="spin" style={{ marginRight: 8 }} />
                     Connecting…
                   </>
+                ) : CONNECT_DISABLED ? (
+                  'Connect Unavailable'
                 ) : (
                   'Connect Account'
                 )}
