@@ -622,6 +622,15 @@ export default async function handler(req, res) {
         return;
       }
 
+      // Already activated for this account — skip slow re-writes
+      if (
+        entry.status === 'assigned' &&
+        String(entry.assignedEmail || '').toLowerCase() === email
+      ) {
+        send(res, 200, { ok: true, license: toClaimPayload(entry) });
+        return;
+      }
+
       const released = releaseOtherAssignedForEmail(vault, workspaces, email, key);
       let nextVault = released.vault;
       let nextWorkspaces = released.workspaces;

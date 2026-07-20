@@ -63,7 +63,8 @@ export type ClaimLicenseRemoteResult =
   | { ok: false; error: string; retryable?: boolean; status?: number };
 
 const PUBLISH_TIMEOUT_MS = 45_000;
-const CLAIM_TIMEOUT_MS = 15_000;
+const CLAIM_TIMEOUT_MS = 12_000;
+const CLAIM_HARD_CAP_MS = 18_000;
 
 async function fetchJsonWithTimeout(
   url: string,
@@ -115,12 +116,10 @@ export async function publishLicensesRemote(input: {
   }
 }
 
-export async function claimLicenseRemote(
+async function claimLicenseRemoteOnce(
   key: string,
   email: string,
-  attempt = 1,
 ): Promise<ClaimLicenseRemoteResult> {
-  const maxAttempts = 2;
   try {
     const { res, data } = await fetchJsonWithTimeout(
       '/api/licenses/claim',
@@ -138,22 +137,50 @@ export async function claimLicenseRemote(
       (typeof data.error === 'string' && data.error) ||
       `Activation failed (${res.status})`;
     const retryable = res.status >= 500 || res.status === 408 || res.status === 429;
-    if (retryable && attempt < maxAttempts) {
-      await new Promise((resolve) => window.setTimeout(resolve, 800));
-      return claimLicenseRemote(key, email, attempt + 1);
-    }
     return { ok: false, error, retryable, status: res.status };
   } catch (err) {
-    if (attempt < maxAttempts) {
-      await new Promise((resolve) => window.setTimeout(resolve, 800));
-      return claimLicenseRemote(key, email, attempt + 1);
-    }
+    const aborted = err instanceof Error && err.name === 'AbortError';
     return {
       ok: false,
-      error: err instanceof Error ? err.message : 'Network error during activation',
+      error: aborted
+        ? 'Activation timed out. Check your connection and try again.'
+        : err instanceof Error
+          ? err.message
+          : 'Network error during activation',
       retryable: true,
     };
   }
+}
+
+export async function claimLicenseRemote(
+  key: string,
+  email: string,
+): Promise<ClaimLicenseRemoteResult> {
+  const work = (async (): Promise<ClaimLicenseRemoteResult> => {
+    const first = await claimLicenseRemoteOnce(key, email);
+    if (first.ok) return first;
+    if (first.retryable) {
+      await new Promise((resolve) => window.setTimeout(resolve, 600));
+      return claimLicenseRemoteOnce(key, email);
+    }
+    return first;
+  })();
+
+  const capped = await Promise.race([
+    work,
+    new Promise<ClaimLicenseRemoteResult>((resolve) =>
+      window.setTimeout(
+        () =>
+          resolve({
+            ok: false,
+            error: 'Activation timed out. Check your connection and try again.',
+            retryable: true,
+          }),
+        CLAIM_HARD_CAP_MS,
+      ),
+    ),
+  ]);
+  return capped;
 }
 
 export async function pushDb(partial: Partial<RemoteDb>): Promise<RemoteDb | null> {

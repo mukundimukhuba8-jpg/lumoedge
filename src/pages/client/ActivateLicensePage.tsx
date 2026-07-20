@@ -18,6 +18,7 @@ export function ActivateLicensePage() {
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [slow, setSlow] = useState(false);
 
   useEffect(() => {
     if (!user) navigate('/', { replace: true });
@@ -44,6 +45,8 @@ export function ActivateLicensePage() {
     }
     setBusy(true);
     setError('');
+    setSlow(false);
+    const slowTimer = window.setTimeout(() => setSlow(true), 8000);
     try {
       const result = await claimLicense(key, user.email);
       if (!result.ok) {
@@ -61,7 +64,15 @@ export function ActivateLicensePage() {
         customMedia: lic.customMedia,
       });
       navigate('/app', { replace: true });
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Activation failed. Check your connection and try again.',
+      );
     } finally {
+      window.clearTimeout(slowTimer);
+      setSlow(false);
       setBusy(false);
     }
   };
@@ -108,6 +119,11 @@ export function ActivateLicensePage() {
             <strong>Activation failed</strong>
             <p>{error}</p>
           </div>
+        ) : null}
+        {busy && slow && !error ? (
+          <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+            Still connecting — slow network detected. This should finish within a few seconds.
+          </p>
         ) : null}
         <button className="btn btn-blue" type="submit" disabled={busy || !key.trim()}>
           {busy ? (

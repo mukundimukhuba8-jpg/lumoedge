@@ -1970,44 +1970,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
         licenseLog('claim', 'start', { email: normalizedEmail, key: normalizedKey });
 
-        const persistAssignment = (license: LicenseRecord, ownerId: string | null) => {
-          if (license.eaImage) {
-            saveEaImage(license.id, license.eaImage);
-            saveEaImage(`key-${normalizedKey}`, license.eaImage);
-          }
-          saveVaultLocal(releaseOtherAssignedForEmail(normalizedEmail, normalizedKey));
-          upsertVault(licenseRecordToVault(license, normalizedEmail));
-          setStore((prev) => {
-            const workspaces: StoreState['workspaces'] = {};
-            for (const [wsId, ws] of Object.entries(prev.workspaces)) {
-              let licenses = ws.licenses.map((l) => {
-                if (
-                  l.status === 'assigned' &&
-                  l.assignedEmail?.toLowerCase() === normalizedEmail &&
-                  !keysMatch(l.key, normalizedKey)
-                ) {
-                  return {
-                    ...l,
-                    status: 'active' as const,
-                    assignedEmail: undefined,
-                    assignedAt: undefined,
-                  };
-                }
-                return l;
-              });
-              if (ownerId === wsId) {
-                licenses = licenses.some((l) => l.id === license.id)
-                  ? licenses.map((l) => (l.id === license.id ? license : l))
-                  : [license, ...licenses];
-              }
-              workspaces[wsId] = { ...ws, licenses };
-            }
-            const next = { ...prev, workspaces };
-            saveJSON(STORE_KEY, next);
-            return next;
-          });
-        };
-
         const attemptClaim = (
           workspaces: StoreState['workspaces'],
           remoteImages: Record<string, string> = {},
@@ -2057,18 +2019,54 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           };
         };
 
-        const finishClaim = (license: LicenseRecord) => {
+        const persistAssignment = (license: LicenseRecord, ownerId: string | null) => {
+          if (license.eaImage && !license.eaImage.startsWith('img:')) {
+            saveEaImage(license.id, license.eaImage);
+            saveEaImage(`key-${normalizedKey}`, license.eaImage);
+          }
+          saveVaultLocal(releaseOtherAssignedForEmail(normalizedEmail, normalizedKey));
+          upsertVault(licenseRecordToVault(license, normalizedEmail));
+          if (ownerId) {
+            patchWorkspace(ownerId, (ws) => ({
+              ...ws,
+              licenses: ws.licenses.some((l) => l.id === license.id)
+                ? ws.licenses.map((l) => (l.id === license.id ? license : l))
+                : [license, ...ws.licenses],
+            }));
+          }
+        };
+
+        const finishClaim = (license: LicenseRecord, syncRemote = true) => {
           const branded = resolveLicenseBrandingSync(
             license,
             store.workspaces,
           ) as LicenseRecord;
           persistAssignment(branded, branded.ownerAdminId || null);
-          void fetchDb().then((remote) => hydrateLicenseRemote(remote));
+          if (syncRemote) {
+            void fetchDb().then((remote) => hydrateLicenseRemote(remote));
+          }
           licenseLog('claim', 'success', { key: branded.key, email: normalizedEmail });
           return { ok: true as const, license: branded };
         };
 
-        // Authoritative server claim first — binds email on Firebase
+        // Instant path when this device already has the key assigned locally
+        const localHit = attemptClaim(store.workspaces);
+        if (localHit?.ok) {
+          const alreadyLocal =
+            localHit.license.status === 'assigned' &&
+            localHit.license.assignedEmail?.toLowerCase() === normalizedEmail;
+          if (alreadyLocal) {
+            licenseLog('claim', 'local cache hit', { key: normalizedKey });
+            void claimLicenseRemote(normalizedKey, normalizedEmail).then((server) => {
+              if (server.ok) {
+                void fetchDb().then((remote) => hydrateLicenseRemote(remote));
+              }
+            });
+            return finishClaim(localHit.license, false);
+          }
+        }
+
+        // Authoritative server claim — binds email on Firebase
         const server = await claimLicenseRemote(normalizedKey, normalizedEmail);
         if (server.ok) {
           const lic = {
@@ -2091,7 +2089,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
         const remote = await Promise.race([
           fetchDb(),
-          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 6000)),
+          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 4000)),
         ]);
         if (remote) {
           hydrateLicenseRemote(remote);
@@ -2107,9 +2105,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           if (result?.ok) {
             if (result.isNew) persistAssignment(result.license, result.ownerId);
             licenseLog('claim', 'fallback success', { key: result.license.key });
-            return { ok: true, license: result.license };
+            return finishClaim(result.license, false);
           }
           if (result && !result.ok) return result;
+        }
+
+        if (localHit?.ok) {
+          licenseWarn('claim', 'server failed — using local license', { key: normalizedKey });
+          return finishClaim(localHit.license, false);
         }
 
         licenseError('claim', 'failed', { email: normalizedEmail, key: normalizedKey, error: server.error });
