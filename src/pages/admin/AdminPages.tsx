@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Loader2, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { resolveProfileImage } from '../../lib/mentorMedia';
-import { compressImageFile, getEaImage } from '../../lib/storage';
+import { compressImageFile, getEaImage, blobUrlToDataUrl } from '../../lib/storage';
 import { Placeholder } from './AdminShell';
 
 function isRealImage(url?: string): boolean {
@@ -690,6 +690,7 @@ export function ProfilePage() {
   const [form, setForm] = useState(profile);
   const [imageError, setImageError] = useState('');
   const [savingImage, setSavingImage] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [imageSavedMsg, setImageSavedMsg] = useState('');
   const [appLogoMsg, setAppLogoMsg] = useState('');
   const isSuper = admin?.role === 'super';
@@ -788,6 +789,40 @@ export function ProfilePage() {
     }
   };
 
+  const saveProfile = async () => {
+    if (savingProfile || savingImage) return;
+    setImageError('');
+    setImageSavedMsg('');
+    setSavingProfile(true);
+    try {
+      let payload = { ...form };
+      if (payload.eaImage?.startsWith('blob:')) {
+        payload = {
+          ...payload,
+          eaImage: await blobUrlToDataUrl(payload.eaImage),
+        };
+        setForm((prev) => ({ ...prev, eaImage: payload.eaImage }));
+      }
+      await updateProfile(payload);
+      const hasPicture = Boolean(
+        payload.eaImage &&
+          !payload.eaImage.startsWith('blob:') &&
+          String(payload.eaImage).trim(),
+      );
+      setImageSavedMsg(
+        hasPicture
+          ? 'Profile updated — picture saved and synced to clients.'
+          : 'Profile updated — branding synced to license keys & clients.',
+      );
+    } catch (err) {
+      setImageError(
+        err instanceof Error ? err.message : 'Could not save profile. Try again.',
+      );
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div className="glow-card">
@@ -814,6 +849,7 @@ export function ProfilePage() {
           />
         </div>
         {savingImage ? <p className="muted">Saving & syncing to licenses…</p> : null}
+        {savingProfile ? <p className="muted">Updating profile…</p> : null}
         {imageSavedMsg ? (
           <p style={{ color: 'var(--green)', fontWeight: 700, margin: '6px 0' }}>
             {imageSavedMsg}
@@ -897,13 +933,10 @@ export function ProfilePage() {
       <button
         className="btn btn-blue"
         type="button"
-        onClick={() => {
-          void updateProfile(form).then(() => {
-            alert('Profile updated — branding synced to license keys & clients');
-          });
-        }}
+        disabled={savingProfile || savingImage}
+        onClick={() => void saveProfile()}
       >
-        Update Profile
+        {savingProfile ? 'Updating…' : 'Update Profile'}
       </button>
     </div>
   );

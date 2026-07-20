@@ -443,6 +443,18 @@ export function resolveEaImageUrl(value: string, fallbackIds: string[] = []): st
   return value || '';
 }
 
+/** Turn a temporary blob preview URL into a data URL for cloud upload. */
+export async function blobUrlToDataUrl(blobUrl: string): Promise<string> {
+  const res = await fetch(blobUrl);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read image preview'));
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.readAsDataURL(blob);
+  });
+}
+
 /** Compress uploads so profile + license sync fits in localStorage */
 export function compressImageFile(file: File, maxSize = 512, quality = 0.72): Promise<string> {
   return new Promise((resolve, reject) => {
