@@ -534,6 +534,47 @@ function findLiveLicenseForEmail(
   return undefined;
 }
 
+function licenseToVaultEntry(lic: LicenseRecord): VaultLicense {
+  return {
+    id: lic.id,
+    key: lic.key,
+    email: lic.clientEmail,
+    clientName: lic.clientName,
+    eaName: lic.eaName,
+    mainText: lic.mainText,
+    symbols: lic.symbols,
+    eaImage: lic.eaImage,
+    customMedia: lic.customMedia,
+    duration: lic.duration,
+    ownerAdminId: lic.ownerAdminId,
+    eaId: lic.eaId,
+    status: lic.status,
+    assignedEmail: lic.assignedEmail,
+    assignedAt: lic.assignedAt,
+  };
+}
+
+/** Push mentor licenses + vault entries to Firebase (fixes keys that only existed locally). */
+async function pushLicensesToRemote(adminId: string, ws: AdminWorkspace) {
+  const active = ws.licenses.filter((l) => l.status !== 'deleted');
+  if (!active.length) return;
+  const entries = active.map(licenseToVaultEntry);
+  const local = loadVault();
+  const mergedLocal = [...local];
+  for (const entry of entries) {
+    const idx = mergedLocal.findIndex(
+      (e) => e.id === entry.id || keysMatch(e.key, entry.key),
+    );
+    if (idx >= 0) mergedLocal[idx] = entry;
+    else mergedLocal.unshift(entry);
+  }
+  saveVaultLocal(mergedLocal);
+  await pushDb({
+    vault: entries,
+    store: { workspaces: { [adminId]: ws } },
+  });
+}
+
 function uniqueKey(existing: LicenseRecord[]) {
   const vaultKeys = loadVault().map((v) => v.key);
   const revoked = loadRevokedKeys();
@@ -669,6 +710,7 @@ type Ctx = {
     email: string,
   ) => Promise<{ ok: true; license: LicenseRecord } | { ok: false; error: string }>;
   findLicense: (key: string) => LicenseRecord | undefined;
+  resyncLicenses: () => void;
   saveMt5: (mt5: Mt5Connection) => void;
   updateProfile: (patch: Partial<AdminProfile>) => Promise<void>;
   executeOrder: (order: Omit<CopyOrder, 'id' | 'copiedTo'>) => CopyOrder;
@@ -957,6 +999,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     },
     [flushApproveQueue],
   );
+
+  const resyncLicenses = useCallback(() => {
+    const mentorId = auth.admin?.id ?? '';
+    if (!mentorId) return;
+    const ws = normalizeWorkspace(
+      store.workspaces[mentorId],
+      auth.admin ?? { id: mentorId },
+    );
+    if (!ws.licenses.some((l) => l.status !== 'deleted')) return;
+    void pushLicensesToRemote(mentorId, ws).catch(() => undefined);
+  }, [auth.admin, store.workspaces]);
 
   const patchWorkspace = useCallback(
     (adminId: string, updater: (ws: AdminWorkspace) => AdminWorkspace, seed?: AdminUser) => {
@@ -1509,15 +1562,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           eaId: ea.id,
           status: 'active',
         });
+        const current = normalizeWorkspace(
+          store.workspaces[adminId],
+          auth.admin ?? { id: adminId },
+        );
+        const nextWs = {
+          ...current,
+          licenses: [record, ...current.licenses.filter((l) => l.id !== id)],
+        };
+        // Must reach Firebase immediately — client activation reads remote vault
+        void pushDb({
+          vault: [licenseToVaultEntry(record)],
+          store: { workspaces: { [adminId]: nextWs } },
+        }).catch(() => undefined);
         setStore((prev) => {
-          const current = normalizeWorkspace(
-            prev.workspaces[adminId],
-            auth.admin ?? { id: adminId },
-          );
-          const nextWs = {
-            ...current,
-            licenses: [record, ...current.licenses.filter((l) => l.id !== id)],
-          };
           const next = {
             ...prev,
             workspaces: {
@@ -1894,6 +1952,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
         return { ok: true, license: updated };
       },
+      resyncLicenses,
       findLicense: (key) => {
         const vault = findInVault(key);
         if (vault) {
@@ -2089,7 +2148,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           : workspace.licenses.filter((l) => l.status === 'assigned').length,
       },
     };
-  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, queueApproveAdmins]);
+  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, queueApproveAdmins, resyncLicenses]);
 
   if (booting) {
     return <WelcomeSplash />;
