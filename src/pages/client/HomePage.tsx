@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { Home, Monitor, Pause, Play, ScanSearch, Settings, Signal, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
+import { executeCopyOrder, mentorIdForLicense, seedProcessedOrders, type CopyOrderPayload } from '../../lib/copyTrade';
+import { firebaseWatchMentorOrders } from '../../lib/firebaseDb';
 import {
   accentHex,
   hexToRgb,
@@ -12,7 +14,7 @@ import {
   type InterfacePrefs,
 } from '../../lib/interfaceStyle';
 import { resolveCustomBackdrop, resolveProfileImage } from '../../lib/mentorMedia';
-import { getMt5Token } from '../../lib/mt5Session';
+import { clearMt5Session, getMt5Token } from '../../lib/mt5Session';
 import { loadJSON, normalizeLicenseKey, saveJSON } from '../../lib/storage';
 import { FocusLayout, TerminalLayout, VortexLayout } from './HomeLayouts';
 import { InterfaceStyleModal } from './InterfaceStyleModal';
@@ -120,6 +122,52 @@ export function HomePage() {
       root.style.removeProperty('--accent-rgb');
     };
   }, [accent, accentRgb]);
+
+  const [copyStatus, setCopyStatus] = useState('');
+
+  // Listen for mentor copy trades and mirror them on this client's MT5
+  useEffect(() => {
+    if (!user?.email || !bot.licenseKey || isPaused) return;
+    const mentorId = mentorIdForLicense(bot.licenseKey);
+    if (!mentorId) return;
+
+    let seeded = false;
+    const handleOrders = (orders: Array<Record<string, unknown>>) => {
+      if (!seeded) {
+        seedProcessedOrders(
+          mentorId,
+          orders.map((o) => String(o.id || '')).filter(Boolean),
+        );
+        seeded = true;
+        return;
+      }
+      const latest = orders[0];
+      if (!latest?.id) return;
+      const order: CopyOrderPayload = {
+        id: String(latest.id),
+        symbol: String(latest.symbol || 'XAUUSD'),
+        side: String(latest.side || 'buy') === 'sell' ? 'sell' : 'buy',
+        volume: Number(latest.volume) || 0.01,
+        stopLoss: Number(latest.stopLoss) || 0,
+        takeProfit: Number(latest.takeProfit) || 0,
+        comment: String(latest.comment || ''),
+        trades: Number(latest.trades) || 1,
+      };
+      void executeCopyOrder({
+        email: user.email,
+        eaName: bot.displayName || bot.name || 'Lumo Edge',
+        order,
+        mentorId,
+      }).then((result) => {
+        if (result.ok && result.message !== 'Already copied') {
+          setCopyStatus(result.message);
+        }
+      });
+    };
+
+    const unsub = firebaseWatchMentorOrders(mentorId, handleOrders);
+    return () => unsub();
+  }, [user?.email, bot.licenseKey, bot.displayName, bot.name, isPaused]);
 
   // Pull latest mentor branding / profile picture / symbols while home is open
   useEffect(() => {
@@ -257,9 +305,17 @@ export function HomePage() {
   };
 
   const confirmDelete = () => {
-    if (confirm('Delete this license from this device? You can connect a new key later.')) {
-      deleteBot();
+    if (
+      !confirm(
+        'Remove this license from your device? You will be logged out and must pay your subscription again before activating a new key.',
+      )
+    ) {
+      return;
     }
+    void deleteBot().then(() => {
+      if (user?.email) clearMt5Session(user.email);
+      navigate('/waiting', { replace: true });
+    });
   };
 
   const layoutActions = {
@@ -289,6 +345,28 @@ export function HomePage() {
   return (
     <div className={`app-shell home-layout-${stylePrefs.layout}`}>
       {fxClass ? <div className={`iface-fx ${fxClass}`} aria-hidden /> : null}
+      {copyStatus ? (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            top: 12,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 60,
+            padding: '8px 14px',
+            borderRadius: 999,
+            background: 'rgba(10,14,24,0.92)',
+            border: '1px solid rgba(59,130,246,0.45)',
+            color: '#93c5fd',
+            fontSize: 12,
+            fontWeight: 600,
+            maxWidth: '90vw',
+          }}
+        >
+          {copyStatus}
+        </div>
+      ) : null}
 
       {/* Floating profile avatar — only when mentor uploaded a real photo */}
       {stylePrefs.layout !== 'vortex' && displayAvatar ? (

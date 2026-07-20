@@ -553,7 +553,7 @@ export async function firebasePushSession(
       const intentionalClear =
         nextBot.licenseKey !== undefined &&
         !incomingKey &&
-        incoming.accessStatus === 'paid';
+        (incoming.accessStatus === 'paid' || incoming.accessStatus === 'pending');
       const licenseKey = intentionalClear ? '' : incomingKey || prevKey;
       merged = {
         ...prev,
@@ -655,10 +655,6 @@ export function isFirebaseImageRef(value: string | undefined): boolean {
   return Boolean(value && String(value).startsWith('img:'));
 }
 
-/**
- * Real-time listener on the shared DB heartbeat. Fires whenever any portal
- * pushes an update (updatedAt changes) so clients refresh immediately.
- */
 export function firebaseWatchUpdates(cb: () => void): () => void {
   if (!isFirebaseConfigured()) return () => undefined;
   try {
@@ -676,6 +672,26 @@ export function firebaseWatchUpdates(cb: () => void): () => void {
       () => undefined,
     );
     return unsub;
+  } catch {
+    return () => undefined;
+  }
+}
+
+/** Watch a mentor's copy-trade order queue in real time. */
+export function firebaseWatchMentorOrders(
+  mentorId: string,
+  cb: (orders: Array<Record<string, unknown>>) => void,
+): () => void {
+  if (!isFirebaseConfigured() || !mentorId) return () => undefined;
+  try {
+    const r = ref(getFirebaseDb(), `${ROOT}/store/workspaces/${mentorId}/orders`);
+    return onValue(
+      r,
+      (snap) => {
+        cb(dbList(snap.val()));
+      },
+      () => undefined,
+    );
   } catch {
     return () => undefined;
   }

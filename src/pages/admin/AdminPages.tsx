@@ -597,7 +597,11 @@ export function OpenOrdersPage() {
       comment,
       trades: Math.min(50, Math.max(1, Number(trades) || 1)),
     });
-    alert(`${copy ? 'Copied' : 'Executed'} ${order.side.toUpperCase()} ${order.symbol} → ${copy ? active : 0} clients`);
+    alert(
+      copy
+        ? `Copy trade sent to ${order.copiedTo} licensed clients. They must have MetaTrader connected on the app.`
+        : `Order saved: ${order.side.toUpperCase()} ${order.symbol}`,
+    );
   };
 
   return (

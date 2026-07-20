@@ -133,3 +133,23 @@ export function assignEntry(entry, email) {
     assignedAt: new Date().toISOString(),
   };
 }
+
+/** Client removed license — unassign so they must pay + activate again. */
+export function releaseEntry(entry, email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (
+    entry.status === 'assigned' &&
+    String(entry.assignedEmail || '').toLowerCase() !== normalizedEmail
+  ) {
+    return { ok: false, error: 'This license is not assigned to your account.' };
+  }
+  return {
+    ok: true,
+    entry: {
+      ...entry,
+      status: 'active',
+      assignedEmail: null,
+      assignedAt: null,
+    },
+  };
+}

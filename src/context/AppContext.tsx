@@ -80,7 +80,7 @@ type Ctx = {
   /** Update branding/media from mentor without changing pause/access */
   refreshBranding: (sync: LicenseSync) => void;
   togglePause: () => void;
-  deleteBot: () => void;
+  deleteBot: () => Promise<void>;
   setSymbols: (s: string[]) => void;
 };
 
@@ -456,10 +456,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
             status: session.bot.status === 'active' ? 'paused' : 'active',
           },
         }),
-      deleteBot: () =>
+      deleteBot: async () => {
+        const email = session.user?.email?.trim().toLowerCase();
+        const key = session.bot.licenseKey?.trim();
+        if (email && key) {
+          try {
+            await fetch('/api/licenses/release', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ key, email }),
+            });
+          } catch {
+            // still clear locally
+          }
+        }
         persist({
           ...session,
-          accessStatus: 'paid',
+          accessStatus: 'pending',
           bot: {
             ...session.bot,
             status: 'paused',
@@ -467,7 +480,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             imageUrl: '',
             customMedia: emptyCustomMedia(),
           },
-        }),
+        });
+      },
       setSymbols: (symbols) =>
         persist({
           ...session,
