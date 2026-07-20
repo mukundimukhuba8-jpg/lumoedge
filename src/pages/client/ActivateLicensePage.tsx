@@ -58,12 +58,19 @@ export function ActivateLicensePage() {
         return;
       }
       const lic = result.license;
+      const branding = await import('../../lib/clientBrandingSync').then((m) =>
+        m.fetchClientBranding(lic.key),
+      );
+      const imageUrl = branding
+        ? await import('../../lib/clientBrandingSync').then((m) =>
+            m.resolveBrandingImageUrl(branding.imageUrl || ''),
+          )
+        : resolveProfileImage(lic.eaImage, lic.customMedia) || lic.eaImage || '';
       activateWithLicense(lic.key, {
         name: lic.eaName,
         displayName: lic.eaName,
         mainText: lic.mainText,
-        imageUrl:
-          resolveProfileImage(lic.eaImage, lic.customMedia) || lic.eaImage || '',
+        imageUrl,
         symbols: lic.symbols,
         customMedia: lic.customMedia,
       });

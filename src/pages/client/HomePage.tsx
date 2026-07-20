@@ -38,6 +38,7 @@ export function HomePage() {
     setSymbols,
     user,
     activateWithLicense,
+    refreshBranding,
   } = useApp();
   const { openPortal, claimLicense } = useAdmin();
   // Profile circles vs hero cover — both use mentor branding when available
@@ -168,32 +169,21 @@ export function HomePage() {
     return () => unsub();
   }, [user?.email, bot.licenseKey, bot.displayName, bot.name, isPaused]);
 
-  // Pull latest mentor branding / profile picture / symbols while home is open
+  // Pull latest mentor branding / profile picture / symbols — image sync only
   useEffect(() => {
     if (!user?.email || !bot.licenseKey) return;
     const sync = () => {
-      void claimLicense(bot.licenseKey, user.email).then(async (result) => {
-        if (!result.ok) return;
-        const lic = result.license;
-        let imageUrl =
-          resolveProfileImage(lic.eaImage, lic.customMedia) || lic.eaImage || '';
-        // Resolve img: refs to displayable data URLs for <img>
-        if (imageUrl.startsWith('img:') || imageUrl.startsWith('/api/images/')) {
-          const { resolveDisplayImage } = await import('../../lib/storage');
-          imageUrl = (await resolveDisplayImage(imageUrl)) || imageUrl;
-        }
-        if (imageUrl.startsWith('img:') || imageUrl.includes('lumo-logo')) {
-          imageUrl = '';
-        }
-        activateWithLicense(lic.key, {
-          name: lic.eaName,
-          displayName: lic.eaName,
-          mainText: lic.mainText,
-          imageUrl,
-          symbols: lic.symbols,
-          customMedia: lic.customMedia,
-        });
-      });
+      void import('../../lib/clientBrandingSync').then(
+        async ({ fetchClientBranding, resolveBrandingImageUrl }) => {
+          const branding = await fetchClientBranding(bot.licenseKey);
+          if (!branding) return;
+          const imageUrl = await resolveBrandingImageUrl(branding.imageUrl || '');
+          refreshBranding({
+            ...branding,
+            imageUrl,
+          });
+        },
+      );
     };
     sync();
     // Real-time: refresh instantly when any mentor portal pushes an update

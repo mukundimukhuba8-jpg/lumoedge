@@ -334,11 +334,15 @@ async function syncPortalBrandingToClients(
           {}) as Record<string, unknown>;
         const key = String(bot.licenseKey || '');
         if (!key || !keysMatch(key, lic.key)) continue;
+        const clientImage =
+          displayImage && displayImage.startsWith('http')
+            ? displayImage
+            : `/api/images/profile-${encodeURIComponent(adminId)}`;
         sessions[email] = {
           ...prev,
           bot: {
             ...bot,
-            imageUrl: imageRef,
+            imageUrl: clientImage,
             displayName: lic.eaName || String(bot.displayName || ''),
             name: String(lic.eaName || bot.name || '')
               .replace(/\s+/g, '')

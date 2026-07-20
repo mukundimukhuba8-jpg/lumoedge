@@ -996,7 +996,13 @@ export default async function handler(req, res) {
     if (pathname.startsWith('/api/images/') && (req.method === 'GET' || req.method === 'HEAD')) {
       const key = decodeURIComponent(pathname.replace('/api/images/', '')).trim();
       const { db } = await loadDb();
-      const dataUrl = db.images?.[key];
+      let dataUrl = db.images?.[key];
+      if (!dataUrl || !String(dataUrl).startsWith('data:')) {
+        const fromFirebase = await firebaseRead(`lumo/images/${key}`);
+        if (typeof fromFirebase === 'string' && fromFirebase.startsWith('data:')) {
+          dataUrl = fromFirebase;
+        }
+      }
       if (!dataUrl || !String(dataUrl).startsWith('data:')) {
         send(res, 404, { error: 'Image not found' });
         return;
