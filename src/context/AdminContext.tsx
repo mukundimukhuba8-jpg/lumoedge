@@ -49,13 +49,79 @@ import {
   type VaultLicense,
 } from '../lib/storage';
 import {
-  firebaseFetchImage,
   firebaseSaveImage,
   firebaseUploadDataUrl,
   mergeAdmins,
   dbList,
 } from '../lib/firebaseDb';
 import { WelcomeSplash } from '../components/WelcomeSplash';
+import {
+  findLicenseByKey,
+  isClaimableKey,
+  prepareAssignedLicense,
+  resolveLicenseBrandingSync,
+  validateLicenseEmailAccess,
+} from '../lib/licenseClaim';
+
+/** Pull vault/workspaces from server without blocking activation UI */
+function hydrateLicenseRemote(remote: RemoteDb | null) {
+  if (!remote) return;
+  if (Array.isArray(remote.revokedKeys)) {
+    saveRevokedKeysLocal([
+      ...loadRevokedKeys(),
+      ...remote.revokedKeys.map((k) => normalizeLicenseKey(k)),
+    ]);
+  }
+  if (remote.vault) {
+    const revoked = loadRevokedKeys();
+    saveVaultLocal(
+      dbList<VaultLicense>(remote.vault).filter(
+        (v) =>
+          v.status !== 'deleted' &&
+          !revoked.some((k) => keysMatch(k, v.key)),
+      ),
+    );
+  }
+  if (remote.images && typeof remote.images === 'object') {
+    saveJSON('ub-web/ea-images-v1', {
+      ...loadJSON<Record<string, string>>('ub-web/ea-images-v1', {}),
+      ...remote.images,
+    });
+  }
+  if (remote.store?.workspaces) {
+    const workspaces = { ...(remote.store.workspaces as StoreState['workspaces']) };
+    for (const [id, ws] of Object.entries(workspaces)) {
+      workspaces[id] = {
+        ...ws,
+        licenses: (ws.licenses || []).filter((l) => l.status !== 'deleted'),
+      };
+    }
+    saveJSON(STORE_KEY, { workspaces });
+  }
+}
+
+function licenseRecordToVault(
+  license: LicenseRecord,
+  normalizedEmail: string,
+): VaultLicense {
+  return {
+    id: license.id,
+    key: license.key,
+    email: license.clientEmail,
+    clientName: license.clientName,
+    eaName: license.eaName,
+    mainText: license.mainText,
+    symbols: license.symbols,
+    eaImage: license.eaImage,
+    customMedia: license.customMedia,
+    duration: license.duration,
+    ownerAdminId: license.ownerAdminId,
+    eaId: license.eaId,
+    status: 'assigned',
+    assignedEmail: normalizedEmail,
+    assignedAt: license.assignedAt || new Date().toISOString(),
+  };
+}
 
 export type AdminRole = 'super' | 'admin' | 'pending';
 
@@ -1856,296 +1922,148 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       claimLicense: async (key, email) => {
         const normalizedEmail = email.trim().toLowerCase();
         const normalizedKey = normalizeLicenseKey(key);
-        const fp = keyFingerprint(key);
 
-        if (!fp || fp.length < 8) {
-          return { ok: false, error: 'Enter a full LUMO-XXXX-XXXX-XXXX key.' };
-        }
+        const formatErr = isClaimableKey(key);
+        if (formatErr) return { ok: false, error: formatErr };
 
-        // Always refresh vault from server before validating
-        let remote = await fetchDb();
-        // Fallback: read committed cloud DB directly (works when Vercel memory is empty)
-        if (!remote?.vault?.length) {
-          try {
-            const rawRes = await fetch(
-              `https://raw.githubusercontent.com/mukundimukhuba8-jpg/lumoedge/main/cloud-data/db.json?t=${Date.now()}`,
-              { cache: 'no-store' },
-            );
-            if (rawRes.ok) {
-              remote = (await rawRes.json()) as Awaited<ReturnType<typeof fetchDb>>;
-            }
-          } catch {
-            // ignore
+        const persistAssignment = (license: LicenseRecord, ownerId: string | null) => {
+          if (license.eaImage) {
+            saveEaImage(license.id, license.eaImage);
+            saveEaImage(`key-${normalizedKey}`, license.eaImage);
           }
-        }
-        if (remote) {
-          if (Array.isArray(remote.revokedKeys)) {
-            saveRevokedKeysLocal([
-              ...loadRevokedKeys(),
-              ...remote.revokedKeys.map((k) => normalizeLicenseKey(k)),
-            ]);
+          upsertVault(licenseRecordToVault(license, normalizedEmail));
+          if (ownerId) {
+            patchWorkspace(ownerId, (ws) => ({
+              ...ws,
+              licenses: ws.licenses.some((l) => l.id === license.id)
+                ? ws.licenses.map((l) => (l.id === license.id ? license : l))
+                : [license, ...ws.licenses],
+            }));
           }
-          if (remote.vault) {
-            const revoked = loadRevokedKeys();
-            saveVaultLocal(
-              dbList<VaultLicense>(remote.vault).filter(
-                (v) =>
-                  v.status !== 'deleted' &&
-                  !revoked.some((k) => keysMatch(k, v.key)),
-              ),
-            );
-          }
-          if (remote.images && typeof remote.images === 'object') {
-            const localImages = loadJSON<Record<string, string>>(
-              'ub-web/ea-images-v1',
-              {},
-            );
-            saveJSON('ub-web/ea-images-v1', {
-              ...localImages,
-              ...remote.images,
-            });
-          }
-          if (remote.store?.workspaces) {
-            const workspaces = {
-              ...(remote.store.workspaces as StoreState['workspaces']),
+        };
+
+        const attemptClaim = (
+          workspaces: StoreState['workspaces'],
+          remoteImages: Record<string, string> = {},
+        ):
+          | { ok: true; license: LicenseRecord; ownerId: string | null; isNew: boolean }
+          | { ok: false; error: string }
+          | null => {
+          const hit = findLicenseByKey(key, workspaces);
+          if (!hit) return null;
+
+          let license = hit.license as LicenseRecord;
+          if (license.status === 'deleted') {
+            revokeLicenseKey(key);
+            return {
+              ok: false,
+              error:
+                'This license key was deleted and is no longer valid. Generate a new one.',
             };
-            for (const [id, ws] of Object.entries(workspaces)) {
-              workspaces[id] = {
-                ...ws,
-                licenses: (ws.licenses || []).filter((l) => l.status !== 'deleted'),
-              };
-            }
-            const nextStore = { workspaces };
-            setStore(nextStore);
-            saveJSON(STORE_KEY, nextStore);
           }
-        }
 
-        if (isRevokedKey(key)) {
+          const emailErr = validateLicenseEmailAccess(
+            license,
+            normalizedEmail,
+            workspaces,
+          );
+          if (emailErr) return { ok: false, error: emailErr };
+
+          license = resolveLicenseBrandingSync(
+            license,
+            workspaces,
+            remoteImages,
+          ) as LicenseRecord;
+
+          const alreadyAssigned =
+            license.status === 'assigned' &&
+            license.assignedEmail?.toLowerCase() === normalizedEmail;
+
+          const finalLicense = alreadyAssigned
+            ? license
+            : (prepareAssignedLicense(license, normalizedEmail) as LicenseRecord);
+
           return {
-            ok: false,
-            error: 'This license key was deleted and is no longer valid. Generate a new one.',
+            ok: true,
+            license: finalLicense,
+            ownerId: hit.ownerId,
+            isNew: !alreadyAssigned,
           };
-        }
-
-        let vault = findInVault(key);
-        if (vault?.status === 'deleted') {
-          revokeLicenseKey(key);
-          return {
-            ok: false,
-            error: 'This license key was deleted and is no longer valid. Generate a new one.',
-          };
-        }
-
-        let license: LicenseRecord | undefined;
-        let ownerId: string | null = null;
-        const workspaces = remote?.store?.workspaces
-          ? (remote.store.workspaces as StoreState['workspaces'])
-          : store.workspaces;
-
-        if (vault) {
-          license = {
-            id: vault.id,
-            key: vault.key,
-            eaId: vault.eaId,
-            eaName: vault.eaName,
-            eaImage: vault.eaImage,
-            mainText: vault.mainText,
-            symbols: vault.symbols ?? [],
-            customMedia: normalizeCustomMedia(vault.customMedia),
-            ownerAdminId: vault.ownerAdminId,
-            clientName: vault.clientName,
-            clientEmail: vault.email,
-            duration: vault.duration,
-            status: vault.status,
-            assignedEmail: vault.assignedEmail,
-            assignedAt: vault.assignedAt,
-          };
-          ownerId = vault.ownerAdminId;
-        }
-
-        if (!license) {
-          for (const [wid, ws] of Object.entries(workspaces)) {
-            const found = (ws.licenses || []).find(
-              (l) => keysMatch(l.key, key) && l.status !== 'deleted',
-            );
-            if (found) {
-              ownerId = wid;
-              license = found;
-              break;
-            }
-          }
-        }
-
-        if (!license) {
-          return {
-            ok: false,
-            error:
-              'Invalid license key. Copy the new key from Admin → Generate License (deleted keys never work).',
-          };
-        }
-
-        // Always re-resolve EA branding from admin profile / image store / custom media
-        const ownerWs = ownerId ? workspaces[ownerId] : undefined;
-        const ownerEa = ownerWs?.eas.find((e) => e.id === license!.eaId);
-        const profileAdminId = ownerId || license.ownerAdminId || '';
-        const remoteImages =
-          remote?.images && typeof remote.images === 'object'
-            ? (remote.images as Record<string, string>)
-            : {};
-        const fromRemoteProfile =
-          (profileAdminId && remoteImages[`profile-${profileAdminId}`]) ||
-          (license.id && remoteImages[license.id]) ||
-          remoteImages[`key-${normalizedKey}`] ||
-          '';
-        const resolvedMedia = normalizeCustomMedia(
-          ownerWs?.profile.customMedia?.length
-            ? ownerWs.profile.customMedia
-            : license.customMedia,
-        );
-        const fromProfileSlots = resolvedMedia.find(
-          (m) =>
-            (m.slot === 'profile-1' || m.slot === 'profile-2') &&
-            m.kind === 'image' &&
-            m.url &&
-            !String(m.url).includes('lumo-logo') &&
-            !String(m.url).startsWith('blob:'),
-        )?.url;
-        const candidateImages = [
-          license.eaImage,
-          ownerWs?.profile.eaImage,
-          fromRemoteProfile,
-          getEaImage(license.id),
-          getEaImage(`key-${normalizedKey}`),
-          ownerEa?.imageUrl,
-          getEaImage(`profile-${profileAdminId}`),
-          fromProfileSlots,
-        ];
-        let resolvedImage = '';
-        for (const c of candidateImages) {
-          const v = String(c || '').trim();
-          if (!v || v.includes('lumo-logo') || v.startsWith('blob:')) continue;
-          if (v.startsWith('img:')) {
-            const id = v.slice(4);
-            let embedded = remoteImages[id] || getEaImage(id) || getEaImage(v);
-            if (!embedded) {
-              embedded = await firebaseFetchImage(id);
-              if (embedded) saveEaImage(id, embedded);
-            }
-            if (embedded) {
-              resolvedImage = embedded;
-              break;
-            }
-            continue;
-          }
-          if (v.startsWith('/api/images/')) {
-            const imgKey = decodeURIComponent(v.replace('/api/images/', '').split('?')[0]);
-            const embedded = remoteImages[imgKey] || getEaImage(imgKey);
-            if (embedded && embedded.startsWith('data:')) {
-              resolvedImage = embedded;
-              break;
-            }
-            if (remoteImages[imgKey]) {
-              resolvedImage = remoteImages[imgKey];
-              break;
-            }
-            continue;
-          }
-          if (
-            v.startsWith('data:') ||
-            v.startsWith('http') ||
-            v.startsWith('/')
-          ) {
-            resolvedImage = v;
-            break;
-          }
-        }
-        // Last resort: dedicated Firebase images map for this mentor
-        if (!resolvedImage && profileAdminId) {
-          resolvedImage =
-            remoteImages[`profile-${profileAdminId}`] ||
-            (await firebaseFetchImage(`profile-${profileAdminId}`));
-          if (resolvedImage) {
-            saveEaImage(`profile-${profileAdminId}`, resolvedImage);
-          }
-        }
-        const resolvedName =
-          license.eaName || ownerEa?.name || ownerWs?.profile.eaDisplayName || 'Lumo Edge';
-        const resolvedMain =
-          license.mainText || ownerWs?.profile.mainText || '';
-        const resolvedSymbols =
-          ownerEa?.symbols?.length
-            ? ownerEa.symbols
-            : license.symbols?.length
-              ? license.symbols
-              : ['XAUUSD'];
-
-        license = {
-          ...license,
-          eaImage: resolvedImage,
-          eaName: resolvedName,
-          mainText: resolvedMain,
-          symbols: resolvedSymbols,
-          customMedia: resolvedMedia,
         };
 
-        if (license.status === 'assigned') {
-          if (license.assignedEmail === normalizedEmail) {
-            return { ok: true, license };
-          }
-          return { ok: false, error: 'This license key is already used by another account.' };
+        // Local vault — instant activation when key is already cached
+        let result = attemptClaim(store.workspaces);
+        if (result?.ok) {
+          if (result.isNew) persistAssignment(result.license, result.ownerId);
+          void fetchDb().then((remote) => hydrateLicenseRemote(remote));
+          return { ok: true, license: result.license };
         }
+        if (result && !result.ok) return result;
 
-        if (
-          license.clientEmail &&
-          license.clientEmail.toLowerCase() !== normalizedEmail
-        ) {
-          return {
-            ok: false,
-            error: `This key was issued for ${license.clientEmail}. Log in as that email, or generate a key for ${normalizedEmail}.`,
+        // Authoritative server claim (binds email on Firebase)
+        try {
+          const ac = new AbortController();
+          const timer = window.setTimeout(() => ac.abort(), 5000);
+          const res = await fetch('/api/licenses/claim', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: normalizedKey, email: normalizedEmail }),
+            signal: ac.signal,
+          });
+          window.clearTimeout(timer);
+          const data = (await res.json()) as {
+            ok?: boolean;
+            error?: string;
+            license?: LicenseRecord;
           };
+          if (data.ok && data.license) {
+            const lic = {
+              ...data.license,
+              customMedia: normalizeCustomMedia(data.license.customMedia),
+            } as LicenseRecord;
+            const branded = resolveLicenseBrandingSync(
+              lic,
+              store.workspaces,
+            ) as LicenseRecord;
+            persistAssignment(branded, branded.ownerAdminId || null);
+            void fetchDb().then((remote) => hydrateLicenseRemote(remote));
+            return { ok: true, license: branded };
+          }
+          if (data.error && res.status !== 404) {
+            return { ok: false, error: data.error };
+          }
+        } catch {
+          // fall through
         }
 
-        const updated: LicenseRecord = {
-          ...license,
-          status: 'assigned',
-          assignedEmail: normalizedEmail,
-          assignedAt: new Date().toISOString(),
+        // Last resort — short remote hydrate, no blocking image fetches
+        const remote = await Promise.race([
+          fetchDb(),
+          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500)),
+        ]);
+        if (remote) {
+          hydrateLicenseRemote(remote);
+          const workspaces = remote.store?.workspaces
+            ? (remote.store.workspaces as StoreState['workspaces'])
+            : store.workspaces;
+          setStore({ workspaces });
+          const remoteImages =
+            remote.images && typeof remote.images === 'object'
+              ? (remote.images as Record<string, string>)
+              : {};
+          result = attemptClaim(workspaces, remoteImages);
+          if (result?.ok) {
+            if (result.isNew) persistAssignment(result.license, result.ownerId);
+            return { ok: true, license: result.license };
+          }
+          if (result && !result.ok) return result;
+        }
+
+        return {
+          ok: false,
+          error:
+            'Invalid license key. Copy the new key from Admin → Generate License (deleted keys never work).',
         };
-
-        if (updated.eaImage) {
-          saveEaImage(updated.id, updated.eaImage);
-          saveEaImage(`key-${normalizeLicenseKey(updated.key)}`, updated.eaImage);
-        }
-
-        upsertVault({
-          id: updated.id,
-          key: updated.key,
-          email: updated.clientEmail,
-          clientName: updated.clientName,
-          eaName: updated.eaName,
-          mainText: updated.mainText,
-          symbols: updated.symbols,
-          eaImage: updated.eaImage,
-          customMedia: updated.customMedia,
-          duration: updated.duration,
-          ownerAdminId: updated.ownerAdminId,
-          eaId: updated.eaId,
-          status: 'assigned',
-          assignedEmail: normalizedEmail,
-          assignedAt: updated.assignedAt,
-        });
-
-        if (ownerId) {
-          patchWorkspace(ownerId, (ws) => ({
-            ...ws,
-            licenses: ws.licenses.some((l) => l.id === updated.id)
-              ? ws.licenses.map((l) => (l.id === updated.id ? updated : l))
-              : [updated, ...ws.licenses],
-          }));
-        }
-
-        return { ok: true, license: updated };
       },
       resyncLicenses,
       findLicense: (key) => {

@@ -14,6 +14,7 @@ import {
   type MentorMediaItem,
 } from '../lib/mentorMedia';
 import { fetchDb, fetchSession, pushSession } from '../lib/remote';
+import { dbList } from '../lib/firebaseDb';
 import { loadJSON, saveJSON } from '../lib/storage';
 
 export type UserProfile = { email: string; firstName: string; lastName: string };
@@ -188,21 +189,20 @@ async function restoreLicenseFromVault(email: string): Promise<{
   try {
     const db = await fetchDb();
     if (!db) return null;
-    const vaultHit = (db.vault || []).find(
+    const vaultHit = dbList<{
+      key?: string;
+      assignedEmail?: string;
+      status?: string;
+      eaImage?: string;
+      eaName?: string;
+      mainText?: string;
+      symbols?: string[];
+    }>(db.vault).find(
       (v) =>
-        String((v as { email?: string }).email || '').toLowerCase() ===
-          email.toLowerCase() &&
-        (v as { status?: string }).status !== 'deleted' &&
-        (v as { key?: string }).key,
-    ) as
-      | {
-          key?: string;
-          eaImage?: string;
-          eaName?: string;
-          mainText?: string;
-          symbols?: string[];
-        }
-      | undefined;
+        String(v.assignedEmail || '').toLowerCase() === email.toLowerCase() &&
+        v.status === 'assigned' &&
+        v.key,
+    );
     let licenseKey = vaultHit?.key || '';
     let imageUrl = vaultHit?.eaImage || '';
     let displayName = vaultHit?.eaName || '';
@@ -216,6 +216,7 @@ async function restoreLicenseFromVault(email: string): Promise<{
             licenses?: Array<{
               key: string;
               clientEmail: string;
+              assignedEmail?: string;
               status: string;
               eaImage?: string;
               eaName?: string;
@@ -227,8 +228,8 @@ async function restoreLicenseFromVault(email: string): Promise<{
       )) {
         const hit = (ws.licenses || []).find(
           (l) =>
-            String(l.clientEmail || '').toLowerCase() === email.toLowerCase() &&
-            l.status !== 'deleted' &&
+            String(l.assignedEmail || '').toLowerCase() === email.toLowerCase() &&
+            l.status === 'assigned' &&
             l.key,
         );
         if (hit) {
