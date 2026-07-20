@@ -91,13 +91,13 @@ export function mergeAdmins<T extends AdminLike>(
   current: T[],
   incoming: T[],
 ): T[] {
-  const map = new Map<string, T>();
+  const byEmail = new Map<string, T>();
   for (const item of [...(current || []), ...(incoming || [])]) {
-    const id = String(item.id || '');
-    if (!id) continue;
-    const prev = map.get(id);
+    const email = String(item.email || '').trim().toLowerCase();
+    if (!email) continue;
+    const prev = byEmail.get(email);
     if (!prev) {
-      map.set(id, item);
+      byEmail.set(email, { ...item, email } as T);
       continue;
     }
     const merged = { ...prev, ...item } as T;
@@ -110,9 +110,9 @@ export function mergeAdmins<T extends AdminLike>(
         (merged as Record<string, unknown>)[k] = v;
       }
     }
-    map.set(id, merged);
+    byEmail.set(email, merged);
   }
-  return Array.from(map.values());
+  return Array.from(byEmail.values());
 }
 
 /** Deep-merge objects; never wipe EAs / licenses / vault entries. */

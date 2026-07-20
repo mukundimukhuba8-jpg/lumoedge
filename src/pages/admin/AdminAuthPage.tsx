@@ -82,12 +82,13 @@ export function AdminAuthPage() {
               else navigate('/admin/dashboard');
             });
           } else {
-            const err = registerAdmin(form);
-            if (err) setError(err);
-            else {
-              setSuccess('Registered. Wait for Super Admin approval, then login.');
-              setTab('login');
-            }
+            void registerAdmin(form).then((err) => {
+              if (err) setError(err);
+              else {
+                setSuccess('Registered. Wait for Super Admin approval, then login.');
+                setTab('login');
+              }
+            });
           }
         }}
       >

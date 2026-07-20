@@ -850,7 +850,9 @@ type Ctx = {
   openPortal: () => void;
   closePortal: () => void;
   login: (email: string, password: string) => Promise<string | null>;
-  registerAdmin: (data: Omit<AdminUser, 'id' | 'role'> & { password: string }) => string | null;
+  registerAdmin: (
+    data: Omit<AdminUser, 'id' | 'role'> & { password: string },
+  ) => Promise<string | null>;
   logout: () => void;
   approveAdmin: (id: string) => void;
   approveAdmins: (ids: string[]) => void;
@@ -968,6 +970,42 @@ function mergeClientRecord(prev: ClientRequest, incoming: ClientRequest): Client
   };
 }
 
+function adminsMatch(a: AdminUser[], b: AdminUser[]) {
+  if (a.length !== b.length) return false;
+  const byId = new Map(b.map((x) => [x.id, x]));
+  return a.every((x) => {
+    const y = byId.get(x.id);
+    return (
+      y &&
+      y.email.toLowerCase() === x.email.toLowerCase() &&
+      y.role === x.role &&
+      y.fullName === x.fullName
+    );
+  });
+}
+
+function applyRemoteAdmins(
+  prev: AuthState,
+  remoteAdmins: AdminUser[],
+): AuthState {
+  const admins = mergeAdmins(prev.admins, remoteAdmins);
+  const healed = admins.some((a) => {
+    const remote = remoteAdmins.find(
+      (r) => r.email.toLowerCase() === a.email.toLowerCase(),
+    );
+    return remote && a.role === 'admin' && remote.role === 'pending';
+  });
+  if (healed) {
+    void pushDb({ auth: { admins, admin: null } }).catch(() => undefined);
+  }
+  let admin = prev.admin;
+  if (admin && admin.role !== 'super') {
+    const remote = admins.find((a) => a.id === admin!.id);
+    if (!remote || remote.role !== 'admin') admin = null;
+  }
+  return { portalOpen: prev.portalOpen, admin, admins };
+}
+
 function mergeClientLists(...lists: ClientRequest[][]): ClientRequest[] {
   const byEmail = new Map<string, ClientRequest>();
   for (const list of lists) {
@@ -1024,29 +1062,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         // Never take remote "admin" (logged-in user) — that is per-device only.
         // Syncing it made Super Admin and mentors overwrite each other.
         setAuth((prev) => {
-          const remoteAdmins = db.auth!.admins as AdminUser[];
-          // Merge — never let a stale remote "pending" wipe a local approval
-          const admins = mergeAdmins(prev.admins, remoteAdmins);
-          const healed = admins.some((a) => {
-            const remote = remoteAdmins.find((r) => r.id === a.id);
-            return remote && a.role === 'admin' && remote.role === 'pending';
-          });
-          if (healed) {
-            void pushDb({ auth: { admins, admin: null } }).catch(() => undefined);
-          }
-          // If this device's logged-in mentor was un-approved or deleted
-          // remotely, kick them out of the portal immediately
-          let admin = prev.admin;
-          if (admin && admin.role !== 'super') {
-            const remote = admins.find((a) => a.id === admin!.id);
-            if (!remote || remote.role !== 'admin') admin = null;
-          }
-          const nextAuth: AuthState = {
-            portalOpen: prev.portalOpen,
-            admin,
-            admins,
-          };
-          // Keep super in the list conceptually; mentors stay as stored
+          const nextAuth = applyRemoteAdmins(prev, db.auth!.admins as AdminUser[]);
           saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
           return nextAuth;
         });
@@ -1145,6 +1161,25 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ),
         );
       }
+    };
+    void tick();
+    const id = window.setInterval(tick, 2500);
+    return () => window.clearInterval(id);
+  }, [booting]);
+
+  // Keep mentor registration queue fresh for Super Admin approval
+  useEffect(() => {
+    if (booting) return;
+    const tick = async () => {
+      const db = await fetchDb();
+      if (!Array.isArray(db?.auth?.admins)) return;
+      const remoteAdmins = db.auth!.admins as AdminUser[];
+      setAuth((prev) => {
+        const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
+        if (adminsMatch(prev.admins, nextAuth.admins)) return prev;
+        saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+        return nextAuth;
+      });
     };
     void tick();
     const id = window.setInterval(tick, 2500);
@@ -1445,7 +1480,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
         return 'Invalid email or password.';
       },
-      registerAdmin: (form) => {
+      registerAdmin: async (form) => {
         const email = form.email.trim().toLowerCase();
         if (!email || !form.password || !form.fullName.trim()) {
           return 'Fill all required fields.';
@@ -1453,7 +1488,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         if (email === SUPER_ADMIN.email.toLowerCase()) {
           return 'This email is reserved for Super Admin.';
         }
-        if (auth.admins.some((a) => a.email.toLowerCase() === email)) {
+        const db = await fetchDb();
+        const remoteAdmins = (db?.auth?.admins || []) as AdminUser[];
+        const knownEmails = new Set(
+          [...auth.admins, ...remoteAdmins].map((a) => a.email.toLowerCase()),
+        );
+        if (knownEmails.has(email)) {
           return 'An admin with this email already registered.';
         }
         const entry: AdminUser = {
@@ -1462,18 +1502,24 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           id: `LM-${Math.floor(100000 + Math.random() * 900000)}`,
           role: 'pending',
         };
-        // Own empty portal (profile seed only — no shared EAs/licenses)
-        saveStore({
+        const workspace = createEmptyWorkspace(entry);
+        const nextAdmins = [...auth.admins, entry];
+        const nextStore = {
           ...store,
           workspaces: {
             ...store.workspaces,
-            [entry.id]: createEmptyWorkspace(entry),
+            [entry.id]: workspace,
           },
-        });
-        saveAuth({
-          ...auth,
-          admins: [...auth.admins, entry],
-        });
+        };
+        const nextAuth = { ...auth, admins: nextAdmins };
+        setStore(nextStore);
+        saveJSON(STORE_KEY, nextStore);
+        setAuth(nextAuth);
+        saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+        await pushDb({
+          auth: { admins: nextAdmins, admin: null },
+          store: { workspaces: { [entry.id]: workspace } },
+        }).catch(() => undefined);
         return null;
       },
       logout: () => saveAuth({ ...auth, admin: null, portalOpen: false }),
