@@ -851,6 +851,26 @@ a {
   background: rgba(8, 12, 22, 0.85);
 }
 
+.admin-page-body-cyber > div {
+  position: relative;
+  z-index: 1;
+}
+
+.admin-page-body-cyber .glow-card {
+  padding: 18px;
+}
+
+.admin-page-body-cyber h2,
+.admin-page-body-cyber h3 {
+  letter-spacing: -0.02em;
+}
+
+.admin-page-body-cyber .chip {
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(103, 232, 249, 0.25);
+  color: var(--admin-cyan);
+}
+
 .home-page-fill {
   min-height: 0;
   flex: 1;
