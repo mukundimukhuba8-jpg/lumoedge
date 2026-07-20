@@ -180,53 +180,96 @@ async function firebaseRead(path) {
 }
 
 async function firebaseWrite(path, value) {
-  const res = await fetch(`${FIREBASE_DB_URL}/${path}.json`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(value),
-  });
-  return res.ok;
+  try {
+    const res = await fetch(`${FIREBASE_DB_URL}/${path}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(value),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 /** Publish mentor licenses straight to Firebase — works even when client SDK writes fail. */
 async function publishLicensesToFirebase(adminId, vaultEntries, workspace, revokedKeys) {
-  const curVault = toArray(await firebaseRead('lumo/vault'));
-  const curRevoked = toArray(await firebaseRead('lumo/revokedKeys'));
-  const mergedRevoked = [
-    ...new Set([...curRevoked, ...toArray(revokedKeys)].map((k) => String(k || '').toUpperCase())),
-  ].filter(Boolean);
-  const revokedNorm = new Set(
-    mergedRevoked.map((k) =>
-      String(k || '')
-        .trim()
-        .toUpperCase()
-        .replace(/[^A-Z0-9]/g, ''),
-    ),
-  );
-  const mergedVault = mergeVault(curVault, vaultEntries).filter((v) => {
-    const norm = String(v?.key || '')
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z0-9]/g, '');
-    return norm && !revokedNorm.has(norm);
-  });
-  const curWs = (await firebaseRead(`lumo/store/workspaces/${adminId}`)) || {};
-  const mergedWorkspaces = mergeWorkspaces({ [adminId]: curWs }, { [adminId]: workspace });
-  const nextWs = mergedWorkspaces[adminId];
-  if (Array.isArray(nextWs.licenses)) {
-    nextWs.licenses = nextWs.licenses.filter((l) => {
-      const norm = String(l?.key || '')
+  const { keysMatch, normalizeLicenseKey } = await import('./_lib/licenseClaim.mjs');
+  try {
+    const curVault = toArray(await firebaseRead('lumo/vault'));
+    const newEmails = new Set(
+      vaultEntries
+        .map((v) => String(v?.email || v?.clientEmail || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+    for (const v of curVault) {
+      if (v?.ownerAdminId !== adminId) continue;
+      const email = String(v?.email || v?.clientEmail || '').trim().toLowerCase();
+      if (!email || !newEmails.has(email)) continue;
+      const incoming = vaultEntries.find(
+        (e) => String(e?.email || e?.clientEmail || '').trim().toLowerCase() === email,
+      );
+      if (
+        incoming &&
+        !keysMatch(String(v?.key || ''), String(incoming?.key || '')) &&
+        (v.status === 'active' || v.status === 'assigned')
+      ) {
+        return {
+          ok: false,
+          error: `Email ${email} already has license ${normalizeLicenseKey(String(v.key || ''))}`,
+          key: null,
+        };
+      }
+    }
+
+    const curRevoked = toArray(await firebaseRead('lumo/revokedKeys'));
+    const mergedRevoked = [
+      ...new Set([...curRevoked, ...toArray(revokedKeys)].map((k) => String(k || '').toUpperCase())),
+    ].filter(Boolean);
+    const revokedNorm = new Set(
+      mergedRevoked.map((k) =>
+        String(k || '')
+          .trim()
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, ''),
+      ),
+    );
+    const mergedVault = mergeVault(curVault, vaultEntries).filter((v) => {
+      const norm = String(v?.key || '')
         .trim()
         .toUpperCase()
         .replace(/[^A-Z0-9]/g, '');
-      return norm && !revokedNorm.has(norm) && l.status !== 'deleted';
+      return norm && !revokedNorm.has(norm);
     });
+    const curWs = (await firebaseRead(`lumo/store/workspaces/${adminId}`)) || {};
+    const mergedWorkspaces = mergeWorkspaces({ [adminId]: curWs }, { [adminId]: workspace });
+    const nextWs = mergedWorkspaces[adminId];
+    if (Array.isArray(nextWs.licenses)) {
+      nextWs.licenses = nextWs.licenses.filter((l) => {
+        const norm = String(l?.key || '')
+          .trim()
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, '');
+        return norm && !revokedNorm.has(norm) && l.status !== 'deleted';
+      });
+    }
+    const vaultOk = await firebaseWrite('lumo/vault', mergedVault);
+    const wsOk = await firebaseWrite(`lumo/store/workspaces/${adminId}`, nextWs);
+    if (!vaultOk || !wsOk) {
+      console.error('[license:publish] vault or workspace write failed', { adminId, vaultOk, wsOk });
+      return { ok: false, error: 'Could not save license to cloud database', key: null };
+    }
+    await firebaseWrite('lumo/revokedKeys', mergedRevoked).catch(() => false);
+    await firebaseWrite('lumo/updatedAt', new Date().toISOString()).catch(() => false);
+    return { ok: true, key: vaultEntries[0]?.key ?? null };
+  } catch (err) {
+    console.error('[license:publish] unexpected failure', err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Firebase write failed',
+      key: null,
+    };
   }
-  const vaultOk = await firebaseWrite('lumo/vault', mergedVault);
-  const wsOk = await firebaseWrite(`lumo/store/workspaces/${adminId}`, nextWs);
-  const revokedOk = await firebaseWrite('lumo/revokedKeys', mergedRevoked);
-  await firebaseWrite('lumo/updatedAt', new Date().toISOString());
-  return vaultOk && wsOk && revokedOk;
 }
 
 function mergeWorkspaces(existing = {}, incoming = {}) {
@@ -520,6 +563,7 @@ export default async function handler(req, res) {
         dbList,
         findVaultEntry,
         findWorkspaceLicense,
+        keyFingerprint,
         keysMatch,
         normalizeLicenseKey,
         toClaimPayload,
@@ -529,13 +573,19 @@ export default async function handler(req, res) {
       const email = String(body.email || '').trim().toLowerCase();
       const key = normalizeLicenseKey(String(body.key || ''));
       if (!email || !key) {
-        send(res, 400, { error: 'key and email required' });
+        send(res, 400, { ok: false, error: 'License key and email are required.' });
+        return;
+      }
+      const fp = keyFingerprint(key);
+      if (!fp || fp.length < 16) {
+        send(res, 400, { ok: false, error: 'Enter a full LUMO-XXXX-XXXX-XXXX key.' });
         return;
       }
 
       const revoked = dbList(await firebaseRead('lumo/revokedKeys'));
       if (revoked.some((k) => keysMatch(String(k || ''), key))) {
         send(res, 403, {
+          ok: false,
           error: 'This license key was deleted and is no longer valid. Generate a new one.',
         });
         return;
@@ -558,6 +608,7 @@ export default async function handler(req, res) {
 
       if (!entry) {
         send(res, 404, {
+          ok: false,
           error:
             'Invalid license key. Copy the new key from Admin → Generate License (deleted keys never work).',
         });
@@ -566,7 +617,7 @@ export default async function handler(req, res) {
 
       const emailErr = validateEmailAccess(entry, email, vault, workspaces);
       if (emailErr) {
-        send(res, 403, { error: emailErr });
+        send(res, 403, { ok: false, error: emailErr });
         return;
       }
 
@@ -577,8 +628,14 @@ export default async function handler(req, res) {
       );
       if (vaultIdx >= 0) nextVault[vaultIdx] = { ...nextVault[vaultIdx], ...assigned };
       else nextVault.unshift(assigned);
-      await firebaseWrite('lumo/vault', nextVault);
+      const vaultOk = await firebaseWrite('lumo/vault', nextVault);
+      if (!vaultOk) {
+        console.error('[license:claim] vault write failed', { email, key });
+        send(res, 503, { ok: false, error: 'Could not save activation. Check your connection and try again.' });
+        return;
+      }
 
+      let wsOk = true;
       if (ownerId) {
         const ws = workspaces[ownerId] || {};
         const licenses = dbList(ws.licenses);
@@ -595,14 +652,35 @@ export default async function handler(req, res) {
                 : l,
             )
           : [licenseRow, ...licenses];
-        await firebaseWrite(`lumo/store/workspaces/${ownerId}`, {
+        wsOk = await firebaseWrite(`lumo/store/workspaces/${ownerId}`, {
           ...ws,
           licenses: nextLicenses,
         });
       }
+      if (!wsOk) {
+        console.error('[license:claim] workspace write failed', { email, key, ownerId });
+        send(res, 503, { ok: false, error: 'Could not save activation. Check your connection and try again.' });
+        return;
+      }
 
-      await firebaseWrite('lumo/updatedAt', new Date().toISOString());
-      send(res, 200, { ok: true, license: toClaimPayload(assigned) });
+      await firebaseWrite('lumo/updatedAt', new Date().toISOString()).catch(() => false);
+
+      const verifyVault = dbList(await firebaseRead('lumo/vault'));
+      const verified = findVaultEntry(verifyVault, key);
+      if (
+        !verified ||
+        verified.status !== 'assigned' ||
+        String(verified.assignedEmail || '').toLowerCase() !== email
+      ) {
+        console.error('[license:claim] verification failed after write', { email, key });
+        send(res, 409, {
+          ok: false,
+          error: 'Activation could not be confirmed. Refresh and try again.',
+        });
+        return;
+      }
+
+      send(res, 200, { ok: true, license: toClaimPayload(verified) });
       return;
     }
 
@@ -729,20 +807,20 @@ export default async function handler(req, res) {
             : [];
       const workspace = body.workspace;
       if (!adminId || !vaultEntries.length || !vaultEntries[0]?.key) {
-        send(res, 400, { error: 'adminId and license key required' });
+        send(res, 400, { ok: false, error: 'adminId and license key required' });
         return;
       }
-      const ok = await publishLicensesToFirebase(
+      const result = await publishLicensesToFirebase(
         adminId,
         vaultEntries,
         workspace,
         body.revokedKeys,
       );
-      if (!ok) {
-        send(res, 502, { error: 'Could not save license to cloud database' });
+      if (!result.ok) {
+        send(res, 502, { ok: false, error: result.error || 'Could not save license to cloud database' });
         return;
       }
-      send(res, 200, { ok: true, key: vaultEntries[0].key });
+      send(res, 200, { ok: true, key: result.key || vaultEntries[0].key });
       return;
     }
 

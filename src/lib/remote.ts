@@ -54,21 +54,105 @@ export async function fetchDb(): Promise<RemoteDb | null> {
   return fetchWithTimeout(work(), FETCH_DB_TIMEOUT_MS);
 }
 
+export type PublishLicensesResult =
+  | { ok: true; key?: string }
+  | { ok: false; error: string; status?: number };
+
+export type ClaimLicenseRemoteResult =
+  | { ok: true; license: Record<string, unknown> }
+  | { ok: false; error: string; retryable?: boolean; status?: number };
+
+const PUBLISH_TIMEOUT_MS = 45_000;
+const CLAIM_TIMEOUT_MS = 15_000;
+
+async function fetchJsonWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<{ res: Response; data: Record<string, unknown> }> {
+  const ac = new AbortController();
+  const timer = window.setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: ac.signal });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    return { res, data };
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 export async function publishLicensesRemote(input: {
   adminId: string;
   vaultEntries: unknown[];
   workspace: unknown;
   revokedKeys?: string[];
-}): Promise<boolean> {
+}): Promise<PublishLicensesResult> {
   try {
-    const res = await fetch('/api/licenses/publish', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    });
-    return res.ok;
-  } catch {
-    return false;
+    const { res, data } = await fetchJsonWithTimeout(
+      '/api/licenses/publish',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      },
+      PUBLISH_TIMEOUT_MS,
+    );
+    if (res.ok && data.ok !== false) {
+      return { ok: true, key: typeof data.key === 'string' ? data.key : undefined };
+    }
+    return {
+      ok: false,
+      error:
+        (typeof data.error === 'string' && data.error) ||
+        `Could not publish license (${res.status})`,
+      status: res.status,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Network error while saving license',
+    };
+  }
+}
+
+export async function claimLicenseRemote(
+  key: string,
+  email: string,
+  attempt = 1,
+): Promise<ClaimLicenseRemoteResult> {
+  const maxAttempts = 2;
+  try {
+    const { res, data } = await fetchJsonWithTimeout(
+      '/api/licenses/claim',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, email }),
+      },
+      CLAIM_TIMEOUT_MS,
+    );
+    if (res.ok && data.ok !== false && data.license && typeof data.license === 'object') {
+      return { ok: true, license: data.license as Record<string, unknown> };
+    }
+    const error =
+      (typeof data.error === 'string' && data.error) ||
+      `Activation failed (${res.status})`;
+    const retryable = res.status >= 500 || res.status === 408 || res.status === 429;
+    if (retryable && attempt < maxAttempts) {
+      await new Promise((resolve) => window.setTimeout(resolve, 800));
+      return claimLicenseRemote(key, email, attempt + 1);
+    }
+    return { ok: false, error, retryable, status: res.status };
+  } catch (err) {
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => window.setTimeout(resolve, 800));
+      return claimLicenseRemote(key, email, attempt + 1);
+    }
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Network error during activation',
+      retryable: true,
+    };
   }
 }
 

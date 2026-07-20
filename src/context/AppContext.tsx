@@ -15,7 +15,7 @@ import {
 } from '../lib/mentorMedia';
 import { fetchDb, fetchSession, pushSession } from '../lib/remote';
 import { dbList } from '../lib/firebaseDb';
-import { loadJSON, saveJSON } from '../lib/storage';
+import { loadJSON, normalizeLicenseKey, saveJSON } from '../lib/storage';
 
 export type UserProfile = { email: string; firstName: string; lastName: string };
 
@@ -396,12 +396,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activateWithLicense: (key, sync) => {
         const displayName =
           sync?.displayName ?? sync?.name ?? session.bot.displayName;
+        const normalizedKey = normalizeLicenseKey(key);
         persist({
           ...session,
           accessStatus: 'licensed',
           bot: {
             ...session.bot,
-            licenseKey: key.trim().toUpperCase(),
+            licenseKey: normalizedKey,
             status: 'active',
             name: (sync?.name ?? displayName).replace(/\s+/g, '').toUpperCase(),
             displayName,

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { KeyRound } from 'lucide-react';
+import { KeyRound, Loader2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
+import { isClaimableKey } from '../../lib/licenseClaim';
 import { resolveProfileImage } from '../../lib/mentorMedia';
 import { normalizeLicenseKey } from '../../lib/storage';
 
@@ -36,6 +37,11 @@ export function ActivateLicensePage() {
   const onActivate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || busy) return;
+    const formatErr = isClaimableKey(key);
+    if (formatErr) {
+      setError(formatErr);
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -54,7 +60,7 @@ export function ActivateLicensePage() {
         symbols: lic.symbols,
         customMedia: lic.customMedia,
       });
-      navigate('/app');
+      navigate('/app', { replace: true });
     } finally {
       setBusy(false);
     }
@@ -97,9 +103,21 @@ export function ActivateLicensePage() {
             style={{ letterSpacing: 1, fontWeight: 700 }}
           />
         </div>
-        {error ? <p className="error">{error}</p> : null}
-        <button className="btn btn-blue" type="submit" disabled={busy}>
-          {busy ? 'Activating…' : 'Activate & Open App'}
+        {error ? (
+          <div className="license-status-banner license-status-error" role="alert">
+            <strong>Activation failed</strong>
+            <p>{error}</p>
+          </div>
+        ) : null}
+        <button className="btn btn-blue" type="submit" disabled={busy || !key.trim()}>
+          {busy ? (
+            <>
+              <Loader2 size={16} className="spin" style={{ marginRight: 8, verticalAlign: -3 }} />
+              Activating…
+            </>
+          ) : (
+            'Activate & Open App'
+          )}
         </button>
       </form>
     </div>

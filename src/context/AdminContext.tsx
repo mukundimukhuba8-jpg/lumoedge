@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  claimLicenseRemote,
   deleteClientRemote,
   fetchClients,
   fetchDb,
@@ -62,8 +63,10 @@ import {
   resolveLicenseBrandingSync,
   validateLicenseEmailAccess,
 } from '../lib/licenseClaim';
+import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
 
-/** Pull vault/workspaces from server without blocking activation UI */
+/** Blocks destructive vault sync while a publish is in flight. */
+let licensePublishInFlight = 0;
 function hydrateLicenseRemote(remote: RemoteDb | null) {
   if (!remote) return;
   if (Array.isArray(remote.revokedKeys)) {
@@ -623,6 +626,88 @@ function findLiveLicenseForOwner(
   );
 }
 
+function vaultHitToRecord(hit: LicenseRecord | VaultLicense): LicenseRecord {
+  if ('clientEmail' in hit && hit.clientEmail) return hit as LicenseRecord;
+  const v = hit as VaultLicense;
+  return {
+    id: v.id,
+    key: v.key,
+    eaId: v.eaId,
+    eaName: v.eaName,
+    eaImage: v.eaImage,
+    mainText: v.mainText,
+    symbols: v.symbols,
+    customMedia: normalizeCustomMedia(v.customMedia),
+    ownerAdminId: v.ownerAdminId,
+    clientName: v.clientName,
+    clientEmail: v.email,
+    duration: v.duration,
+    status: v.status,
+    assignedEmail: v.assignedEmail,
+    assignedAt: v.assignedAt,
+  };
+}
+
+function mergeVaultKeepAll(local: VaultLicense[], remote: VaultLicense[]): VaultLicense[] {
+  const byKey = new Map<string, VaultLicense>();
+  for (const v of [...local, ...remote]) {
+    if (!v?.key || v.status === 'deleted') continue;
+    const mergeKey = keyFingerprint(v.key) || v.id || v.key;
+    const prev = byKey.get(mergeKey);
+    if (!prev) {
+      byKey.set(mergeKey, v);
+      continue;
+    }
+    byKey.set(mergeKey, {
+      ...prev,
+      ...v,
+      eaImage: v.eaImage || prev.eaImage || '',
+      customMedia: normalizeCustomMedia(
+        (v.customMedia?.length ? v.customMedia : prev.customMedia) || [],
+      ),
+    });
+  }
+  return Array.from(byKey.values());
+}
+
+function saveMergedVaultForMentor(
+  adminId: string,
+  remoteVault: VaultLicense[],
+  extraLocal: VaultLicense[] = [],
+) {
+  const revoked = loadRevokedKeys();
+  const merged = mergeVaultKeepAll(loadVault(), [...extraLocal, ...remoteVault]);
+  saveVaultLocal(
+    merged.filter(
+      (v) =>
+        v.status !== 'deleted' &&
+        !revoked.some((k) => keysMatch(k, v.key)) &&
+        (!v.ownerAdminId || v.ownerAdminId === adminId || extraLocal.some((e) => keysMatch(e.key, v.key))),
+    ),
+  );
+}
+
+async function findLicenseOnRemote(
+  clientEmail: string,
+  adminId: string,
+  key?: string,
+): Promise<LicenseRecord | null> {
+  const remote = await fetchDb();
+  if (!remote) return null;
+  const remoteWs = normalizeWorkspace(
+    (remote.store?.workspaces?.[adminId] as AdminWorkspace) || createEmptyWorkspace({ id: adminId }),
+    { id: adminId } as AdminUser,
+  );
+  const vaultSlice = dbList<VaultLicense>(remote.vault).filter(
+    (v) => v.ownerAdminId === adminId,
+  );
+  const hit = findLiveLicenseForOwner(clientEmail, adminId, remoteWs, vaultSlice);
+  if (!hit) return null;
+  const record = vaultHitToRecord(hit);
+  if (key && !keysMatch(record.key, key)) return null;
+  return record;
+}
+
 function licenseToVaultEntry(lic: LicenseRecord): VaultLicense {
   return {
     id: lic.id,
@@ -645,46 +730,68 @@ function licenseToVaultEntry(lic: LicenseRecord): VaultLicense {
 
 /** Push mentor licenses + vault entries to Firebase (fixes keys that only existed locally). */
 async function pushLicensesToRemote(adminId: string, ws: AdminWorkspace) {
-  const active = filterOwnLicenses(ws.licenses, adminId, ws.revokedKeys);
-  if (!active.length) {
-    await publishLicensesRemote({
+  licensePublishInFlight += 1;
+  try {
+    const active = filterOwnLicenses(ws.licenses, adminId, ws.revokedKeys);
+    if (!active.length) {
+      await publishLicensesRemote({
+        adminId,
+        vaultEntries: [],
+        workspace: { ...ws, licenses: [] },
+        revokedKeys: loadRevokedKeys(),
+      }).catch(() => undefined);
+      return;
+    }
+    const entries = active.map(licenseToVaultEntry);
+    licenseLog('publish', 'saving to cloud', {
       adminId,
-      vaultEntries: [],
-      workspace: { ...ws, licenses: [] },
+      count: entries.length,
+      keys: entries.map((e) => normalizeLicenseKey(e.key)),
+    });
+
+    const published = await publishLicensesRemote({
+      adminId,
+      vaultEntries: entries,
+      workspace: { ...ws, licenses: active },
       revokedKeys: loadRevokedKeys(),
-    }).catch(() => undefined);
-    return;
-  }
-  const entries = active.map(licenseToVaultEntry);
-  const local = loadVault();
-  const mergedLocal = [...local];
-  for (const entry of entries) {
-    const idx = mergedLocal.findIndex(
-      (e) => e.id === entry.id || keysMatch(e.key, entry.key),
-    );
-    if (idx >= 0) mergedLocal[idx] = entry;
-    else mergedLocal.unshift(entry);
-  }
-  saveVaultLocal(
-    mergedLocal.filter(
-      (v) =>
-        !isLicenseRevoked(v.key, ws.revokedKeys) &&
-        (v.ownerAdminId === adminId || entries.some((e) => keysMatch(e.key, v.key))),
-    ),
-  );
-  const published = await publishLicensesRemote({
-    adminId,
-    vaultEntries: entries,
-    workspace: { ...ws, licenses: active },
-    revokedKeys: loadRevokedKeys(),
-  });
-  if (!published) {
+    });
+
+    if (published.ok) {
+      saveMergedVaultForMentor(adminId, [], entries);
+      licenseLog('publish', 'cloud save confirmed', { key: published.key });
+      return;
+    }
+
+    licenseWarn('publish', 'API publish failed, trying client fallback', {
+      error: published.error,
+      status: published.status,
+    });
+
     const fb = await pushDb({
       vault: entries,
       store: { workspaces: { [adminId]: { ...ws, licenses: active } } },
       revokedKeys: loadRevokedKeys(),
     });
-    if (!fb) throw new Error('License cloud save failed');
+    if (fb) {
+      saveMergedVaultForMentor(adminId, [], entries);
+      licenseLog('publish', 'fallback pushDb succeeded');
+      return;
+    }
+
+    for (const entry of entries) {
+      const saved = await findLicenseOnRemote(entry.email, adminId, entry.key);
+      if (saved) {
+        saveMergedVaultForMentor(adminId, [], entries);
+        licenseWarn('publish', 'verified on remote despite publish error', {
+          key: saved.key,
+        });
+        return;
+      }
+    }
+
+    throw new Error(published.error || 'License cloud save failed');
+  } finally {
+    licensePublishInFlight -= 1;
   }
 }
 
@@ -1084,9 +1191,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         mentorId,
         remoteWs.revokedKeys,
       );
-      if (db.vault) {
+      if (db.vault && licensePublishInFlight === 0) {
         const revoked = loadRevokedKeys();
-        saveVaultLocal(
+        saveMergedVaultForMentor(
+          mentorId,
           dbList<VaultLicense>(db.vault).filter(
             (v) =>
               v.status !== 'deleted' &&
@@ -1212,8 +1320,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
   const resyncLicenses = useCallback(() => {
     const mentorId = auth.admin?.id ?? '';
-    if (!mentorId) return;
-    // Pull only — never push on page load (that resurrected deleted keys)
+    if (!mentorId || licensePublishInFlight > 0) return;
     void fetchDb().then((db) => {
       if (!db?.store?.workspaces?.[mentorId]) return;
       const remoteWs = normalizeWorkspace(
@@ -1225,21 +1332,30 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         mentorId,
         remoteWs.revokedKeys,
       );
-      if (db.vault) {
+      if (db.vault && licensePublishInFlight === 0) {
         const revoked = loadRevokedKeys();
-        saveVaultLocal(
+        saveMergedVaultForMentor(
+          mentorId,
           dbList<VaultLicense>(db.vault).filter(
             (v) =>
-              v.ownerAdminId === mentorId &&
               v.status !== 'deleted' &&
               !revoked.some((k) => keysMatch(k, v.key)),
           ),
         );
       }
       setStore((prev) => {
+        const localWs = prev.workspaces[mentorId];
+        const mergedWs = localWs
+          ? mergeWorkspaceKeepAll(localWs, remoteWs)
+          : remoteWs;
+        mergedWs.licenses = filterOwnLicenses(
+          mergedWs.licenses,
+          mentorId,
+          mergedWs.revokedKeys,
+        );
         const next = {
           ...prev,
-          workspaces: { ...prev.workspaces, [mentorId]: remoteWs },
+          workspaces: { ...prev.workspaces, [mentorId]: mergedWs },
         };
         saveJSON(STORE_KEY, next);
         return next;
@@ -1741,6 +1857,24 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           };
         }
 
+        const remoteExisting = await findLicenseOnRemote(clientEmail, adminId);
+        if (remoteExisting) {
+          licenseWarn('generate', 'duplicate blocked via remote check', {
+            email: clientEmail,
+            key: remoteExisting.key,
+          });
+          return {
+            ok: false,
+            error:
+              `This email already has a license key (${normalizeLicenseKey(
+                remoteExisting.key,
+              )}) on the server.\n\n` +
+              'Delete it first, then generate another one.',
+          };
+        }
+
+        licenseLog('generate', 'creating license', { email: clientEmail, eaId: input.eaId });
+
         const profileImage = ws.profile.eaImage || '';
         const realProfile =
           profileImage &&
@@ -1800,11 +1934,37 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         // Save to cloud first — clients on any device read Firebase, not this browser
         try {
           await pushLicensesToRemote(adminId, nextWs);
-        } catch {
+        } catch (err) {
+          licenseError('generate', 'cloud push failed, verifying remote', {
+            error: err instanceof Error ? err.message : String(err),
+            key,
+            clientEmail,
+          });
+          const verified = await findLicenseOnRemote(clientEmail, adminId, key);
+          if (verified) {
+            licenseWarn('generate', 'remote verified after error — treating as success', {
+              key: verified.key,
+            });
+            setStore((prev) => {
+              const next = {
+                ...prev,
+                workspaces: {
+                  ...prev.workspaces,
+                  [adminId]: nextWs,
+                },
+              };
+              saveJSON(STORE_KEY, next);
+              return next;
+            });
+            return {
+              ok: true,
+              license: { ...record, ...verified, eaImage: displayBytes || eaImage },
+            };
+          }
           return {
             ok: false,
             error:
-              'Could not save the license to the cloud. Check your connection and try again.',
+              `Could not save the license to the cloud. ${err instanceof Error ? err.message : 'Check your connection and try again.'}`,
           };
         }
         setStore((prev) => {
@@ -1818,6 +1978,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           saveJSON(STORE_KEY, next);
           return next;
         });
+        licenseLog('generate', 'success', { key, clientEmail });
         return { ok: true, license: { ...record, eaImage: displayBytes || eaImage } };
       },
       deleteLicense: async (id) => {
@@ -1899,6 +2060,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const formatErr = isClaimableKey(key);
         if (formatErr) return { ok: false, error: formatErr };
 
+        licenseLog('claim', 'start', { email: normalizedEmail, key: normalizedKey });
+
         const persistAssignment = (license: LicenseRecord, ownerId: string | null) => {
           if (license.eaImage) {
             saveEaImage(license.id, license.eaImage);
@@ -1964,77 +2127,66 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           };
         };
 
-        // Local vault — instant activation when key is already cached
-        let result = attemptClaim(store.workspaces);
-        if (result?.ok) {
-          if (result.isNew) persistAssignment(result.license, result.ownerId);
+        const finishClaim = (license: LicenseRecord) => {
+          const branded = resolveLicenseBrandingSync(
+            license,
+            store.workspaces,
+          ) as LicenseRecord;
+          persistAssignment(branded, branded.ownerAdminId || null);
           void fetchDb().then((remote) => hydrateLicenseRemote(remote));
-          return { ok: true, license: result.license };
-        }
-        if (result && !result.ok) return result;
+          licenseLog('claim', 'success', { key: branded.key, email: normalizedEmail });
+          return { ok: true as const, license: branded };
+        };
 
-        // Authoritative server claim (binds email on Firebase)
-        try {
-          const ac = new AbortController();
-          const timer = window.setTimeout(() => ac.abort(), 5000);
-          const res = await fetch('/api/licenses/claim', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: normalizedKey, email: normalizedEmail }),
-            signal: ac.signal,
-          });
-          window.clearTimeout(timer);
-          const data = (await res.json()) as {
-            ok?: boolean;
-            error?: string;
-            license?: LicenseRecord;
-          };
-          if (data.ok && data.license) {
-            const lic = {
-              ...data.license,
-              customMedia: normalizeCustomMedia(data.license.customMedia),
-            } as LicenseRecord;
-            const branded = resolveLicenseBrandingSync(
-              lic,
-              store.workspaces,
-            ) as LicenseRecord;
-            persistAssignment(branded, branded.ownerAdminId || null);
-            void fetchDb().then((remote) => hydrateLicenseRemote(remote));
-            return { ok: true, license: branded };
-          }
-          if (data.error && res.status !== 404) {
-            return { ok: false, error: data.error };
-          }
-        } catch {
-          // fall through
+        // Authoritative server claim first — binds email on Firebase
+        const server = await claimLicenseRemote(normalizedKey, normalizedEmail);
+        if (server.ok) {
+          const lic = {
+            ...server.license,
+            customMedia: normalizeCustomMedia(
+              (server.license.customMedia as LicenseRecord['customMedia']) || [],
+            ),
+          } as LicenseRecord;
+          return finishClaim(lic);
         }
 
-        // Last resort — short remote hydrate, no blocking image fetches
+        if (server.status && server.status >= 400 && server.status < 500 && !server.retryable) {
+          licenseWarn('claim', 'server rejected', { error: server.error, status: server.status });
+          return { ok: false, error: server.error };
+        }
+
+        licenseWarn('claim', 'server unavailable, trying hydrated fallback', {
+          error: server.error,
+        });
+
         const remote = await Promise.race([
           fetchDb(),
-          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500)),
+          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 6000)),
         ]);
         if (remote) {
           hydrateLicenseRemote(remote);
           const workspaces = remote.store?.workspaces
             ? (remote.store.workspaces as StoreState['workspaces'])
             : store.workspaces;
-          setStore({ workspaces });
+          setStore((prev) => ({ ...prev, workspaces: mergeStoresKeepAll(prev, { workspaces }).workspaces }));
           const remoteImages =
             remote.images && typeof remote.images === 'object'
               ? (remote.images as Record<string, string>)
               : {};
-          result = attemptClaim(workspaces, remoteImages);
+          const result = attemptClaim(workspaces, remoteImages);
           if (result?.ok) {
             if (result.isNew) persistAssignment(result.license, result.ownerId);
+            licenseLog('claim', 'fallback success', { key: result.license.key });
             return { ok: true, license: result.license };
           }
           if (result && !result.ok) return result;
         }
 
+        licenseError('claim', 'failed', { email: normalizedEmail, key: normalizedKey, error: server.error });
         return {
           ok: false,
           error:
+            server.error ||
             'Invalid license key. Copy the new key from Admin → Generate License (deleted keys never work).',
         };
       },

@@ -94,11 +94,13 @@ export function validateLicenseEmailAccess(
     return 'This license key is already used by another account.';
   }
 
-  if (
-    license.clientEmail &&
-    license.clientEmail.trim().toLowerCase() !== normalizedEmail
-  ) {
-    return `This key was issued for ${license.clientEmail}. Log in as that email, or ask your admin for a key for ${normalizedEmail}.`;
+  const issuedFor = String(
+    license.clientEmail || (license as { email?: string }).email || '',
+  )
+    .trim()
+    .toLowerCase();
+  if (issuedFor && issuedFor !== normalizedEmail) {
+    return `This key was issued for ${issuedFor}. Log in as that email, or ask your admin for a key for ${normalizedEmail}.`;
   }
 
   for (const entry of vault) {
