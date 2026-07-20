@@ -11,6 +11,7 @@ import {
   Sparkles,
   TrendingDown,
   TrendingUp,
+  Pencil,
   Upload,
   X,
 } from 'lucide-react';
@@ -81,6 +82,7 @@ export function ChartScannerPage() {
   const [status, setStatus] = useState('');
   const [tradeStatus, setTradeStatus] = useState('');
   const [aiLive, setAiLive] = useState<boolean | null>(null);
+  const [editSymbol, setEditSymbol] = useState('');
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const uploadRef = useRef<HTMLInputElement | null>(null);
   const animRef = useRef<number | null>(null);
@@ -192,6 +194,7 @@ export function ChartScannerPage() {
 
   const playReveal = async (item: ScanHistoryItem) => {
     setLastResult(item);
+    setEditSymbol(String(item.symbol || '').toUpperCase());
     setPhase('symbol');
     setStatus(`Detected ${item.symbol || 'symbol'}…`);
     await wait(550);
@@ -455,9 +458,25 @@ export function ChartScannerPage() {
             {(phase === 'symbol' || phase === 'direction' || phase === 'accuracy') &&
             lastResult ? (
               <div className="scan-card scan-phase-card pop-in">
-                <div className="muted scan-phase-label">Symbol detected</div>
-                <div className="scan-symbol-big">
-                  {lastResult.symbol}
+                <div className="muted scan-phase-label">
+                  Symbol detected — tap to correct
+                </div>
+                <div className="scan-symbol-big scan-symbol-edit">
+                  <input
+                    value={editSymbol}
+                    onChange={(e) => {
+                      const v = e.target.value.toUpperCase().replace(/\s+/g, '');
+                      setEditSymbol(v);
+                      setLastResult((prev) =>
+                        prev ? { ...prev, symbol: v } : prev,
+                      );
+                    }}
+                    aria-label="Trading symbol"
+                    spellCheck={false}
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                  />
+                  <Pencil size={15} className="scan-symbol-pencil" aria-hidden />
                   {lastResult.timeframe ? (
                     <span className="scan-tf">{lastResult.timeframe}</span>
                   ) : null}
@@ -515,9 +534,16 @@ export function ChartScannerPage() {
                 type="button"
                 className="btn btn-blue"
                 style={{ marginTop: 8 }}
-                onClick={() => void executeMt5Trades(lastResult)}
+                onClick={() => {
+                  const symbol = (editSymbol || lastResult.symbol || '').trim();
+                  if (!symbol) {
+                    setTradeStatus('Enter the symbol first.');
+                    return;
+                  }
+                  void executeMt5Trades({ ...lastResult, symbol });
+                }}
               >
-                Send to MetaTrader
+                Send to MetaTrader{editSymbol ? ` — ${editSymbol}` : ''}
               </button>
             ) : null}
             {tradeStatus && phase === 'accuracy' ? (

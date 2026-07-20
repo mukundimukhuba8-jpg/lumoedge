@@ -2647,6 +2647,32 @@ a {
   background: rgba(59, 130, 246, 0.12);
 }
 
+/* Editable detected symbol — fix AI misreads before sending to MT5 */
+.scan-symbol-edit input {
+  width: 150px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px dashed rgba(59, 130, 246, 0.55);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-align: center;
+  padding: 6px 8px;
+  outline: none;
+}
+
+.scan-symbol-edit input:focus {
+  border-style: solid;
+  border-color: var(--electric);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.scan-symbol-pencil {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
 .scan-direction-big {
   display: inline-flex;
   align-items: center;
