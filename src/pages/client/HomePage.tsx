@@ -427,7 +427,7 @@ export function HomePage() {
                 </span>
               )}
               <div>
-                <div style={{ fontWeight: 700, letterSpacing: 1.2 }}>{bot.name}</div>
+                <div style={{ fontWeight: 700, letterSpacing: 1.2 }}>{eaTitle}</div>
                 <div style={{ color: 'var(--electric)', fontWeight: 600 }}>
                   {isPaused ? 'PAUSED' : 'ACTIVE'}
                 </div>
