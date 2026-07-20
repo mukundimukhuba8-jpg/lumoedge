@@ -300,7 +300,9 @@ const STORE_KEY = 'ub-web/admin-store-v3';
 
 export const SUPER_ADMIN = {
   email: 'mukundimukhuba8@gmail.com',
-  password: 'admin123',
+  /** SHA-256 of the Super Admin password — never stored in plain text */
+  passwordSha256:
+    '18026064be7ec28f428f49e9c93cc0c1f86d3883f11189805f592298467663c9',
   user: {
     id: 'LM-004821',
     email: 'mukundimukhuba8@gmail.com',
@@ -308,6 +310,16 @@ export const SUPER_ADMIN = {
     role: 'super' as const,
   },
 };
+
+async function sha256Hex(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(text),
+  );
+  return [...new Uint8Array(buf)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
 
 type AuthState = {
   portalOpen: boolean;
@@ -617,7 +629,7 @@ type Ctx = {
   admins: AdminUser[];
   openPortal: () => void;
   closePortal: () => void;
-  login: (email: string, password: string) => string | null;
+  login: (email: string, password: string) => Promise<string | null>;
   registerAdmin: (data: Omit<AdminUser, 'id' | 'role'> & { password: string }) => string | null;
   logout: () => void;
   approveAdmin: (id: string) => void;
@@ -882,11 +894,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           return next;
         }),
       closePortal: () => setAuth((a) => ({ ...a, portalOpen: false })),
-      login: (email, password) => {
+      login: async (email, password) => {
         const normalized = email.trim().toLowerCase();
         if (
           normalized === SUPER_ADMIN.email.toLowerCase() &&
-          password === SUPER_ADMIN.password
+          (await sha256Hex(password)) === SUPER_ADMIN.passwordSha256
         ) {
           const id = SUPER_ADMIN.user.id;
           if (!store.workspaces[id]) {

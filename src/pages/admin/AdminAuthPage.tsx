@@ -77,9 +77,10 @@ export function AdminAuthPage() {
           setError('');
           setSuccess('');
           if (tab === 'login') {
-            const err = login(form.email, form.password);
-            if (err) setError(err);
-            else navigate('/admin/dashboard');
+            void login(form.email, form.password).then((err) => {
+              if (err) setError(err);
+              else navigate('/admin/dashboard');
+            });
           } else {
             const err = registerAdmin(form);
             if (err) setError(err);
