@@ -99,7 +99,7 @@ async function mt5Request(targetPath, timeoutMs = 12000) {
 }
 
 /**
- * Connect to MT5 using broker terminal host (backend) then server-name fallback.
+ * Connect to MT5 using the broker web terminal host only (no server-name API).
  */
 export async function connectMt5Broker(input) {
   const user = String(input.user || '').trim();
@@ -110,30 +110,28 @@ export async function connectMt5Broker(input) {
   }
 
   const entry = getBrokerTerminal(server);
-  const endpoint = entry ? parseTerminalEndpoint(entry.terminalUrl) : null;
-  const attempts = [];
-
-  if (endpoint) {
-    const params = new URLSearchParams({
-      user,
-      password,
-      host: endpoint.host,
-      port: String(endpoint.port),
-    });
-    attempts.push(`/Connect?${params.toString()}`);
+  if (!entry) {
+    return {
+      ok: false,
+      error: 'Pick a supported broker server from the list — web terminal required.',
+    };
   }
 
-  const exParams = new URLSearchParams({ user, password, server });
-  attempts.push(`/ConnectEx?${exParams.toString()}`);
-
-  let lastErr = 'Connection failed';
-  for (const path of attempts) {
-    const result = await mt5Request(path);
-    if (result.ok && result.token) {
-      return { ok: true, token: result.token };
-    }
-    lastErr = result.error || lastErr;
+  const endpoint = parseTerminalEndpoint(entry.terminalUrl);
+  if (!endpoint) {
+    return { ok: false, error: 'Invalid web terminal configuration for this broker.' };
   }
 
-  return { ok: false, error: lastErr };
+  const params = new URLSearchParams({
+    user,
+    password,
+    host: endpoint.host,
+    port: String(endpoint.port),
+  });
+  const result = await mt5Request(`/Connect?${params.toString()}`);
+  if (result.ok && result.token) {
+    return { ok: true, token: result.token, terminalUrl: entry.terminalUrl };
+  }
+
+  return { ok: false, error: result.error || 'Connection failed' };
 }

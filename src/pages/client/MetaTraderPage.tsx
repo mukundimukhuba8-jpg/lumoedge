@@ -20,6 +20,7 @@ import {
   loadInterfacePrefs,
   subscribeInterfacePrefs,
 } from '../../lib/interfaceStyle';
+import { getTerminalUrl } from '../../lib/brokerTerminals';
 import {
   accountDetails,
   accountSummary,
@@ -185,7 +186,7 @@ export function MetaTraderPage() {
     if (user?.email) saveMt5(user.email, next);
   };
 
-  const runSearch = async (query: string, open = true) => {
+  const runSearch = (query: string, open = true) => {
     const q = query.trim();
     if (q.length < 2) {
       setCompanies([]);
@@ -193,10 +194,9 @@ export function MetaTraderPage() {
     }
     setSearching(true);
     try {
-      const list = await searchBrokers(q);
+      const list = searchBrokers(q);
       setCompanies(list);
       if (open) setBrokerOpen(true);
-      // If current broker matches first result, refresh its servers
       const flat = list.flatMap((c) =>
         (c.results || []).map((r) => ({ ...r, company: c.company })),
       );
@@ -215,8 +215,6 @@ export function MetaTraderPage() {
           );
         }
       }
-    } catch (e) {
-      setStatus(e instanceof Error ? e.message : 'Broker search failed');
     } finally {
       setSearching(false);
     }
@@ -226,7 +224,7 @@ export function MetaTraderPage() {
     setBrokerQuery(value);
     if (searchTimer.current) window.clearTimeout(searchTimer.current);
     searchTimer.current = window.setTimeout(() => {
-      void runSearch(value);
+      runSearch(value);
     }, 350);
   };
 
@@ -345,6 +343,10 @@ export function MetaTraderPage() {
       : conn?.state === 'reconnecting' || conn?.state === 'connecting'
         ? '#fbbf24'
         : '#f87171';
+
+  const terminalUrl =
+    servers.find((s) => s.name === form.server)?.terminalUrl ||
+    getTerminalUrl(form.server);
 
   return (
     <div className="app-shell mt5-shell">
@@ -467,7 +469,7 @@ export function MetaTraderPage() {
                       if (!companies.length) setCompanies(listKnownBrokers());
                       setBrokerOpen(true);
                     }}
-                    placeholder="Search Broker"
+                    placeholder="Search supported brokers"
                   />
                   <span className="mt5-search-ico">
                     {searching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
@@ -516,14 +518,30 @@ export function MetaTraderPage() {
                         {s.name}
                       </option>
                     ))}
-                    {form.server && !servers.some((s) => s.name === form.server) ? (
-                      <option value={form.server}>{form.server}</option>
-                    ) : null}
                   </select>
                   <span className="mt5-chevron" aria-hidden>
                     <ChevronDown size={16} />
                   </span>
                 </div>
+                {terminalUrl ? (
+                  <a
+                    className="btn btn-ghost"
+                    href={terminalUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      width: '100%',
+                      marginTop: 8,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <ExternalLink size={16} />
+                    Open web terminal
+                  </a>
+                ) : null}
               </div>
 
               <div className="mt5-field">
