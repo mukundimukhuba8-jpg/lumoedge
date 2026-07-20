@@ -27,6 +27,13 @@ export type RemoteDb = {
   revokedKeys?: string[];
   /** Emails deleted from Subscriptions — never re-added by merges/seeds */
   deletedClients?: string[];
+  /** Super Admin scan quota / history reset signals (synced to clients) */
+  scanAdmin?: {
+    quotaResetAll?: string;
+    historyClearAll?: string;
+    quotaResets?: Record<string, string>;
+    historyClears?: Record<string, string>;
+  };
   updatedAt?: string;
 };
 

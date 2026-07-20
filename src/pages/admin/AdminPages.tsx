@@ -3,6 +3,7 @@ import { Copy, Loader2, MoreVertical, Plus, Trash2, Ban, Clock, CreditCard, KeyR
 import { useAdmin, type ClientRequest } from '../../context/AdminContext';
 import { resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
 import { compressImageFile, getEaImage, blobUrlToDataUrl } from '../../lib/storage';
+import { pushScanAdminReset } from '../../lib/chartScan';
 import { Placeholder } from './AdminShell';
 
 function isRealImage(url?: string): boolean {
@@ -98,8 +99,103 @@ function ClientEmailMenu({
   );
 }
 
+function ScanAdminTools({ approvedEmails }: { approvedEmails: string[] }) {
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState('');
+  const run = async (
+    label: string,
+    action: () => Promise<void>,
+  ) => {
+    setBusy(label);
+    try {
+      await action();
+      alert(`${label} — synced to all devices.`);
+    } catch {
+      alert(`Could not complete: ${label}`);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  return (
+    <div className="glow-card admin-tools-card">
+      <div className="admin-tools-head">
+        <strong className="muted admin-tools-label">CHART SCANNER</strong>
+        <span className="admin-tools-badge">ADMIN TOOLS</span>
+      </div>
+      <div className="field" style={{ marginBottom: 10 }}>
+        <label>Client email</label>
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="client@email.com"
+          list="scan-client-emails"
+        />
+        <datalist id="scan-client-emails">
+          {approvedEmails.map((addr) => (
+            <option key={addr} value={addr} />
+          ))}
+        </datalist>
+      </div>
+      <div className="admin-scan-btn-grid">
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={!email.trim() || Boolean(busy)}
+          onClick={() =>
+            void run('User scan count reset', () =>
+              pushScanAdminReset({ email: email.trim() }),
+            )
+          }
+        >
+          Reset user scans
+        </button>
+        <button
+          type="button"
+          className="btn btn-blue"
+          disabled={Boolean(busy)}
+          onClick={() =>
+            void run('All scan counts reset', () => pushScanAdminReset({ allUsers: true }))
+          }
+        >
+          Reset all scans
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={!email.trim() || Boolean(busy)}
+          onClick={() =>
+            void run('User history cleared', () =>
+              pushScanAdminReset({ email: email.trim(), clearHistory: true }),
+            )
+          }
+        >
+          Clear user history
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          style={{ borderColor: 'rgba(248,113,113,0.45)', color: '#fecaca' }}
+          disabled={Boolean(busy)}
+          onClick={() =>
+            void run('All history cleared', () =>
+              pushScanAdminReset({ clearHistoryAll: true }),
+            )
+          }
+        >
+          Clear all history
+        </button>
+      </div>
+      <p className="muted" style={{ marginBottom: 0, marginTop: 10, fontSize: 12 }}>
+        Resets apply immediately on every device — no logout required. Daily auto-reset runs at
+        00:00 South African time.
+      </p>
+    </div>
+  );
+}
+
 export function DashboardPage() {
-  const { profile, stats, admin, eas, licenses } = useAdmin();
+  const { profile, stats, admin, eas, licenses, clientRequests } = useAdmin();
   const isSuper = admin?.role === 'super';
   const isEmpty = eas.length === 0 && licenses.length === 0;
   const firstName = profile.firstName || admin?.fullName?.split(' ')[0] || 'Admin';
@@ -140,33 +236,11 @@ export function DashboardPage() {
         />
       </div>
       {isSuper ? (
-        <div className="glow-card admin-tools-card">
-          <div className="admin-tools-head">
-            <strong className="muted admin-tools-label">CHART SCANNER</strong>
-            <span className="admin-tools-badge">ADMIN TOOLS</span>
-          </div>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{ borderColor: 'rgba(59,130,246,0.55)' }}
-            onClick={() => {
-              try {
-                const keys = Object.keys(localStorage).filter((k) =>
-                  k.toLowerCase().includes('scan'),
-                );
-                for (const k of keys) localStorage.removeItem(k);
-                alert('Scan limits cleared on this device.');
-              } catch {
-                alert('Could not clear scan limits on this device.');
-              }
-            }}
-          >
-            Reset All Scan Limits
-          </button>
-          <p className="muted" style={{ marginBottom: 0, marginTop: 10, fontSize: 12 }}>
-            Clears every user&apos;s daily scan count immediately.
-          </p>
-        </div>
+        <ScanAdminTools
+          approvedEmails={clientRequests
+            .filter((c) => c.status === 'approved')
+            .map((c) => c.email)}
+        />
       ) : null}
     </div>
   );

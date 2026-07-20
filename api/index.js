@@ -95,6 +95,8 @@ function normalizeDb(db) {
     vault: toArray(db && db.vault),
     images: db && db.images && typeof db.images === 'object' ? db.images : {},
     revokedKeys: toArray(db && db.revokedKeys),
+    scanAdmin:
+      db && db.scanAdmin && typeof db.scanAdmin === 'object' ? db.scanAdmin : undefined,
   };
 }
 
@@ -395,6 +397,15 @@ function mergeDatabases(base, patch) {
     sessions: { ...(a.sessions || {}), ...(b.sessions || {}) },
     images: { ...(a.images || {}), ...(b.images || {}) },
     revokedKeys: [...new Set([...(a.revokedKeys || []), ...(b.revokedKeys || [])])],
+    scanAdmin: {
+      ...(a.scanAdmin || {}),
+      ...(b.scanAdmin || {}),
+      quotaResets: { ...(a.scanAdmin?.quotaResets || {}), ...(b.scanAdmin?.quotaResets || {}) },
+      historyClears: {
+        ...(a.scanAdmin?.historyClears || {}),
+        ...(b.scanAdmin?.historyClears || {}),
+      },
+    },
   });
 }
 

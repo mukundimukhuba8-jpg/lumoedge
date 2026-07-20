@@ -1,6 +1,9 @@
+import { fetchDb, pushDb } from './remote';
 import { loadJSON, saveJSON } from './storage';
 
 export const DAILY_SCAN_LIMIT = 7;
+export const SCAN_RESET_EVENT = 'ub-scan-reset';
+export const SAST_TIMEZONE = 'Africa/Johannesburg';
 
 export type TradeDirection = 'buy' | 'sell';
 
@@ -18,24 +21,111 @@ export type ScanHistoryItem = {
 };
 
 type QuotaStore = {
-  /** YYYY-MM-DD -> remaining counts by email */
+  /** YYYY-MM-DD (SAST) -> remaining counts by email */
   days: Record<string, Record<string, number>>;
 };
 
 type HistoryStore = Record<string, ScanHistoryItem[]>;
 
+type DayMarker = { day: string };
+
+type ScanAdminSync = {
+  quotaResetAll?: string;
+  historyClearAll?: string;
+  quotaResets?: Record<string, string>;
+  historyClears?: Record<string, string>;
+};
+
+type ScanAdminApplied = {
+  quotaResetAll?: string;
+  historyClearAll?: string;
+  quotaResets?: Record<string, string>;
+  historyClears?: Record<string, string>;
+};
+
 const QUOTA_KEY = 'ub-web/scan-quota-v1';
 const HISTORY_KEY = 'ub-web/scan-history-v1';
+const DAY_MARKER_KEY = 'ub-web/scan-day-marker-v1';
+const ADMIN_APPLIED_KEY = 'ub-web/scan-admin-applied-v1';
 
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function emailKey(email?: string) {
+export function emailKey(email?: string) {
   return (email || 'guest').trim().toLowerCase() || 'guest';
 }
 
+/** Calendar day in South African Standard Time (YYYY-MM-DD). */
+export function getSastDayKey(date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: SAST_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function todayKey() {
+  return getSastDayKey();
+}
+
+function loadAdminApplied(): ScanAdminApplied {
+  return loadJSON<ScanAdminApplied>(ADMIN_APPLIED_KEY, {});
+}
+
+function saveAdminApplied(next: ScanAdminApplied) {
+  saveJSON(ADMIN_APPLIED_KEY, next);
+}
+
+export function emitScanReset() {
+  window.dispatchEvent(new CustomEvent(SCAN_RESET_EVENT));
+}
+
+/** Midnight SAST — clear history and daily quota for a new trading day. */
+export function applyDailyResetIfNeeded(): boolean {
+  const day = todayKey();
+  const marker = loadJSON<DayMarker>(DAY_MARKER_KEY, { day: '' });
+  if (marker.day === day) return false;
+
+  saveJSON(HISTORY_KEY, {});
+  saveJSON(QUOTA_KEY, { days: { [day]: {} } });
+  saveJSON(DAY_MARKER_KEY, { day });
+  emitScanReset();
+  return true;
+}
+
+export function msUntilNextSastMidnight(): number {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: SAST_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const pick = (type: string) => Number(parts.find((p) => p.type === type)?.value || 0);
+  const elapsed =
+    pick('hour') * 3600 + pick('minute') * 60 + pick('second');
+  return Math.max(1000, (86400 - elapsed) * 1000 + 800);
+}
+
+export function scheduleSastMidnightReset(onReset: () => void): () => void {
+  let timer: number | null = null;
+  const schedule = () => {
+    if (timer != null) window.clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      applyDailyResetIfNeeded();
+      onReset();
+      schedule();
+    }, msUntilNextSastMidnight());
+  };
+  schedule();
+  return () => {
+    if (timer != null) window.clearTimeout(timer);
+  };
+}
+
 export function getScansLeft(email?: string): number {
+  applyDailyResetIfNeeded();
   const store = loadJSON<QuotaStore>(QUOTA_KEY, { days: {} });
   const day = todayKey();
   const user = emailKey(email);
@@ -45,6 +135,7 @@ export function getScansLeft(email?: string): number {
 }
 
 export function consumeScan(email?: string): number {
+  applyDailyResetIfNeeded();
   const store = loadJSON<QuotaStore>(QUOTA_KEY, { days: {} });
   const day = todayKey();
   const user = emailKey(email);
@@ -55,7 +146,6 @@ export function consumeScan(email?: string): number {
       : DAILY_SCAN_LIMIT;
   const next = Math.max(0, current - 1);
   store.days[day][user] = next;
-  // prune old days
   for (const d of Object.keys(store.days)) {
     if (d !== day) delete store.days[d];
   }
@@ -63,17 +153,170 @@ export function consumeScan(email?: string): number {
   return next;
 }
 
+export function resetScanQuotaForUser(email: string) {
+  applyDailyResetIfNeeded();
+  const store = loadJSON<QuotaStore>(QUOTA_KEY, { days: {} });
+  const day = todayKey();
+  if (!store.days[day]) store.days[day] = {};
+  store.days[day][emailKey(email)] = DAILY_SCAN_LIMIT;
+  saveJSON(QUOTA_KEY, store);
+  emitScanReset();
+}
+
+export function resetAllScanQuotasLocal() {
+  applyDailyResetIfNeeded();
+  const day = todayKey();
+  saveJSON(QUOTA_KEY, { days: { [day]: {} } });
+  emitScanReset();
+}
+
 export function loadScanHistory(email?: string): ScanHistoryItem[] {
+  applyDailyResetIfNeeded();
   const all = loadJSON<HistoryStore>(HISTORY_KEY, {});
   return all[emailKey(email)] || [];
 }
 
 export function pushScanHistory(email: string | undefined, item: ScanHistoryItem) {
+  applyDailyResetIfNeeded();
   const all = loadJSON<HistoryStore>(HISTORY_KEY, {});
   const key = emailKey(email);
   all[key] = [item, ...(all[key] || [])].slice(0, 40);
   saveJSON(HISTORY_KEY, all);
   return all[key];
+}
+
+export function clearScanHistoryForUser(email: string) {
+  const all = loadJSON<HistoryStore>(HISTORY_KEY, {});
+  delete all[emailKey(email)];
+  saveJSON(HISTORY_KEY, all);
+  emitScanReset();
+}
+
+export function clearAllScanHistoryLocal() {
+  saveJSON(HISTORY_KEY, {});
+  emitScanReset();
+}
+
+function isNewer(ts: string | undefined, prev: string | undefined) {
+  if (!ts) return false;
+  if (!prev) return true;
+  return Date.parse(ts) > Date.parse(prev);
+}
+
+/** Apply Super Admin scan resets pushed via shared DB — immediate on all devices. */
+export function applyScanAdminFromRemote(
+  scanAdmin: ScanAdminSync | undefined,
+  email?: string,
+): { quotaChanged: boolean; historyChanged: boolean } {
+  if (!scanAdmin) return { quotaChanged: false, historyChanged: false };
+  const user = emailKey(email);
+  const applied = loadAdminApplied();
+  let quotaChanged = false;
+  let historyChanged = false;
+
+  if (isNewer(scanAdmin.quotaResetAll, applied.quotaResetAll)) {
+    resetAllScanQuotasLocal();
+    applied.quotaResetAll = scanAdmin.quotaResetAll;
+    quotaChanged = true;
+  }
+
+  const userQuotaTs = scanAdmin.quotaResets?.[user];
+  if (isNewer(userQuotaTs, applied.quotaResets?.[user])) {
+    if (email) resetScanQuotaForUser(email);
+    applied.quotaResets = { ...(applied.quotaResets || {}), [user]: userQuotaTs! };
+    quotaChanged = true;
+  }
+
+  if (isNewer(scanAdmin.historyClearAll, applied.historyClearAll)) {
+    clearAllScanHistoryLocal();
+    applied.historyClearAll = scanAdmin.historyClearAll;
+    historyChanged = true;
+  }
+
+  const userHistoryTs = scanAdmin.historyClears?.[user];
+  if (isNewer(userHistoryTs, applied.historyClears?.[user])) {
+    if (email) clearScanHistoryForUser(email);
+    applied.historyClears = { ...(applied.historyClears || {}), [user]: userHistoryTs! };
+    historyChanged = true;
+  }
+
+  if (quotaChanged || historyChanged) {
+    saveAdminApplied(applied);
+    emitScanReset();
+  }
+
+  return { quotaChanged, historyChanged };
+}
+
+export async function syncScanRemoteAdmin(email?: string) {
+  try {
+    const db = await fetchDb();
+    const scanAdmin = (db as { scanAdmin?: ScanAdminSync } | null)?.scanAdmin;
+    return applyScanAdminFromRemote(scanAdmin, email);
+  } catch {
+    return { quotaChanged: false, historyChanged: false };
+  }
+}
+
+export async function pushScanAdminReset(input: {
+  email?: string;
+  allUsers?: boolean;
+  clearHistory?: boolean;
+  clearHistoryAll?: boolean;
+}) {
+  const ts = new Date().toISOString();
+  const db = await fetchDb();
+  const prev = ((db as { scanAdmin?: ScanAdminSync } | null)?.scanAdmin ||
+    {}) as ScanAdminSync;
+  const next: ScanAdminSync = {
+    quotaResets: { ...(prev.quotaResets || {}) },
+    historyClears: { ...(prev.historyClears || {}) },
+    quotaResetAll: prev.quotaResetAll,
+    historyClearAll: prev.historyClearAll,
+  };
+
+  if (input.allUsers) {
+    next.quotaResetAll = ts;
+    resetAllScanQuotasLocal();
+  } else if (input.email) {
+    const key = emailKey(input.email);
+    next.quotaResets = { ...(next.quotaResets || {}), [key]: ts };
+    resetScanQuotaForUser(input.email);
+  }
+
+  if (input.clearHistoryAll) {
+    next.historyClearAll = ts;
+    clearAllScanHistoryLocal();
+  } else if (input.clearHistory && input.email) {
+    const key = emailKey(input.email);
+    next.historyClears = { ...(next.historyClears || {}), [key]: ts };
+    clearScanHistoryForUser(input.email);
+  }
+
+  await pushDb({ scanAdmin: next } as Partial<import('./firebaseDb').RemoteDb>);
+  emitScanReset();
+}
+
+export function formatScanTime(iso: string): { time: string; date: string } {
+  const d = new Date(iso);
+  const time = new Intl.DateTimeFormat('en-GB', {
+    timeZone: SAST_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d);
+  const date = new Intl.DateTimeFormat('en-GB', {
+    timeZone: SAST_TIMEZONE,
+    day: 'numeric',
+    month: 'short',
+  }).format(d);
+  return { time, date };
+}
+
+export function scanResultStatus(accuracy: number): string {
+  if (accuracy >= 80) return 'Strong';
+  if (accuracy >= 65) return 'Complete';
+  return 'Review';
 }
 
 export type ScanApiResult = {
