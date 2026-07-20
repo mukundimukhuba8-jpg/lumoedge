@@ -56,11 +56,9 @@ export function DashboardPage() {
       <div className="stat-grid admin-stat-grid">
         <Stat value={String(stats.activeLicenses)} label="Active Licenses" tone="cyan" />
         <Stat value={String(stats.totalClients)} label="Total Clients" tone="blue" />
-        <Stat
-          value={String(isSuper ? stats.pendingClients : stats.activeLicenses)}
-          label={isSuper ? 'Pending Approvals' : 'Paid Clients'}
-          tone={isSuper ? 'purple' : 'green'}
-        />
+        {isSuper ? (
+          <Stat value={String(stats.pendingClients)} label="Pending Approvals" tone="purple" />
+        ) : null}
         <Stat
           value={String(stats.deletedLicenses)}
           label="Revoked Keys"
