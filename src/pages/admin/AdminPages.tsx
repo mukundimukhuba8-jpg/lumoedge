@@ -65,33 +65,35 @@ export function DashboardPage() {
           tone="pink"
         />
       </div>
-      <div className="glow-card admin-tools-card">
-        <div className="admin-tools-head">
-          <strong className="muted admin-tools-label">CHART SCANNER</strong>
-          <span className="admin-tools-badge">ADMIN TOOLS</span>
+      {isSuper ? (
+        <div className="glow-card admin-tools-card">
+          <div className="admin-tools-head">
+            <strong className="muted admin-tools-label">CHART SCANNER</strong>
+            <span className="admin-tools-badge">ADMIN TOOLS</span>
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ borderColor: 'rgba(59,130,246,0.55)' }}
+            onClick={() => {
+              try {
+                const keys = Object.keys(localStorage).filter((k) =>
+                  k.toLowerCase().includes('scan'),
+                );
+                for (const k of keys) localStorage.removeItem(k);
+                alert('Scan limits cleared on this device.');
+              } catch {
+                alert('Could not clear scan limits on this device.');
+              }
+            }}
+          >
+            Reset All Scan Limits
+          </button>
+          <p className="muted" style={{ marginBottom: 0, marginTop: 10, fontSize: 12 }}>
+            Clears every user&apos;s daily scan count immediately.
+          </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-ghost"
-          style={{ borderColor: 'rgba(59,130,246,0.55)' }}
-          onClick={() => {
-            try {
-              const keys = Object.keys(localStorage).filter((k) =>
-                k.toLowerCase().includes('scan'),
-              );
-              for (const k of keys) localStorage.removeItem(k);
-              alert('Scan limits cleared on this device.');
-            } catch {
-              alert('Could not clear scan limits on this device.');
-            }
-          }}
-        >
-          Reset All Scan Limits
-        </button>
-        <p className="muted" style={{ marginBottom: 0, marginTop: 10, fontSize: 12 }}>
-          Clears every user&apos;s daily scan count immediately.
-        </p>
-      </div>
+      ) : null}
     </div>
   );
 }
