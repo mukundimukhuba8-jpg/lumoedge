@@ -1016,13 +1016,16 @@ export default async function handler(req, res) {
       const id = decodeURIComponent(pathname.replace('/api/clients/', ''));
       const body = await readBody(req);
       const { db, sha } = await loadDb();
-      db.clients = (db.clients || []).map((c) => {
-        if (c.id !== id && c.email !== id) return c;
+      db.clients = toArray(db.clients).map((c) => {
+        if (c.id !== id && String(c.email || '').toLowerCase() !== id.toLowerCase()) {
+          return c;
+        }
         return {
           ...c,
           ...body,
           id: c.id,
           email: c.email,
+          status: pickClientStatus(c.status, body.status ?? c.status),
           paymentClaimed:
             body.paymentClaimed === true || c.paymentClaimed === true
               ? true
@@ -1034,7 +1037,8 @@ export default async function handler(req, res) {
         };
       });
       const updated =
-        db.clients.find((c) => c.id === id) || db.clients.find((c) => c.email === id);
+        db.clients.find((c) => c.id === id) ||
+        db.clients.find((c) => String(c.email || '').toLowerCase() === id.toLowerCase());
       if (updated) mirrorClientToSuper(db, updated);
       await saveDb(db, sha);
       send(res, 200, updated || null);

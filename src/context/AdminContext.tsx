@@ -1720,26 +1720,44 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ...ws,
           clientRequests: mergeClientLists(ws.clientRequests, [approved]),
         }));
-        void patchClient(email, {
+        void pushDb({ clients: mergeClientLists(clients, [approved]) }).catch(() => undefined);
+        const persistApproval = async (server: ClientRequest | null) => {
+          const merged = server
+            ? ({
+                ...(server as ClientRequest),
+                status: 'approved',
+                paymentClaimed: true,
+                paymentClaimedAt: claimedAt,
+              } as ClientRequest)
+            : approved;
+          setClients((prev) => mergeClientLists(prev, [merged]));
+          const db = await fetchDb();
+          const session = (db?.sessions?.[email] as Record<string, unknown> | undefined) || {};
+          await pushSession(email, {
+            ...session,
+            accessStatus: 'approved',
+          });
+        };
+        void patchClient(hit.id, {
           status: 'approved',
           paymentClaimed: true,
           paymentClaimedAt: claimedAt,
         })
           .then(async (server) => {
-            const merged = server
-              ? ({ ...(server as ClientRequest), status: 'approved' } as ClientRequest)
-              : approved;
-            setClients((prev) => mergeClientLists(prev, [merged]));
-            const db = await fetchDb();
-            const session = db?.sessions?.[email] as Record<string, unknown> | undefined;
-            if (session) {
-              await pushSession(email, {
-                ...session,
-                accessStatus: 'approved',
-              });
+            if (server) {
+              await persistApproval(server as ClientRequest);
+              return;
             }
+            const byEmail = await patchClient(email, {
+              status: 'approved',
+              paymentClaimed: true,
+              paymentClaimedAt: claimedAt,
+            });
+            await persistApproval(byEmail as ClientRequest | null);
           })
-          .catch(() => undefined);
+          .catch(async () => {
+            await persistApproval(approved);
+          });
       },
       markClientPaid: (id) => {
         const hit = clients.find((c) => c.id === id);
@@ -1757,13 +1775,26 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ...ws,
           clientRequests: mergeClientLists(ws.clientRequests, [updated]),
         }));
-        void patchClient(email, {
+        void pushDb({ clients: mergeClientLists(clients, [updated]) }).catch(() => undefined);
+        const applyPaid = (server: ClientRequest | null) => {
+          if (!server) return;
+          setClients((prev) => mergeClientLists(prev, [server as ClientRequest]));
+        };
+        void patchClient(hit.id, {
           paymentClaimed: true,
           paymentClaimedAt: claimedAt,
         })
-          .then((server) => {
-            if (!server) return;
-            setClients((prev) => mergeClientLists(prev, [server as ClientRequest]));
+          .then(async (server) => {
+            if (server) {
+              applyPaid(server as ClientRequest);
+              return;
+            }
+            applyPaid(
+              (await patchClient(email, {
+                paymentClaimed: true,
+                paymentClaimedAt: claimedAt,
+              })) as ClientRequest | null,
+            );
           })
           .catch(() => undefined);
       },

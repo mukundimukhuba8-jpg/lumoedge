@@ -13,6 +13,7 @@ import {
   firebasePushDb,
   firebasePushSession,
   mergeAdmins,
+  mergeClients,
   type RemoteDb,
 } from './firebaseDb';
 import { isFirebaseConfigured } from './firebase';
@@ -198,15 +199,24 @@ export async function pushDb(partial: Partial<RemoteDb>): Promise<RemoteDb | nul
 }
 
 export async function fetchClients() {
+  let fb: RemoteDb['clients'] | null = null;
+  let api: RemoteDb['clients'] | null = null;
+
   if (isFirebaseConfigured()) {
-    const fb = await firebaseFetchClients();
-    if (fb) return fb;
+    fb = await firebaseFetchClients();
   }
   try {
-    return await req<RemoteDb['clients']>('/api/clients');
+    api = await req<RemoteDb['clients']>('/api/clients');
   } catch {
-    return null;
+    api = null;
   }
+
+  const merged = mergeClients(
+    (fb || []) as Parameters<typeof mergeClients>[0],
+    (api || []) as Parameters<typeof mergeClients>[1],
+  );
+  if (!merged.length && fb === null && api === null) return null;
+  return merged;
 }
 
 export async function fetchAdmins() {
@@ -278,14 +288,19 @@ export async function patchClient(
     paymentClaimedAt?: string;
   },
 ) {
+  let fb: RemoteDb['clients'][number] | null = null;
   if (isFirebaseConfigured()) {
-    const fb = await firebasePatchClient(id, patch);
-    if (fb) return fb;
+    fb = await firebasePatchClient(id, patch);
   }
-  return req<RemoteDb['clients'][number] | null>(`/api/clients/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(patch),
-  });
+  if (fb) return fb;
+  try {
+    return await req<RemoteDb['clients'][number] | null>(`/api/clients/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+  } catch {
+    return fb;
+  }
 }
 
 export async function deleteClientRemote(id: string) {
