@@ -26,6 +26,7 @@ import {
   connectEx,
   disconnectMt5,
   openedOrders,
+  RAZOR_MARKETS,
   searchBrokers,
   type Mt5AccountDetails,
   type Mt5AccountSummary,
@@ -57,7 +58,7 @@ type ClientMt5 = {
 
 const MT5_KEY = 'ub-web/client-mt5-v1';
 
-const ACCOUNT_TYPES = ['Standard Live', 'Raw Spread', 'Demo'];
+const ACCOUNT_TYPES = ['100% Bonus Standard', '200%'];
 
 const EMPTY: ClientMt5 = {
   broker: '',
@@ -76,15 +77,15 @@ function loadMt5(email: string | undefined): ClientMt5 {
   const all = loadJSON<Record<string, ClientMt5>>(MT5_KEY, {});
   const saved = all[email.toLowerCase()] ?? {};
   const merged = { ...EMPTY, ...saved, password: '' };
-  // Not connected → clean slate: the user picks their own broker every time
+  // Not connected → RazorMarkets defaults from swagger broker list
   if (!merged.connected) {
     return {
       ...merged,
-      broker: '',
-      company: '',
-      site: '',
-      server: '',
-      accountType: '',
+      broker: RAZOR_MARKETS.broker,
+      company: RAZOR_MARKETS.company,
+      site: RAZOR_MARKETS.site,
+      server: RAZOR_MARKETS.server,
+      accountType: RAZOR_MARKETS.accountType,
     };
   }
   return merged;
@@ -137,7 +138,10 @@ export function MetaTraderPage() {
   useEffect(() => {
     const saved = loadMt5(user?.email);
     setForm(saved);
-    setBrokerQuery('');
+    setBrokerQuery(saved.broker || RAZOR_MARKETS.broker);
+    if (!saved.connected) {
+      void runSearch('Razor', false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
 
@@ -200,18 +204,37 @@ export function MetaTraderPage() {
         (c.results || []).map((r) => ({ ...r, company: c.company })),
       );
       if (flat.length && !form.connected) {
+        const razor =
+          flat.find((r) => r.name === RAZOR_MARKETS.server) ||
+          flat.find((r) => /razormarkets-live/i.test(r.name));
         const match =
+          razor ||
           flat.find((r) => r.name === form.server) ||
           flat.find((r) =>
             r.name.toLowerCase().includes(form.broker.split(' ')[0]?.toLowerCase() || ''),
           ) ||
           flat[0];
         if (match) {
+          const companyName = (match as { company?: string }).company || list[0]?.company || '';
           setServers(
-            list.find((c) => c.company === (match as { company?: string }).company)?.results ||
+            list.find((c) => c.company === companyName)?.results ||
               list[0].results ||
               [],
           );
+          if (razor || !form.server) {
+            persist({
+              ...form,
+              broker: RAZOR_MARKETS.broker,
+              company: companyName,
+              server: match.name,
+              site: match.site
+                ? match.site.startsWith('http')
+                  ? match.site
+                  : `https://${match.site}`
+                : RAZOR_MARKETS.site,
+              accountType: form.accountType || RAZOR_MARKETS.accountType,
+            });
+          }
         }
       }
     } catch (e) {
@@ -452,7 +475,7 @@ export function MetaTraderPage() {
                 </span>
                 <span style={{ flex: 1, textAlign: 'left' }}>
                   <div className="mt5-rec-label">RECOMMENDED BROKER</div>
-                  <div className="mt5-rec-name">Razor Markets</div>
+                  <div className="mt5-rec-name">{RAZOR_MARKETS.broker}</div>
                 </span>
                 <ExternalLink size={16} />
               </a>

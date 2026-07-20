@@ -678,7 +678,7 @@ export function ConnectEAPage() {
       </div>
       <div className="field"><label>Account Type</label>
         <select value={form.accountType} onChange={(e) => setForm({ ...form, accountType: e.target.value })}>
-          {['Standard Live', 'Raw Spread', 'Demo'].map((b) => <option key={b}>{b}</option>)}
+          {['100% Bonus Standard', '200%'].map((b) => <option key={b}>{b}</option>)}
         </select>
       </div>
       <div className="field"><label>Login</label><input value={form.login} onChange={(e) => setForm({ ...form, login: e.target.value })} /></div>

@@ -1456,8 +1456,8 @@ export default async function handler(req, res) {
       // Try env base first, then https and http on the swagger host
       const bases = [
         ...(envBase ? [envBase] : []),
-        `https://${MT5_HOST}`,
         `http://${MT5_HOST}`,
+        `https://${MT5_HOST}`,
       ].filter((b, i, arr) => arr.indexOf(b) === i);
 
       const override = String(url.searchParams.get('_mt5') || '').trim();

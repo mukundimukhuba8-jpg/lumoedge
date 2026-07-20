@@ -6,9 +6,20 @@
 function mt5Bases() {
   const host = (process.env.MT5_API_HOST || '66.23.225.158').trim();
   const envBase = String(process.env.MT5_API_BASE || '').replace(/\/$/, '');
-  return [...(envBase ? [envBase] : []), `https://${host}`, `http://${host}`].filter(
+  // Swagger host answers on HTTP; HTTPS hangs — try HTTP first.
+  return [...(envBase ? [envBase] : []), `http://${host}`, `https://${host}`].filter(
     (b, i, arr) => arr.indexOf(b) === i,
   );
+}
+
+/** Swagger uses PascalCase server names (e.g. RazorMarkets-Live). */
+function normalizeServerName(server) {
+  const key = String(server || '').trim().toLowerCase();
+  const aliases = {
+    'razormarkets-live': 'RazorMarkets-Live',
+    'razormarkets-demo': 'RazorMarkets-Demo',
+  };
+  return aliases[key] || String(server || '').trim();
 }
 
 async function readUpstreamText(res) {
@@ -60,7 +71,7 @@ async function mt5Request(targetPath, timeoutMs = 20000) {
 export async function connectMt5Broker(input) {
   const user = String(input.user || '').trim();
   const password = String(input.password || '');
-  const server = String(input.server || '').trim();
+  const server = normalizeServerName(input.server);
   if (!user || !password || !server) {
     return { ok: false, error: 'Missing login, password, or server' };
   }

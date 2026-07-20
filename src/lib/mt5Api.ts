@@ -1,13 +1,31 @@
 /**
  * MT5 client — broker search, connect, account, and trades via the
- * MT5API RESTFul swagger host (https://66.23.225.158) through /api/mt5.
+ * MT5API RESTFul swagger host (http://66.23.225.158) through /api/mt5.
  */
 
 const PROXY_BASE = '/api/mt5';
 
+const SERVER_ALIASES: Record<string, string> = {
+  'razormarkets-live': 'RazorMarkets-Live',
+  'razormarkets-demo': 'RazorMarkets-Demo',
+};
+
+export function normalizeMt5Server(server: string): string {
+  const trimmed = server.trim();
+  return SERVER_ALIASES[trimmed.toLowerCase()] || trimmed;
+}
+
+export const RAZOR_MARKETS = {
+  broker: 'RazorMarkets',
+  company: 'Razor Markets (Pty) Ltd',
+  server: 'RazorMarkets-Live',
+  accountType: '100% Bonus Standard',
+  site: 'https://razormarkets.co.za',
+};
+
 async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
   const ac = new AbortController();
-  const timer = window.setTimeout(() => ac.abort(), 14_000);
+  const timer = window.setTimeout(() => ac.abort(), 22_000);
   try {
     const res = await fetch(`${PROXY_BASE}${path}`, {
       ...init,
@@ -150,7 +168,7 @@ export async function connectEx(input: {
       body: JSON.stringify({
         user: String(input.user).trim(),
         password: input.password,
-        server: input.server.trim(),
+        server: normalizeMt5Server(input.server),
       }),
       signal: ac.signal,
     });
