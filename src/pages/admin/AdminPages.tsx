@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, Loader2, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck } from 'lucide-react';
-import { useAdmin } from '../../context/AdminContext';
+import { Copy, Loader2, MoreVertical, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck } from 'lucide-react';
+import { useAdmin, type ClientRequest } from '../../context/AdminContext';
 import { resolveProfileImage } from '../../lib/mentorMedia';
 import { compressImageFile, getEaImage, blobUrlToDataUrl } from '../../lib/storage';
 import { Placeholder } from './AdminShell';
@@ -22,6 +22,81 @@ function displayImageSrc(url?: string): string {
     return getEaImage(id) || getEaImage(u) || '';
   }
   return u;
+}
+
+function ClientEmailMenu({
+  client,
+  onMarkPaid,
+  onDelete,
+}: {
+  client: ClientRequest;
+  onMarkPaid: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        type="button"
+        aria-label={`Options for ${client.email}`}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        style={{
+          background: 'transparent',
+          color: 'var(--muted)',
+          padding: 6,
+          borderRadius: 8,
+        }}
+      >
+        <MoreVertical size={18} />
+      </button>
+      {open ? (
+        <div
+          className="mt5-dropdown"
+          style={{ left: 'auto', right: 0, minWidth: 168, top: 'calc(100% + 2px)' }}
+        >
+          {!client.paymentClaimed ? (
+            <button
+              type="button"
+              onClick={() => {
+                onMarkPaid();
+                setOpen(false);
+              }}
+            >
+              Mark as paid
+            </button>
+          ) : (
+            <button type="button" disabled style={{ opacity: 0.55, cursor: 'default' }}>
+              Already marked paid
+            </button>
+          )}
+          <button
+            type="button"
+            style={{ color: 'var(--red)' }}
+            onClick={() => {
+              onDelete();
+              setOpen(false);
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function DashboardPage() {
@@ -1050,7 +1125,7 @@ export function ApproveAdminsPage() {
 }
 
 export function SubscriptionsPage() {
-  const { clientRequests, approveClient, deleteClient, stats } = useAdmin();
+  const { clientRequests, approveClient, markClientPaid, deleteClient, stats } = useAdmin();
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
   const match = (c: { firstName: string; lastName: string; email: string }) => {
@@ -1107,10 +1182,19 @@ export function SubscriptionsPage() {
                 borderTop: '1px solid rgba(255,255,255,0.08)',
               }}
             >
-              <strong>
-                {c.firstName} {c.lastName}
-              </strong>
-              <div className="muted">{c.email}</div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <strong>
+                    {c.firstName} {c.lastName}
+                  </strong>
+                  <div className="muted">{c.email}</div>
+                </div>
+                <ClientEmailMenu
+                  client={c}
+                  onMarkPaid={() => markClientPaid(c.id)}
+                  onDelete={() => onDelete(c.id, c.email)}
+                />
+              </div>
               <div className="muted">
                 Registered {new Date(c.createdAt).toLocaleString()}
               </div>
@@ -1163,10 +1247,19 @@ export function SubscriptionsPage() {
         ) : (
           approved.map((c) => (
             <div key={c.id} style={{ padding: '8px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-              <strong>
-                {c.firstName} {c.lastName}
-              </strong>
-              <div className="muted">{c.email}</div>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <strong>
+                    {c.firstName} {c.lastName}
+                  </strong>
+                  <div className="muted">{c.email}</div>
+                </div>
+                <ClientEmailMenu
+                  client={c}
+                  onMarkPaid={() => markClientPaid(c.id)}
+                  onDelete={() => onDelete(c.id, c.email)}
+                />
+              </div>
               {c.paymentClaimed ? (
                 <div style={{ color: 'var(--green)', fontWeight: 700, fontSize: 12, marginTop: 4 }}>
                   PAID

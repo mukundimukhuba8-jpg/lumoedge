@@ -870,6 +870,7 @@ type Ctx = {
     lastName: string;
   }) => ClientRequest;
   approveClient: (id: string) => void;
+  markClientPaid: (id: string) => void;
   rejectClient: (id: string) => void;
   deleteClient: (id: string) => void;
   claimClientPayment: (email: string) => Promise<ClientRequest | null>;
@@ -1725,6 +1726,32 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                 accessStatus: 'approved',
               });
             }
+          })
+          .catch(() => undefined);
+      },
+      markClientPaid: (id) => {
+        const hit = clients.find((c) => c.id === id);
+        if (!hit || hit.paymentClaimed) return;
+        const email = hit.email.toLowerCase();
+        const claimedAt = new Date().toISOString();
+        const updated: ClientRequest = {
+          ...hit,
+          paymentClaimed: true,
+          paymentClaimedAt: claimedAt,
+        };
+        setClients((prev) => mergeClientLists(prev, [updated]));
+        const sid = SUPER_ADMIN.user.id;
+        patchWorkspace(sid, (ws) => ({
+          ...ws,
+          clientRequests: mergeClientLists(ws.clientRequests, [updated]),
+        }));
+        void patchClient(email, {
+          paymentClaimed: true,
+          paymentClaimedAt: claimedAt,
+        })
+          .then((server) => {
+            if (!server) return;
+            setClients((prev) => mergeClientLists(prev, [server as ClientRequest]));
           })
           .catch(() => undefined);
       },
