@@ -111,11 +111,18 @@ function mergeWorkspace(
 ): Record<string, unknown> {
   const a = current && typeof current === 'object' ? current : {};
   const b = incoming && typeof incoming === 'object' ? incoming : {};
+  const deletedEaIds = Array.from(
+    new Set([
+      ...((Array.isArray(a.deletedEaIds) ? a.deletedEaIds : []) as string[]),
+      ...((Array.isArray(b.deletedEaIds) ? b.deletedEaIds : []) as string[]),
+    ]),
+  );
+  const tombstones = new Set(deletedEaIds);
   const eas = mergeById(
     (Array.isArray(a.eas) ? a.eas : []) as Record<string, unknown>[],
     (Array.isArray(b.eas) ? b.eas : []) as Record<string, unknown>[],
     (e) => String(e.id || e.name || ''),
-  );
+  ).filter((e) => !tombstones.has(String(e.id || '')));
   const licenses = mergeById(
     (Array.isArray(a.licenses) ? a.licenses : []) as Record<string, unknown>[],
     (Array.isArray(b.licenses) ? b.licenses : []) as Record<string, unknown>[],
@@ -138,6 +145,7 @@ function mergeWorkspace(
   return {
     ...a,
     ...b,
+    deletedEaIds,
     eas,
     licenses,
     profile,
