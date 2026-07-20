@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, Plus, Trash2 } from 'lucide-react';
+import { Copy, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { resolveProfileImage } from '../../lib/mentorMedia';
 import { compressImageFile, getEaImage } from '../../lib/storage';
@@ -330,6 +330,12 @@ export function GenerateLicensePage() {
   const [search, setSearch] = useState('');
   const [lastKey, setLastKey] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [status, setStatus] = useState<{
+    type: 'error' | 'success';
+    title: string;
+    detail?: string;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
   const effectiveEaId = eaId || eas[0]?.id || '';
   const selected = eas.find((e) => e.id === effectiveEaId) ?? eas[0];
 
@@ -360,7 +366,16 @@ export function GenerateLicensePage() {
           </p>
         </div>
       ) : null}
-      <div className="glow-card">
+      <div className="glow-card" style={{ position: 'relative', overflow: 'hidden' }}>
+        {generating ? (
+          <div className="license-generating-overlay" aria-live="polite">
+            <Loader2 size={34} className="spin" style={{ color: 'var(--electric)' }} />
+            <strong style={{ color: 'var(--electric)', marginTop: 12 }}>Generating license key…</strong>
+            <span className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+              Saving to cloud — this only takes a moment
+            </span>
+          </div>
+        ) : null}
         <h3 style={{ marginTop: 0 }}>License Details</h3>
         <p className="muted" style={{ marginTop: 0 }}>
           Short keys like <strong style={{ color: 'var(--electric)' }}>LUMO-XXXX-XXXX-XXXX</strong>.
@@ -423,24 +438,58 @@ export function GenerateLicensePage() {
           disabled={generating}
           onClick={async () => {
             if (generating) return;
+            setStatus(null);
+            const trimmedName = clientName.trim();
+            const trimmedEmail = clientEmail.trim().toLowerCase();
+            if (!trimmedName || !trimmedEmail) {
+              setStatus({
+                type: 'error',
+                title: 'Missing details',
+                detail: 'Enter the client name and email before generating.',
+              });
+              return;
+            }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+              setStatus({
+                type: 'error',
+                title: 'Invalid email',
+                detail: 'Enter a valid client email address.',
+              });
+              return;
+            }
+            if (trimmedName.toLowerCase() === trimmedEmail) {
+              setStatus({
+                type: 'error',
+                title: 'Use a real name',
+                detail: 'Client Name should be the person\'s name — not their email address.',
+              });
+              return;
+            }
             setGenerating(true);
             try {
               const result = await generateLicense({
                 eaId: effectiveEaId,
-                clientName,
-                clientEmail,
+                clientName: trimmedName,
+                clientEmail: trimmedEmail,
                 duration,
               });
               if (!result.ok) {
-                alert(result.error);
+                setStatus({
+                  type: 'error',
+                  title: 'Could not generate license',
+                  detail: result.error,
+                });
                 return;
               }
               const rec = result.license;
               setLastKey(rec.key);
+              setCopied(false);
               navigator.clipboard?.writeText(rec.key).catch(() => undefined);
-              alert(
-                `License key saved to cloud:\n${rec.key}\n\nFor: ${rec.clientEmail}\nEA: ${rec.eaName}\n\nCopied — send this key to your client yourself. They enter it on the activate screen.`,
-              );
+              setStatus({
+                type: 'success',
+                title: 'License key ready',
+                detail: `${rec.key} — copied for ${rec.clientEmail}. Send this key to your client so they can activate on their device.`,
+              });
               setClientName('');
               setClientEmail('');
             } finally {
@@ -448,33 +497,36 @@ export function GenerateLicensePage() {
             }
           }}
         >
-          {generating ? 'Saving to cloud…' : 'Generate License'}
+          {generating ? (
+            <>
+              <Loader2 size={16} className="spin" style={{ marginRight: 8, verticalAlign: -3 }} />
+              Generating…
+            </>
+          ) : (
+            'Generate License'
+          )}
         </button>
+        {status ? (
+          <div className={`license-status-banner license-status-${status.type}`} role="alert">
+            <strong>{status.title}</strong>
+            {status.detail ? <p>{status.detail}</p> : null}
+          </div>
+        ) : null}
         {lastKey ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 12,
-              borderRadius: 12,
-              border: '1px solid rgba(57,255,20,0.45)',
-              background: 'rgba(57,255,20,0.08)',
-              textAlign: 'center',
-            }}
-          >
+          <div className="license-key-success">
             <div className="muted">Latest key</div>
-            <strong style={{ color: 'var(--green)', fontSize: 15, letterSpacing: 0.5 }}>
-              {lastKey}
-            </strong>
+            <strong>{lastKey}</strong>
             <button
               type="button"
               className="btn btn-ghost"
               style={{ marginTop: 10 }}
               onClick={() => {
                 navigator.clipboard?.writeText(lastKey);
-                alert('Copied');
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 2000);
               }}
             >
-              Copy key
+              {copied ? 'Copied!' : 'Copy key'}
             </button>
           </div>
         ) : null}

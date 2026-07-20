@@ -688,28 +688,6 @@ async function pushLicensesToRemote(adminId: string, ws: AdminWorkspace) {
   }
 }
 
-function licenseExistsOnRemote(
-  remote: Awaited<ReturnType<typeof fetchDb>>,
-  key: string,
-): boolean {
-  if (!remote) return false;
-  if (
-    dbList(remote.vault).some((v) =>
-      keysMatch(String((v as VaultLicense).key || ''), key),
-    )
-  ) {
-    return true;
-  }
-  for (const ws of Object.values(
-    (remote.store?.workspaces || {}) as StoreState['workspaces'],
-  )) {
-    if ((ws.licenses || []).some((l) => keysMatch(l.key, key) && l.status !== 'deleted')) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function uniqueKey(existing: LicenseRecord[]) {
   const vaultKeys = loadVault().map((v) => v.key);
   const revoked = loadRevokedKeys();
@@ -1824,14 +1802,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             ok: false,
             error:
               'Could not save the license to the cloud. Check your connection and try again.',
-          };
-        }
-        const remote = await fetchDb();
-        if (!licenseExistsOnRemote(remote, key)) {
-          return {
-            ok: false,
-            error:
-              'License was not confirmed on the server. Try generating again in a moment.',
           };
         }
         setStore((prev) => {
