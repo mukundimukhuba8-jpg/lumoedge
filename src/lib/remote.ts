@@ -30,16 +30,28 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+const FETCH_DB_TIMEOUT_MS = 6000;
+
+function fetchWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => window.setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 export async function fetchDb(): Promise<RemoteDb | null> {
-  if (isFirebaseConfigured()) {
-    const fb = await firebaseFetchDb();
-    if (fb) return fb;
-  }
-  try {
-    return await req<RemoteDb>('/api/db');
-  } catch {
-    return null;
-  }
+  const work = async (): Promise<RemoteDb | null> => {
+    if (isFirebaseConfigured()) {
+      const fb = await firebaseFetchDb();
+      if (fb) return fb;
+    }
+    try {
+      return await req<RemoteDb>('/api/db');
+    } catch {
+      return null;
+    }
+  };
+  return fetchWithTimeout(work(), FETCH_DB_TIMEOUT_MS);
 }
 
 export async function publishLicensesRemote(input: {

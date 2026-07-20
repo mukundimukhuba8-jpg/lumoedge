@@ -16,6 +16,7 @@ import {
   postClient,
   publishLicensesRemote,
   pushDb,
+  type RemoteDb,
 } from '../lib/remote';
 import {
   findPrepaidClient,
@@ -860,6 +861,9 @@ function mergeClientLists(...lists: ClientRequest[][]): ClientRequest[] {
 
 const AdminContext = createContext<Ctx | null>(null);
 const IMAGE_STORE = 'ub-web/ea-images-v1';
+/** Splash stays visible briefly, but never blocks the app on slow networks */
+const SPLASH_MIN_MS = 600;
+const SPLASH_MAX_MS = 1800;
 
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(() => migrateAuth());
@@ -870,101 +874,127 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   // Hydrate from disk-backed API so data survives new preview links
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const db = await fetchDb();
-      if (cancelled) return;
-      if (db) {
-        if (Array.isArray(db.auth?.admins)) {
-          // Never take remote "admin" (logged-in user) — that is per-device only.
-          // Syncing it made Super Admin and mentors overwrite each other.
-          setAuth((prev) => {
-            const remoteAdmins = db.auth!.admins as AdminUser[];
-            // Merge — never let a stale remote "pending" wipe a local approval
-            const admins = mergeAdmins(prev.admins, remoteAdmins);
-            const healed = admins.some((a) => {
-              const remote = remoteAdmins.find((r) => r.id === a.id);
-              return remote && a.role === 'admin' && remote.role === 'pending';
-            });
-            if (healed) {
-              void pushDb({ auth: { admins, admin: null } }).catch(() => undefined);
-            }
-            // If this device's logged-in mentor was un-approved or deleted
-            // remotely, kick them out of the portal immediately
-            let admin = prev.admin;
-            if (admin && admin.role !== 'super') {
-              const remote = admins.find((a) => a.id === admin!.id);
-              if (!remote || remote.role !== 'admin') admin = null;
-            }
-            const nextAuth: AuthState = {
-              portalOpen: prev.portalOpen,
-              admin,
-              admins,
-            };
-            // Keep super in the list conceptually; mentors stay as stored
-            saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
-            return nextAuth;
-          });
-        }
-        if (Array.isArray((db as { revokedKeys?: string[] }).revokedKeys)) {
-          saveRevokedKeysLocal([
-            ...loadRevokedKeys(),
-            ...((db as { revokedKeys?: string[] }).revokedKeys || []),
-          ]);
-        }
-        if (db.vault) {
-          const revoked = loadRevokedKeys();
-          const vault = dbList<VaultLicense>(db.vault).filter(
-            (v) =>
-              v.status !== 'deleted' &&
-              !revoked.some((k) => keysMatch(k, v.key)),
-          );
-          // Local only — avoid racing a PUT that wipes freshly generated keys
-          saveVaultLocal(vault);
-        }
-        if (db.store?.workspaces && typeof db.store.workspaces === 'object') {
-          const remoteWs: StoreState['workspaces'] = {};
-          for (const [id, ws] of Object.entries(
-            db.store.workspaces as StoreState['workspaces'],
-          )) {
-            remoteWs[id] = normalizeWorkspace(ws, { id } as AdminUser);
-          }
-          // Merge — never let a thinner remote wipe local EAs / license keys
-          setStore((local) => {
-            const merged = mergeStoresKeepAll(local, { workspaces: remoteWs });
-            saveJSON(STORE_KEY, merged);
-            return merged;
-          });
-        }
-        if (db.images && typeof db.images === 'object') {
-          saveJSON(IMAGE_STORE, {
-            ...loadJSON<Record<string, string>>(IMAGE_STORE, {}),
-            ...db.images,
-          });
-        }
-        if (Array.isArray(db.clients)) {
-          const merged = withoutDeleted(
-            mergeClientLists(
-              prepaidAsClientRequests(),
-              db.clients as ClientRequest[],
-            ),
-            (db as { deletedClients?: string[] }).deletedClients,
-          );
-          setClients(merged);
-          // Only seed Firebase when the remote list is empty — never rewrite
-          // clients on every page load (that raced with admin workspace saves).
-          if (db.clients.length === 0 && merged.length > 0) {
-            void pushDb({ clients: merged }).catch(() => undefined);
-          }
-        } else {
-          const prepaid = prepaidAsClientRequests();
-          setClients(prepaid);
-          void pushDb({ clients: prepaid }).catch(() => undefined);
-        }
-      }
+    let dismissed = false;
+    const started = Date.now();
+
+    const dismissSplash = () => {
+      if (cancelled || dismissed) return;
+      dismissed = true;
       setBooting(false);
+    };
+
+    const dismissWithMinDelay = () => {
+      const elapsed = Date.now() - started;
+      const wait = Math.max(0, SPLASH_MIN_MS - elapsed);
+      window.setTimeout(dismissSplash, wait);
+    };
+
+    const hardCap = window.setTimeout(dismissSplash, SPLASH_MAX_MS);
+
+    const applyRemoteDb = (db: RemoteDb | null) => {
+      if (cancelled || !db) return;
+      if (Array.isArray(db.auth?.admins)) {
+        // Never take remote "admin" (logged-in user) — that is per-device only.
+        // Syncing it made Super Admin and mentors overwrite each other.
+        setAuth((prev) => {
+          const remoteAdmins = db.auth!.admins as AdminUser[];
+          // Merge — never let a stale remote "pending" wipe a local approval
+          const admins = mergeAdmins(prev.admins, remoteAdmins);
+          const healed = admins.some((a) => {
+            const remote = remoteAdmins.find((r) => r.id === a.id);
+            return remote && a.role === 'admin' && remote.role === 'pending';
+          });
+          if (healed) {
+            void pushDb({ auth: { admins, admin: null } }).catch(() => undefined);
+          }
+          // If this device's logged-in mentor was un-approved or deleted
+          // remotely, kick them out of the portal immediately
+          let admin = prev.admin;
+          if (admin && admin.role !== 'super') {
+            const remote = admins.find((a) => a.id === admin!.id);
+            if (!remote || remote.role !== 'admin') admin = null;
+          }
+          const nextAuth: AuthState = {
+            portalOpen: prev.portalOpen,
+            admin,
+            admins,
+          };
+          // Keep super in the list conceptually; mentors stay as stored
+          saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+          return nextAuth;
+        });
+      }
+      if (Array.isArray((db as { revokedKeys?: string[] }).revokedKeys)) {
+        saveRevokedKeysLocal([
+          ...loadRevokedKeys(),
+          ...((db as { revokedKeys?: string[] }).revokedKeys || []),
+        ]);
+      }
+      if (db.vault) {
+        const revoked = loadRevokedKeys();
+        const vault = dbList<VaultLicense>(db.vault).filter(
+          (v) =>
+            v.status !== 'deleted' &&
+            !revoked.some((k) => keysMatch(k, v.key)),
+        );
+        // Local only — avoid racing a PUT that wipes freshly generated keys
+        saveVaultLocal(vault);
+      }
+      if (db.store?.workspaces && typeof db.store.workspaces === 'object') {
+        const remoteWs: StoreState['workspaces'] = {};
+        for (const [id, ws] of Object.entries(
+          db.store.workspaces as StoreState['workspaces'],
+        )) {
+          remoteWs[id] = normalizeWorkspace(ws, { id } as AdminUser);
+        }
+        // Merge — never let a thinner remote wipe local EAs / license keys
+        setStore((local) => {
+          const merged = mergeStoresKeepAll(local, { workspaces: remoteWs });
+          saveJSON(STORE_KEY, merged);
+          return merged;
+        });
+      }
+      if (db.images && typeof db.images === 'object') {
+        saveJSON(IMAGE_STORE, {
+          ...loadJSON<Record<string, string>>(IMAGE_STORE, {}),
+          ...db.images,
+        });
+      }
+      if (Array.isArray(db.clients)) {
+        const merged = withoutDeleted(
+          mergeClientLists(
+            prepaidAsClientRequests(),
+            db.clients as ClientRequest[],
+          ),
+          (db as { deletedClients?: string[] }).deletedClients,
+        );
+        setClients(merged);
+        // Only seed Firebase when the remote list is empty — never rewrite
+        // clients on every page load (that raced with admin workspace saves).
+        if (db.clients.length === 0 && merged.length > 0) {
+          void pushDb({ clients: merged }).catch(() => undefined);
+        }
+      } else {
+        const prepaid = prepaidAsClientRequests();
+        setClients(prepaid);
+        void pushDb({ clients: prepaid }).catch(() => undefined);
+      }
+    };
+
+    void (async () => {
+      try {
+        const db = await fetchDb();
+        applyRemoteDb(db);
+      } catch {
+        // Offline or timed out — local cache is enough to enter the app
+      } finally {
+        dismissWithMinDelay();
+      }
     })();
+
     return () => {
       cancelled = true;
+      window.clearTimeout(hardCap);
     };
   }, []);
 
