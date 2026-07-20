@@ -49,6 +49,7 @@ import {
   firebaseFetchImage,
   firebaseSaveImage,
   firebaseUploadDataUrl,
+  mergeAdmins,
 } from '../lib/firebaseDb';
 import { WelcomeSplash } from '../components/WelcomeSplash';
 
@@ -765,7 +766,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           // Never take remote "admin" (logged-in user) — that is per-device only.
           // Syncing it made Super Admin and mentors overwrite each other.
           setAuth((prev) => {
-            const admins = db.auth!.admins as AdminUser[];
+            const remoteAdmins = db.auth!.admins as AdminUser[];
+            // Merge — never let a stale remote "pending" wipe a local approval
+            const admins = mergeAdmins(prev.admins, remoteAdmins);
+            const healed = admins.some((a) => {
+              const remote = remoteAdmins.find((r) => r.id === a.id);
+              return remote && a.role === 'admin' && remote.role === 'pending';
+            });
+            if (healed) {
+              void pushDb({ auth: { admins, admin: null } }).catch(() => undefined);
+            }
             // If this device's logged-in mentor was un-approved or deleted
             // remotely, kick them out of the portal immediately
             let admin = prev.admin;
@@ -1020,20 +1030,37 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       },
       logout: () => saveAuth({ ...auth, admin: null, portalOpen: false }),
       approveAdmin: (id) => {
-        const mentor = auth.admins.find((a) => a.id === id);
-        if (mentor && !store.workspaces[id]) {
-          saveStore({
-            ...store,
-            workspaces: {
-              ...store.workspaces,
-              [id]: createEmptyWorkspace(mentor),
-            },
+        let mentor: AdminUser | undefined;
+        setAuth((prev) => {
+          mentor = prev.admins.find((a) => a.id === id);
+          if (!mentor || mentor.role === 'admin') return prev;
+          const nextAdmins = prev.admins.map((a) =>
+            a.id === id ? { ...a, role: 'admin' as const } : a,
+          );
+          const next = { ...prev, admins: nextAdmins };
+          saveJSON(AUTH_KEY, { ...next, portalOpen: false });
+          void pushDb({ auth: { admins: nextAdmins, admin: null } }).catch(
+            () => undefined,
+          );
+          return next;
+        });
+        if (mentor) {
+          setStore((prev) => {
+            if (prev.workspaces[id]) return prev;
+            const next = {
+              ...prev,
+              workspaces: {
+                ...prev.workspaces,
+                [id]: createEmptyWorkspace(mentor!),
+              },
+            };
+            saveJSON(STORE_KEY, next);
+            void pushDb({ store: { workspaces: { [id]: next.workspaces[id] } } }).catch(
+              () => undefined,
+            );
+            return next;
           });
         }
-        saveAuth({
-          ...auth,
-          admins: auth.admins.map((a) => (a.id === id ? { ...a, role: 'admin' } : a)),
-        });
       },
       deleteAdmin: (id) => {
         if (id === SUPER_ADMIN.user.id) return;

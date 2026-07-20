@@ -203,6 +203,38 @@ function mergeWorkspaces(existing = {}, incoming = {}) {
   return out;
 }
 
+function adminRoleRank(role) {
+  if (role === 'super') return 3;
+  if (role === 'admin') return 2;
+  return 1;
+}
+
+/** Approved mentors must never revert to pending when lists are merged. */
+function mergeAdmins(current, incoming) {
+  const map = new Map();
+  for (const item of [...(current || []), ...(incoming || [])]) {
+    const id = String(item?.id || '');
+    if (!id) continue;
+    const prev = map.get(id);
+    if (!prev) {
+      map.set(id, item);
+      continue;
+    }
+    const merged = { ...prev, ...item };
+    const prevRank = adminRoleRank(prev.role);
+    const itemRank = adminRoleRank(item.role);
+    merged.role = prevRank >= itemRank ? prev.role : item.role;
+    for (const [k, v] of Object.entries(prev)) {
+      const nextVal = item[k];
+      if ((nextVal === '' || nextVal == null) && v !== '' && v != null) {
+        merged[k] = v;
+      }
+    }
+    map.set(id, merged);
+  }
+  return [...map.values()];
+}
+
 function mergeDatabases(base, patch) {
   const a = normalizeDb(base);
   const b = normalizeDb(patch);
@@ -212,11 +244,7 @@ function mergeDatabases(base, patch) {
     auth: {
       ...a.auth,
       ...b.auth,
-      // keep larger admin list
-      admins:
-        (b.auth?.admins?.length || 0) >= (a.auth?.admins?.length || 0)
-          ? b.auth?.admins || a.auth.admins
-          : a.auth.admins,
+      admins: mergeAdmins(a.auth?.admins, b.auth?.admins),
     },
     store: {
       workspaces: mergeWorkspaces(a.store?.workspaces, b.store?.workspaces),
