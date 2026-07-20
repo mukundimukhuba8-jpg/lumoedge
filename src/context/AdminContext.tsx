@@ -50,6 +50,7 @@ import {
   firebaseSaveImage,
   firebaseUploadDataUrl,
 } from '../lib/firebaseDb';
+import { WelcomeSplash } from '../components/WelcomeSplash';
 
 export type AdminRole = 'super' | 'admin' | 'pending';
 
@@ -2035,20 +2036,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses]);
 
   if (booting) {
-    return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'grid',
-          placeItems: 'center',
-          background: '#0a0a0f',
-          color: '#93c5fd',
-          fontFamily: 'system-ui, sans-serif',
-        }}
-      >
-        Loading Lumo Edge…
-      </div>
-    );
+    return <WelcomeSplash />;
   }
 
   return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;
