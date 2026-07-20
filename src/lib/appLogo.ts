@@ -26,14 +26,14 @@ export async function saveAppLogo(dataUrl: string): Promise<void> {
 }
 
 export async function loadAppLogo(): Promise<string> {
-  const local = getEaImage(APP_LOGO_KEY);
-  if (local) return local;
+  // Firebase is the source of truth so a new upload updates every device;
+  // the local cache is only the instant first paint.
   const remote = await firebaseFetchImage(APP_LOGO_KEY);
   if (remote) {
     saveEaImage(APP_LOGO_KEY, remote);
     return remote;
   }
-  return '';
+  return getEaImage(APP_LOGO_KEY) || '';
 }
 
 /** App logo with instant local cache + Firebase fallback. */
