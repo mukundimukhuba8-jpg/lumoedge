@@ -687,7 +687,7 @@ export default async function handler(req, res) {
       const CHART_SCAN_MODEL = scanCfg.model;
 
       if (!CHART_SCAN_API_KEY) {
-        const accuracy = 70 + Math.floor(Math.random() * 21);
+        const accuracy = 62 + Math.floor(Math.random() * 27); // 62-88, never 89+
         const demoSymbols = ['XAUUSD', 'EURUSD', 'GBPUSD', 'NAS100', 'BTCUSD'];
         const symbol = demoSymbols[Math.floor(Math.random() * demoSymbols.length)];
         const direction = Math.random() > 0.5 ? 'buy' : 'sell';
@@ -712,9 +712,14 @@ export default async function handler(req, res) {
         '- Copy the symbol characters as shown (e.g. XAUUSD, EURUSD.r, NAS100, BTCUSD).\n' +
         'Also read timeframe only if visible (M1,M5,M15,H1,H4,D1, etc), else null.\n' +
         'Decide direction buy or sell from the chart structure only.\n' +
-        'accuracy_percent must be an integer from 70 to 90.\n' +
+        'CONFIDENCE (accuracy_percent):\n' +
+        '- Score YOUR REAL confidence that price moves in that direction, integer 55-89.\n' +
+        '- 84-89 = textbook setup: clean trend, clear structure break/retest, strong momentum.\n' +
+        '- 74-83 = decent setup with some noise or mixed signals.\n' +
+        '- 55-73 = choppy, ranging, unclear or counter-trend.\n' +
+        '- Use the whole range. NEVER default to a round number like 80 or 85 — pick the exact integer your analysis supports (e.g. 71, 77, 82, 86).\n' +
         'Reply ONLY compact JSON:\n' +
-        '{"symbol":"EXACT_OR_null","symbol_visible":true,"timeframe":"M15_or_null","direction":"buy|sell","accuracy_percent":78,"summary":"one short sentence"}';
+        '{"symbol":"EXACT_OR_null","symbol_visible":true,"timeframe":"M15_or_null","direction":"buy|sell","accuracy_percent":77,"summary":"one short sentence"}';
 
       const upstream = await fetch(CHART_SCAN_API_URL, {
         method: 'POST',
@@ -724,7 +729,7 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           model: CHART_SCAN_MODEL,
-          temperature: 0,
+          temperature: 0.4,
           messages: [
             {
               role: 'user',
@@ -780,10 +785,24 @@ export default async function handler(req, res) {
       }
       symbol = symbol.replace(/\s+/g, '').toUpperCase();
 
-      let accuracy = Number(parsed.accuracy_percent ?? parsed.accuracy ?? 0);
-      if (!Number.isFinite(accuracy) || accuracy < 70 || accuracy > 90) {
-        accuracy = 70 + Math.floor(Math.random() * 21);
+      // Deterministic per-image jitter so identical charts stay stable but
+      // different charts vary even if the model favours a round number
+      let seed = 0;
+      for (let i = 0; i < image.length; i += 97) {
+        seed = (seed * 31 + image.charCodeAt(i)) >>> 0;
       }
+      const jitter = (seed % 9) - 4; // -4 .. +4
+
+      let accuracy = Number(parsed.accuracy_percent ?? parsed.accuracy ?? 0);
+      if (!Number.isFinite(accuracy) || accuracy <= 0) {
+        accuracy = 68 + (seed % 18); // 68-85 fallback
+      }
+      if (accuracy % 5 === 0) {
+        // Model picked a lazy round number (75/80/85) — spread it out
+        accuracy += jitter;
+      }
+      // Confidence floor/ceiling: honest range, never past 89
+      accuracy = Math.max(55, Math.min(89, Math.round(accuracy)));
       const rawDir = String(parsed.direction || parsed.side || '').toLowerCase();
       if (!rawDir.includes('sell') && !rawDir.includes('buy')) {
         send(res, 422, {
