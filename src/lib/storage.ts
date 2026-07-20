@@ -28,7 +28,100 @@ export function loadJSON<T>(key: string, fallback: T): T {
 }
 
 export function saveJSON(key: string, value: unknown) {
-  localStorage.setItem(key, JSON.stringify(value));
+  saveJSONSafe(key, value);
+}
+
+/** Never throw — trims payload on quota errors (mobile clients). */
+export function saveJSONSafe(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    try {
+      if (Array.isArray(value)) {
+        for (let n = Math.min(value.length, 20); n >= 1; n -= 1) {
+          try {
+            localStorage.setItem(key, JSON.stringify(value.slice(0, n)));
+            return true;
+          } catch {
+            /* try smaller */
+          }
+        }
+      } else if (value && typeof value === 'object') {
+        const entries = Object.entries(value as Record<string, unknown>);
+        for (let n = entries.length; n >= 1; n -= 1) {
+          try {
+            localStorage.setItem(key, JSON.stringify(Object.fromEntries(entries.slice(0, n))));
+            return true;
+          } catch {
+            /* try smaller */
+          }
+        }
+      }
+      localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+    return false;
+  }
+}
+
+const ADMIN_AUTH_KEY = 'ub-web/admin-auth-v3';
+const CLIENT_STORE_KEY = 'ub-web/admin-store-v3';
+
+/** True when a mentor/super admin is logged into the portal on this device. */
+export function isAdminPortalSession(): boolean {
+  try {
+    const raw = localStorage.getItem(ADMIN_AUTH_KEY);
+    if (!raw) return false;
+    const auth = JSON.parse(raw) as { admin?: { id?: string } | null };
+    return Boolean(auth?.admin?.id);
+  } catch {
+    return false;
+  }
+}
+
+/** Drop admin-only bulk cache from client phones (prevents quota errors). */
+export function pruneClientDeviceStorage() {
+  if (isAdminPortalSession()) return;
+  try {
+    localStorage.removeItem(CLIENT_STORE_KEY);
+    const images = loadJSON<Record<string, string>>(IMAGE_STORE, {});
+    const slim: Record<string, string> = {};
+    for (const [id, url] of Object.entries(images)) {
+      if (typeof url !== 'string' || !url) continue;
+      if (url.startsWith('data:') && url.length > 8000) continue;
+      if (url.startsWith('http') || url.startsWith('/') || url.startsWith('img:')) {
+        slim[id] = url;
+      }
+    }
+    saveJSONSafe(IMAGE_STORE, slim);
+    const vault = loadVault();
+    if (vault.length > 1) {
+      saveVaultLocal(vault.slice(0, 1));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Strip heavy blobs — vault rows must stay small on client devices. */
+export function stripVaultEntryForLocal(entry: VaultLicense): VaultLicense {
+  const eaImage = String(entry.eaImage || '').trim();
+  let safeImage = eaImage;
+  if (eaImage.startsWith('data:') || eaImage.length > 512) {
+    safeImage =
+      entry.ownerAdminId && !eaImage.startsWith('data:')
+        ? eaImage
+        : entry.ownerAdminId
+          ? `img:profile-${entry.ownerAdminId}`
+          : '';
+  }
+  return {
+    ...entry,
+    eaImage: safeImage,
+    customMedia: [],
+  };
 }
 
 const KEY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -110,7 +203,22 @@ export function loadVault(): VaultLicense[] {
 
 /** Local only — used during hydrate so we don't race-overwrite the server */
 export function saveVaultLocal(entries: VaultLicense[]) {
-  localStorage.setItem(VAULT_KEY, JSON.stringify(entries));
+  const stripped = entries.map(stripVaultEntryForLocal);
+  const attempts = [
+    stripped,
+    stripped.slice(0, 25),
+    stripped.slice(0, 10),
+    stripped.slice(0, 3),
+    stripped.slice(0, 1),
+  ];
+  for (const batch of attempts) {
+    if (saveJSONSafe(VAULT_KEY, batch)) return;
+  }
+}
+
+/** Client phones keep only their own license row — never the full mentor vault. */
+export function upsertClientVault(entry: VaultLicense, _clientEmail: string) {
+  saveVaultLocal([stripVaultEntryForLocal(entry)]);
 }
 
 export function saveVault(entries: VaultLicense[]) {
@@ -120,15 +228,15 @@ export function saveVault(entries: VaultLicense[]) {
 
 export function upsertVault(entry: VaultLicense) {
   const all = loadVault();
+  const slim = stripVaultEntryForLocal(entry);
   const idx = all.findIndex(
-    (e) => e.id === entry.id || keysMatch(e.key, entry.key),
+    (e) => e.id === slim.id || keysMatch(e.key, slim.key),
   );
-  if (idx >= 0) all[idx] = entry;
-  else all.unshift(entry);
+  if (idx >= 0) all[idx] = slim;
+  else all.unshift(slim);
   saveVaultLocal(all);
-  // Path-scoped merge — one key at a time, safe under concurrent saves
-  void pushDb({ vault: [entry] }).catch(() => undefined);
-  return entry;
+  void pushDb({ vault: [slim] }).catch(() => undefined);
+  return slim;
 }
 
 export function findInVault(key: string): VaultLicense | undefined {

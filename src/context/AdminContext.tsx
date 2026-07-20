@@ -41,12 +41,16 @@ import {
   makeLicenseKey,
   normalizeLicenseKey,
   publishEaImage,
+  pruneClientDeviceStorage,
   revokeLicenseKey,
   saveEaImage,
   saveJSON,
   saveRevokedKeysLocal,
   saveVaultLocal,
+  stripVaultEntryForLocal,
+  upsertClientVault,
   upsertVault,
+  isAdminPortalSession,
   type VaultLicense,
 } from '../lib/storage';
 import {
@@ -61,7 +65,6 @@ import {
   INVALID_KEY_MESSAGE,
   isClaimableKey,
   prepareAssignedLicense,
-  releaseOtherAssignedForEmail,
   resolveLicenseBrandingSync,
   validateLicenseEmailAccess,
 } from '../lib/licenseClaim';
@@ -71,13 +74,14 @@ import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
 let licensePublishInFlight = 0;
 function hydrateLicenseRemote(remote: RemoteDb | null) {
   if (!remote) return;
+  const adminSession = isAdminPortalSession();
   if (Array.isArray(remote.revokedKeys)) {
     saveRevokedKeysLocal([
       ...loadRevokedKeys(),
       ...remote.revokedKeys.map((k) => normalizeLicenseKey(k)),
     ]);
   }
-  if (remote.vault) {
+  if (adminSession && remote.vault) {
     const revoked = loadRevokedKeys();
     saveVaultLocal(
       dbList<VaultLicense>(remote.vault).filter(
@@ -87,13 +91,13 @@ function hydrateLicenseRemote(remote: RemoteDb | null) {
       ),
     );
   }
-  if (remote.images && typeof remote.images === 'object') {
-    saveJSON('ub-web/ea-images-v1', {
-      ...loadJSON<Record<string, string>>('ub-web/ea-images-v1', {}),
+  if (adminSession && remote.images && typeof remote.images === 'object') {
+    saveJSON(IMAGE_STORE, {
+      ...loadJSON<Record<string, string>>(IMAGE_STORE, {}),
       ...remote.images,
     });
   }
-  if (remote.store?.workspaces) {
+  if (adminSession && remote.store?.workspaces) {
     const workspaces = { ...(remote.store.workspaces as StoreState['workspaces']) };
     for (const [id, ws] of Object.entries(workspaces)) {
       workspaces[id] = {
@@ -972,6 +976,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const [clients, setClients] = useState<ClientRequest[]>(() => prepaidAsClientRequests());
   const [booting, setBooting] = useState(true);
 
+  useEffect(() => {
+    pruneClientDeviceStorage();
+  }, []);
+
   // Hydrate from disk-backed API so data survives new preview links
   useEffect(() => {
     let cancelled = false;
@@ -1031,17 +1039,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ...((db as { revokedKeys?: string[] }).revokedKeys || []),
         ]);
       }
-      if (db.vault) {
+      const adminSession = isAdminPortalSession();
+      if (adminSession && db.vault) {
         const revoked = loadRevokedKeys();
         const vault = dbList<VaultLicense>(db.vault).filter(
           (v) =>
             v.status !== 'deleted' &&
             !revoked.some((k) => keysMatch(k, v.key)),
         );
-        // Local only — avoid racing a PUT that wipes freshly generated keys
         saveVaultLocal(vault);
       }
-      if (db.store?.workspaces && typeof db.store.workspaces === 'object') {
+      if (adminSession && db.store?.workspaces && typeof db.store.workspaces === 'object') {
         const remoteWs: StoreState['workspaces'] = {};
         for (const [id, ws] of Object.entries(
           db.store.workspaces as StoreState['workspaces'],
@@ -1055,7 +1063,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           return merged;
         });
       }
-      if (db.images && typeof db.images === 'object') {
+      if (adminSession && db.images && typeof db.images === 'object') {
         saveJSON(IMAGE_STORE, {
           ...loadJSON<Record<string, string>>(IMAGE_STORE, {}),
           ...db.images,
@@ -1269,7 +1277,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   );
 
   const warmLicenseCache = useCallback(() => {
-    void fetchDb().then((remote) => hydrateLicenseRemote(remote));
+    pruneClientDeviceStorage();
+    if (isAdminPortalSession()) {
+      void fetchDb().then((remote) => hydrateLicenseRemote(remote));
+    }
   }, []);
 
   const resyncLicenses = useCallback(() => {
@@ -2032,19 +2043,21 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         };
 
         const persistAssignment = (license: LicenseRecord, ownerId: string | null) => {
-          if (license.eaImage && !license.eaImage.startsWith('img:')) {
-            saveEaImage(license.id, license.eaImage);
-            saveEaImage(`key-${normalizedKey}`, license.eaImage);
+          const img = String(license.eaImage || '').trim();
+          if (img && img.startsWith('data:') && img.length < 8000) {
+            saveEaImage(license.id, img);
+            saveEaImage(`key-${normalizedKey}`, img);
           }
-          saveVaultLocal(releaseOtherAssignedForEmail(normalizedEmail, normalizedKey));
-          upsertVault(licenseRecordToVault(license, normalizedEmail));
-          if (ownerId) {
+          if (isAdminPortalSession() && ownerId) {
+            upsertVault(stripVaultEntryForLocal(licenseRecordToVault(license, normalizedEmail)) as VaultLicense);
             patchWorkspace(ownerId, (ws) => ({
               ...ws,
               licenses: ws.licenses.some((l) => l.id === license.id)
                 ? ws.licenses.map((l) => (l.id === license.id ? license : l))
                 : [license, ...ws.licenses],
             }));
+          } else {
+            upsertClientVault(licenseRecordToVault(license, normalizedEmail), normalizedEmail);
           }
         };
 
@@ -2053,7 +2066,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             license,
             store.workspaces,
           ) as LicenseRecord;
-          persistAssignment(branded, branded.ownerAdminId || null);
+          try {
+            persistAssignment(branded, branded.ownerAdminId || null);
+          } catch (err) {
+            licenseWarn('claim', 'local cache skipped', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
           licenseLog('claim', 'success', { key: branded.key, email: normalizedEmail });
           return { ok: true as const, license: branded };
         };

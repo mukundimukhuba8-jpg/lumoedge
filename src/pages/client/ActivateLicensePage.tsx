@@ -5,7 +5,7 @@ import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
 import { INVALID_KEY_MESSAGE, isClaimableKey } from '../../lib/licenseClaim';
 import { resolveProfileImage } from '../../lib/mentorMedia';
-import { normalizeLicenseKey } from '../../lib/storage';
+import { normalizeLicenseKey, pruneClientDeviceStorage } from '../../lib/storage';
 
 export function ActivateLicensePage() {
   const navigate = useNavigate();
@@ -14,16 +14,15 @@ export function ActivateLicensePage() {
     (location.state as { fromPayment?: boolean } | null)?.fromPayment,
   );
   const { user, accessStatus, activateWithLicense, bot } = useApp();
-  const { claimLicense, warmLicenseCache } = useAdmin();
+  const { claimLicense } = useAdmin();
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [slow, setSlow] = useState(false);
 
-  // Pre-load license keys from cloud so activation is a quick read
   useEffect(() => {
-    warmLicenseCache();
-  }, [warmLicenseCache]);
+    pruneClientDeviceStorage();
+  }, []);
 
   useEffect(() => {
     if (!user) navigate('/', { replace: true });
