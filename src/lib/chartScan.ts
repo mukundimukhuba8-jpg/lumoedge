@@ -11,6 +11,8 @@ export type ScanHistoryItem = {
   symbol?: string;
   timeframe?: string;
   direction?: TradeDirection;
+  entryPrice?: number;
+  stopLoss?: number;
   summary?: string;
   createdAt: string;
 };
@@ -80,10 +82,43 @@ export type ScanApiResult = {
   symbol?: string;
   timeframe?: string;
   direction?: TradeDirection;
+  entryPrice?: number;
+  stopLoss?: number;
   summary?: string;
   error?: string;
   demo?: boolean;
 };
+
+/**
+ * Take-profit ladder from entry/stop by risk:reward.
+ * 1 trade → 1:2 · 2 trades → 1:2, 1:3 · 3+ trades → 1:1, 1:2, 1:3
+ */
+export function buildTpLadder(
+  entry: number,
+  stopLoss: number,
+  direction: TradeDirection,
+  trades: number,
+): number[] {
+  if (!entry || !stopLoss || entry === stopLoss || trades < 1) return [];
+  const risk = Math.abs(entry - stopLoss);
+  const ratios =
+    trades === 1 ? [2] : trades === 2 ? [2, 3] : [1, 2, 3];
+  const decimals = Math.min(
+    6,
+    Math.max(
+      (String(entry).split('.')[1] || '').length,
+      (String(stopLoss).split('.')[1] || '').length,
+    ),
+  );
+  const tps: number[] = [];
+  for (let i = 0; i < trades; i += 1) {
+    const rr = ratios[Math.min(i, ratios.length - 1)];
+    const tp =
+      direction === 'sell' ? entry - risk * rr : entry + risk * rr;
+    tps.push(Number(tp.toFixed(decimals)));
+  }
+  return tps;
+}
 
 /** Call server OpenAPI/OpenAI vision proxy */
 export async function runChartScan(imageDataUrl: string): Promise<ScanApiResult> {

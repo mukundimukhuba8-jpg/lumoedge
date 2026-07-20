@@ -229,6 +229,8 @@ export async function orderSend(input: {
   volume: number;
   comment?: string;
   slippage?: number;
+  stopLoss?: number;
+  takeProfit?: number;
 }): Promise<unknown> {
   const params = new URLSearchParams({
     id: input.id,
@@ -238,6 +240,12 @@ export async function orderSend(input: {
   });
   if (input.comment) params.set('comment', input.comment.slice(0, 31));
   if (input.slippage != null) params.set('slippage', String(input.slippage));
+  if (input.stopLoss && input.stopLoss > 0) {
+    params.set('stoploss', String(input.stopLoss));
+  }
+  if (input.takeProfit && input.takeProfit > 0) {
+    params.set('takeprofit', String(input.takeProfit));
+  }
   const res = await mt5Fetch(`/OrderSend?${params.toString()}`);
   const data = await readBody(res);
   if (!res.ok) {

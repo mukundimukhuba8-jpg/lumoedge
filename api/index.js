@@ -718,8 +718,12 @@ export default async function handler(req, res) {
         '- 74-83 = decent setup with some noise or mixed signals.\n' +
         '- 55-73 = choppy, ranging, unclear or counter-trend.\n' +
         '- Use the whole range. NEVER default to a round number like 80 or 85 — pick the exact integer your analysis supports (e.g. 71, 77, 82, 86).\n' +
+        'PRICES (read numbers from the price scale on the right of the chart):\n' +
+        '- entry_price: the current/last price where the chart ends.\n' +
+        '- stop_loss: logical protective level — below the most recent swing low for buy, above the most recent swing high for sell.\n' +
+        '- Use the exact decimal style shown on the scale. If the scale is not readable, set both to null.\n' +
         'Reply ONLY compact JSON:\n' +
-        '{"symbol":"EXACT_OR_null","symbol_visible":true,"timeframe":"M15_or_null","direction":"buy|sell","accuracy_percent":77,"summary":"one short sentence"}';
+        '{"symbol":"EXACT_OR_null","symbol_visible":true,"timeframe":"M15_or_null","direction":"buy|sell","accuracy_percent":77,"entry_price":2345.6,"stop_loss":2339.8,"summary":"one short sentence"}';
 
       const upstream = await fetch(CHART_SCAN_API_URL, {
         method: 'POST',
@@ -819,6 +823,24 @@ export default async function handler(req, res) {
           ? undefined
           : timeframeRaw;
 
+      // Entry + protective stop read from the chart's price scale.
+      // Only trust them when they make sense for the direction.
+      let entryPrice = Number(parsed.entry_price);
+      let stopLoss = Number(parsed.stop_loss);
+      const pricesValid =
+        Number.isFinite(entryPrice) &&
+        Number.isFinite(stopLoss) &&
+        entryPrice > 0 &&
+        stopLoss > 0 &&
+        entryPrice !== stopLoss &&
+        (direction === 'buy' ? stopLoss < entryPrice : stopLoss > entryPrice) &&
+        // Reject absurd stops further than 20% away from price
+        Math.abs(entryPrice - stopLoss) / entryPrice < 0.2;
+      if (!pricesValid) {
+        entryPrice = 0;
+        stopLoss = 0;
+      }
+
       send(res, 200, {
         ok: true,
         demo: false,
@@ -826,6 +848,8 @@ export default async function handler(req, res) {
         symbol,
         timeframe,
         direction,
+        entryPrice: entryPrice || undefined,
+        stopLoss: stopLoss || undefined,
         summary: parsed.summary || `Scan for ${symbol}`,
       });
       return;
