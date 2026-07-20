@@ -30,6 +30,15 @@ export type RemoteDb = {
   updatedAt?: string;
 };
 
+/** Firebase often stores lists as {0:…,1:…} objects — always normalize to arrays. */
+export function dbList<T = unknown>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === 'object') {
+    return Object.values(value as Record<string, T>);
+  }
+  return [];
+}
+
 const ROOT = 'lumo';
 
 function emptyDb(): RemoteDb {
@@ -59,12 +68,12 @@ function normalizeDb(raw: unknown): RemoteDb {
           ? db.store.workspaces
           : {},
     },
-    vault: Array.isArray(db.vault) ? db.vault : [],
+    vault: dbList<RemoteDb['vault'][number]>(db.vault),
     images: db.images && typeof db.images === 'object' ? db.images : {},
-    clients: Array.isArray(db.clients) ? db.clients : [],
+    clients: dbList<RemoteDb['clients'][number]>(db.clients),
     sessions: db.sessions && typeof db.sessions === 'object' ? db.sessions : {},
-    revokedKeys: Array.isArray(db.revokedKeys) ? db.revokedKeys : [],
-    deletedClients: Array.isArray(db.deletedClients) ? db.deletedClients : [],
+    revokedKeys: dbList<string>(db.revokedKeys),
+    deletedClients: dbList<string>(db.deletedClients),
     updatedAt: db.updatedAt || new Date().toISOString(),
   };
 }
@@ -278,8 +287,9 @@ export async function firebasePushDb(
       }
 
       if (Array.isArray(partial.vault)) {
-        const curVault =
-          (await getPath<unknown[]>(`${ROOT}/vault`)) || [];
+        const curVault = dbList<Record<string, unknown>>(
+          await getPath<unknown>(`${ROOT}/vault`),
+        );
         patch.vault = mergeById(
           curVault as Record<string, unknown>[],
           partial.vault as Record<string, unknown>[],

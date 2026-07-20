@@ -73,6 +73,12 @@ function ghHeaders() {
   return headers;
 }
 
+function toArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') return Object.values(value);
+  return [];
+}
+
 function normalizeDb(db) {
   const base = emptyDb();
   return {
@@ -80,11 +86,11 @@ function normalizeDb(db) {
     ...(db || {}),
     auth: { ...base.auth, ...((db && db.auth) || {}) },
     store: { workspaces: { ...((db && db.store && db.store.workspaces) || {}) } },
-    clients: Array.isArray(db && db.clients) ? db.clients : [],
+    clients: toArray(db && db.clients),
     sessions: db && db.sessions && typeof db.sessions === 'object' ? db.sessions : {},
-    vault: Array.isArray(db && db.vault) ? db.vault : [],
+    vault: toArray(db && db.vault),
     images: db && db.images && typeof db.images === 'object' ? db.images : {},
-    revokedKeys: Array.isArray(db && db.revokedKeys) ? db.revokedKeys : [],
+    revokedKeys: toArray(db && db.revokedKeys),
   };
 }
 
@@ -161,6 +167,38 @@ function mergeVault(existing = [], incoming = []) {
   for (const v of byId.values()) out.set(v.id || v.key, v);
   for (const v of byKey.values()) out.set(v.id || v.key, v);
   return [...out.values()].filter((v) => v.status !== 'deleted');
+}
+
+async function firebaseRead(path) {
+  try {
+    const res = await fetch(`${FIREBASE_DB_URL}/${path}.json`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function firebaseWrite(path, value) {
+  const res = await fetch(`${FIREBASE_DB_URL}/${path}.json`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(value),
+  });
+  return res.ok;
+}
+
+/** Publish mentor licenses straight to Firebase — works even when client SDK writes fail. */
+async function publishLicensesToFirebase(adminId, vaultEntries, workspace) {
+  const curVault = toArray(await firebaseRead('lumo/vault'));
+  const mergedVault = mergeVault(curVault, vaultEntries);
+  const curWs = (await firebaseRead(`lumo/store/workspaces/${adminId}`)) || {};
+  const mergedWorkspaces = mergeWorkspaces({ [adminId]: curWs }, { [adminId]: workspace });
+  const nextWs = mergedWorkspaces[adminId];
+  const vaultOk = await firebaseWrite('lumo/vault', mergedVault);
+  const wsOk = await firebaseWrite(`lumo/store/workspaces/${adminId}`, nextWs);
+  await firebaseWrite('lumo/updatedAt', new Date().toISOString());
+  return vaultOk && wsOk;
 }
 
 function mergeWorkspaces(existing = {}, incoming = {}) {
@@ -445,6 +483,30 @@ export default async function handler(req, res) {
         backend,
         updatedAt: db.updatedAt,
       });
+      return;
+    }
+
+    if (pathname === '/api/licenses/publish' && req.method === 'POST') {
+      const body = await readBody(req);
+      const adminId = String(body.adminId || '').trim();
+      const vaultEntries = Array.isArray(body.vaultEntries)
+        ? body.vaultEntries
+        : body.vaultEntry
+          ? [body.vaultEntry]
+          : body.license
+            ? [body.license]
+            : [];
+      const workspace = body.workspace;
+      if (!adminId || !vaultEntries.length || !vaultEntries[0]?.key) {
+        send(res, 400, { error: 'adminId and license key required' });
+        return;
+      }
+      const ok = await publishLicensesToFirebase(adminId, vaultEntries, workspace);
+      if (!ok) {
+        send(res, 502, { error: 'Could not save license to cloud database' });
+        return;
+      }
+      send(res, 200, { ok: true, key: vaultEntries[0].key });
       return;
     }
 
