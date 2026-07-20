@@ -46,6 +46,7 @@ export async function publishLicensesRemote(input: {
   adminId: string;
   vaultEntries: unknown[];
   workspace: unknown;
+  revokedKeys?: string[];
 }): Promise<boolean> {
   try {
     const res = await fetch('/api/licenses/publish', {

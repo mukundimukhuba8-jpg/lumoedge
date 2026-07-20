@@ -173,8 +173,8 @@ function displayableImage(value: string | undefined, adminId?: string): string {
 }
 
 /**
- * Push mentor profile image + EA symbols onto every license, the vault,
- * and live client sessions so portal uploads sync to licensed clients.
+ * Push mentor profile image + EA symbols onto licenses already activated by clients.
+ * Never auto-assign license keys — admin sends the key manually; client enters it.
  */
 async function syncPortalBrandingToClients(
   adminId: string,
@@ -239,7 +239,7 @@ async function syncPortalBrandingToClients(
     });
   }
 
-    // Update live client sessions so home refreshes without re-activating the key
+    // Only refresh branding for clients who already activated this exact key
   try {
     const db = await fetchDb();
     const sessions = {
@@ -257,16 +257,11 @@ async function syncPortalBrandingToClients(
         const bot = ((prev as { bot?: Record<string, unknown> }).bot ||
           {}) as Record<string, unknown>;
         const key = String(bot.licenseKey || '');
-        // Match by license key when present; otherwise still push branding to assigned email
-        if (key && !keysMatch(key, lic.key)) continue;
+        if (!key || !keysMatch(key, lic.key)) continue;
         sessions[email] = {
           ...prev,
-          accessStatus: 'licensed',
           bot: {
             ...bot,
-            licenseKey: key || lic.key,
-            // Owner's current image is authoritative — empty clears stale
-            // pictures so one mentor's photo can never stick to another's clients
             imageUrl: imageRef,
             displayName: lic.eaName || String(bot.displayName || ''),
             name: String(lic.eaName || bot.name || '')
@@ -416,8 +411,10 @@ function normalizeWorkspace(
     eas: (ws.eas ?? []).filter((e) => !tombstones.has(e.id)),
     licenses: (ws.licenses ?? [])
       .filter((l) => l.status !== 'deleted')
+      .filter((l) => !isLicenseRevoked(l.key, ws.revokedKeys ?? []))
       .map((l) => ({
         ...l,
+        ownerAdminId: l.ownerAdminId || seed?.id || '',
         customMedia: normalizeCustomMedia(l.customMedia),
       })),
     clientRequests: ws.clientRequests ?? [],
@@ -448,8 +445,9 @@ function mergeWorkspaceKeepAll(a: AdminWorkspace, b: AdminWorkspace): AdminWorks
     easById.set(ea.id, prev ? { ...prev, ...ea, imageUrl: ea.imageUrl || prev.imageUrl || '' } : ea);
   }
   const licByKey = new Map<string, LicenseRecord>();
+  const wsRevoked = [...new Set([...(a.revokedKeys || []), ...(b.revokedKeys || [])])];
   for (const lic of [...(a.licenses || []), ...(b.licenses || [])]) {
-    if (!lic?.key) continue;
+    if (!lic?.key || isLicenseRevoked(lic.key, wsRevoked)) continue;
     const mergeKey = keyFingerprint(lic.key) || lic.id || lic.key;
     const prev = licByKey.get(mergeKey);
     if (!prev) {
@@ -511,29 +509,51 @@ function mergeStoresKeepAll(local: StoreState, remote: StoreState): StoreState {
   return { workspaces };
 }
 
-/** Find any live license already issued to this client email (any mentor). */
-function findLiveLicenseForEmail(
+function isLicenseRevoked(key: string, wsRevoked: string[] = []): boolean {
+  return isRevokedKey(key) || wsRevoked.some((k) => keysMatch(k, key));
+}
+
+/** Only licenses this mentor owns — never show another portal's keys. */
+function filterOwnLicenses(
+  licenses: LicenseRecord[],
+  ownerAdminId: string,
+  wsRevoked: string[] = [],
+): LicenseRecord[] {
+  if (!ownerAdminId) return [];
+  return licenses
+    .filter((l) => l.status !== 'deleted')
+    .filter((l) => !isLicenseRevoked(l.key, wsRevoked))
+    .filter((l) => (l.ownerAdminId || ownerAdminId) === ownerAdminId)
+    .map((l) => ({
+      ...l,
+      ownerAdminId: l.ownerAdminId || ownerAdminId,
+    }));
+}
+
+function findLiveLicenseForOwner(
   email: string,
-  workspaces: Record<string, AdminWorkspace>,
+  ownerAdminId: string,
+  workspace: AdminWorkspace,
   vault: VaultLicense[],
 ): LicenseRecord | VaultLicense | undefined {
   const normalized = email.trim().toLowerCase();
-  if (!normalized) return undefined;
+  if (!normalized || !ownerAdminId) return undefined;
+  const wsRevoked = workspace.revokedKeys || [];
   const fromVault = vault.find(
     (v) =>
+      v.ownerAdminId === ownerAdminId &&
       v.email?.toLowerCase() === normalized &&
-      (v.status === 'active' || v.status === 'assigned'),
+      (v.status === 'active' || v.status === 'assigned') &&
+      !isLicenseRevoked(v.key, wsRevoked),
   );
   if (fromVault) return fromVault;
-  for (const ws of Object.values(workspaces)) {
-    const hit = (ws.licenses || []).find(
-      (l) =>
-        l.clientEmail?.toLowerCase() === normalized &&
-        (l.status === 'active' || l.status === 'assigned'),
-    );
-    if (hit) return hit;
-  }
-  return undefined;
+  return workspace.licenses.find(
+    (l) =>
+      (l.ownerAdminId || ownerAdminId) === ownerAdminId &&
+      l.clientEmail?.toLowerCase() === normalized &&
+      (l.status === 'active' || l.status === 'assigned') &&
+      !isLicenseRevoked(l.key, wsRevoked),
+  );
 }
 
 function licenseToVaultEntry(lic: LicenseRecord): VaultLicense {
@@ -558,8 +578,16 @@ function licenseToVaultEntry(lic: LicenseRecord): VaultLicense {
 
 /** Push mentor licenses + vault entries to Firebase (fixes keys that only existed locally). */
 async function pushLicensesToRemote(adminId: string, ws: AdminWorkspace) {
-  const active = ws.licenses.filter((l) => l.status !== 'deleted');
-  if (!active.length) return;
+  const active = filterOwnLicenses(ws.licenses, adminId, ws.revokedKeys);
+  if (!active.length) {
+    await publishLicensesRemote({
+      adminId,
+      vaultEntries: [],
+      workspace: { ...ws, licenses: [] },
+      revokedKeys: loadRevokedKeys(),
+    }).catch(() => undefined);
+    return;
+  }
   const entries = active.map(licenseToVaultEntry);
   const local = loadVault();
   const mergedLocal = [...local];
@@ -570,16 +598,24 @@ async function pushLicensesToRemote(adminId: string, ws: AdminWorkspace) {
     if (idx >= 0) mergedLocal[idx] = entry;
     else mergedLocal.unshift(entry);
   }
-  saveVaultLocal(mergedLocal);
+  saveVaultLocal(
+    mergedLocal.filter(
+      (v) =>
+        !isLicenseRevoked(v.key, ws.revokedKeys) &&
+        (v.ownerAdminId === adminId || entries.some((e) => keysMatch(e.key, v.key))),
+    ),
+  );
   const published = await publishLicensesRemote({
     adminId,
     vaultEntries: entries,
-    workspace: ws,
+    workspace: { ...ws, licenses: active },
+    revokedKeys: loadRevokedKeys(),
   });
   if (!published) {
     const fb = await pushDb({
       vault: entries,
-      store: { workspaces: { [adminId]: ws } },
+      store: { workspaces: { [adminId]: { ...ws, licenses: active } } },
+      revokedKeys: loadRevokedKeys(),
     });
     if (!fb) throw new Error('License cloud save failed');
   }
@@ -736,7 +772,7 @@ type Ctx = {
     clientEmail: string;
     duration: string;
   }) => Promise<{ ok: true; license: LicenseRecord } | { ok: false; error: string }>;
-  deleteLicense: (id: string) => void;
+  deleteLicense: (id: string) => Promise<void>;
   claimLicense: (
     key: string,
     email: string,
@@ -969,6 +1005,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         db.store.workspaces[mentorId] as AdminWorkspace,
         auth.admin ?? { id: mentorId },
       );
+      remoteWs.licenses = filterOwnLicenses(
+        remoteWs.licenses,
+        mentorId,
+        remoteWs.revokedKeys,
+      );
       if (db.vault) {
         const revoked = loadRevokedKeys();
         saveVaultLocal(
@@ -990,6 +1031,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           return next;
         }
         const merged = mergeWorkspaceKeepAll(localWs, remoteWs);
+        merged.licenses = filterOwnLicenses(
+          merged.licenses,
+          mentorId,
+          merged.revokedKeys,
+        );
         if (
           JSON.stringify(merged.licenses) === JSON.stringify(localWs.licenses) &&
           JSON.stringify(merged.eas) === JSON.stringify(localWs.eas)
@@ -1093,13 +1139,39 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const resyncLicenses = useCallback(() => {
     const mentorId = auth.admin?.id ?? '';
     if (!mentorId) return;
-    const ws = normalizeWorkspace(
-      store.workspaces[mentorId],
-      auth.admin ?? { id: mentorId },
-    );
-    if (!ws.licenses.some((l) => l.status !== 'deleted')) return;
-    void pushLicensesToRemote(mentorId, ws).catch(() => undefined);
-  }, [auth.admin, store.workspaces]);
+    // Pull only — never push on page load (that resurrected deleted keys)
+    void fetchDb().then((db) => {
+      if (!db?.store?.workspaces?.[mentorId]) return;
+      const remoteWs = normalizeWorkspace(
+        db.store.workspaces[mentorId] as AdminWorkspace,
+        auth.admin ?? { id: mentorId },
+      );
+      remoteWs.licenses = filterOwnLicenses(
+        remoteWs.licenses,
+        mentorId,
+        remoteWs.revokedKeys,
+      );
+      if (db.vault) {
+        const revoked = loadRevokedKeys();
+        saveVaultLocal(
+          dbList<VaultLicense>(db.vault).filter(
+            (v) =>
+              v.ownerAdminId === mentorId &&
+              v.status !== 'deleted' &&
+              !revoked.some((k) => keysMatch(k, v.key)),
+          ),
+        );
+      }
+      setStore((prev) => {
+        const next = {
+          ...prev,
+          workspaces: { ...prev.workspaces, [mentorId]: remoteWs },
+        };
+        saveJSON(STORE_KEY, next);
+        return next;
+      });
+    });
+  }, [auth.admin]);
 
   const patchWorkspace = useCallback(
     (adminId: string, updater: (ws: AdminWorkspace) => AdminWorkspace, seed?: AdminUser) => {
@@ -1494,8 +1566,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       eas: workspace.eas.filter(
         (ea) => !ea.ownerAdminId || ea.ownerAdminId === adminId,
       ),
-      licenses: workspace.licenses.filter(
-        (l) => !l.ownerAdminId || l.ownerAdminId === adminId,
+      licenses: filterOwnLicenses(
+        workspace.licenses,
+        adminId,
+        workspace.revokedKeys,
       ),
       mt5: workspace.mt5,
       profile: workspace.profile,
@@ -1573,10 +1647,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const clientEmail = input.clientEmail.trim().toLowerCase();
         const clientName = input.clientName.trim();
 
-        const existing = findLiveLicenseForEmail(
+        const existing = findLiveLicenseForOwner(
           clientEmail,
-          store.workspaces,
-          loadVault(),
+          adminId,
+          ws,
+          loadVault().filter((v) => v.ownerAdminId === adminId),
         );
         if (existing) {
           return {
@@ -1672,54 +1747,56 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             },
           };
           saveJSON(STORE_KEY, next);
-          void syncPortalBrandingToClients(adminId, nextWs, {
-            imageRef: eaImage,
-            displayImage: displayBytes,
-          });
           return next;
         });
         return { ok: true, license: { ...record, eaImage: displayBytes || eaImage } };
       },
-      deleteLicense: (id) => {
+      deleteLicense: async (id) => {
         if (!adminId) return;
         const ws = normalizeWorkspace(store.workspaces[adminId], auth.admin ?? undefined);
         const hit = ws.licenses.find((l) => l.id === id);
         if (!hit) return;
         const fp = keyFingerprint(hit.key);
         const norm = normalizeLicenseKey(hit.key);
-        // Global ban so the key can never activate again
         revokeLicenseKey(hit.key);
+        const current = normalizeWorkspace(
+          store.workspaces[adminId],
+          auth.admin ?? { id: adminId },
+        );
+        const nextWs = {
+          ...current,
+          licenses: filterOwnLicenses(
+            current.licenses.filter((l) => l.id !== id),
+            adminId,
+            [...(current.revokedKeys || []), norm],
+          ),
+          revokedKeys: [
+            norm,
+            ...(current.revokedKeys || []).filter((k) => !keysMatch(k, norm)),
+          ],
+        };
         setStore((prev) => {
-          const current = normalizeWorkspace(
-            prev.workspaces[adminId],
-            auth.admin ?? { id: adminId },
-          );
           const next = {
             ...prev,
-            workspaces: {
-              ...prev.workspaces,
-              [adminId]: {
-                ...current,
-                licenses: current.licenses.filter((l) => l.id !== id),
-                revokedKeys: [
-                  norm,
-                  ...(current.revokedKeys || []).filter((k) => !keysMatch(k, norm)),
-                ],
-              },
-            },
+            workspaces: { ...prev.workspaces, [adminId]: nextWs },
           };
           saveJSON(STORE_KEY, next);
-          void pushDb({
-            store: {
-              workspaces: {
-                [adminId]: next.workspaces[adminId],
-              },
-            },
-            vault: loadVault(),
-            revokedKeys: loadRevokedKeys(),
-          });
           return next;
         });
+        try {
+          await publishLicensesRemote({
+            adminId,
+            vaultEntries: nextWs.licenses.map(licenseToVaultEntry),
+            workspace: nextWs,
+            revokedKeys: loadRevokedKeys(),
+          });
+        } catch {
+          await pushDb({
+            store: { workspaces: { [adminId]: nextWs } },
+            vault: loadVault().filter((v) => !keysMatch(v.key, hit.key)),
+            revokedKeys: loadRevokedKeys(),
+          }).catch(() => undefined);
+        }
         void fetchDb().then((db) => {
           if (!db?.sessions) return;
           const sessions: Record<string, Record<string, unknown>> = {
