@@ -995,7 +995,7 @@ function applyRemoteAdmins(
   prev: AuthState,
   remoteAdmins: AdminUser[],
 ): AuthState {
-  const admins = mergeAdmins(prev.admins, remoteAdmins);
+  const admins = mergeAdmins(prev.admins, remoteAdmins) as AdminUser[];
   const healed = admins.some((a) => {
     const remote = remoteAdmins.find(
       (r) => r.email.toLowerCase() === a.email.toLowerCase(),
@@ -1179,7 +1179,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   // Keep mentor registration queue fresh for Super Admin approval
   useEffect(() => {
     if (booting) return;
-    const tick = async () => {
+    const syncAdmins = async () => {
       const remoteAdmins = (await fetchAdmins()) as AdminUser[] | null;
       if (!remoteAdmins) return;
       setAuth((prev) => {
@@ -1189,9 +1189,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         return nextAuth;
       });
     };
-    void tick();
-    const id = window.setInterval(tick, 2500);
-    return () => window.clearInterval(id);
+    void syncAdmins();
+    const id = window.setInterval(() => void syncAdmins(), 2500);
+    let unwatch: (() => void) | undefined;
+    void import('../lib/firebaseDb').then(({ firebaseWatchAdmins }) => {
+      unwatch = firebaseWatchAdmins(() => void syncAdmins());
+    });
+    return () => {
+      window.clearInterval(id);
+      unwatch?.();
+    };
   }, [booting]);
 
   // Pull licenses from Firebase so every admin device sees the same keys
@@ -1468,10 +1475,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           return null;
         }
         const remoteAdmins = ((await fetchAdmins()) || []) as AdminUser[];
-        const admins = mergeAdmins(auth.admins, remoteAdmins);
+        const admins = mergeAdmins(auth.admins, remoteAdmins) as AdminUser[];
         if (remoteAdmins.length) {
           setAuth((prev) => {
-            const nextAdmins = mergeAdmins(prev.admins, remoteAdmins);
+            const nextAdmins = mergeAdmins(prev.admins, remoteAdmins) as AdminUser[];
             const next = { ...prev, admins: nextAdmins };
             saveJSON(AUTH_KEY, { ...next, portalOpen: false });
             return next;
@@ -1539,7 +1546,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           role: 'pending',
         };
         const workspace = createEmptyWorkspace(entry);
-        const nextAdmins = mergeAdmins(auth.admins, [entry]);
+        const nextAdmins = mergeAdmins(auth.admins, [entry]) as AdminUser[];
         const nextStore = {
           ...store,
           workspaces: {
@@ -1552,6 +1559,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         saveJSON(STORE_KEY, nextStore);
         setAuth(nextAuth);
         saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+        void pushDb({
+          auth: { admins: nextAdmins, admin: null },
+          store: { workspaces: { [entry.id]: workspace } },
+        }).catch(() => undefined);
         return null;
       },
       logout: () => saveAuth({ ...auth, admin: null, portalOpen: false }),

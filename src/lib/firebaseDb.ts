@@ -61,7 +61,11 @@ function normalizeDb(raw: unknown): RemoteDb {
   return {
     ...base,
     ...db,
-    auth: { ...base.auth, ...(db.auth || {}) },
+    auth: {
+      ...base.auth,
+      ...(db.auth || {}),
+      admins: dbList(db.auth?.admins),
+    },
     store: {
       workspaces:
         db.store?.workspaces && typeof db.store.workspaces === 'object'
@@ -92,7 +96,7 @@ export function mergeAdmins<T extends AdminLike>(
   incoming: T[],
 ): T[] {
   const byEmail = new Map<string, T>();
-  for (const item of [...(current || []), ...(incoming || [])]) {
+  for (const item of [...dbList<T>(current), ...dbList<T>(incoming)]) {
     const email = String(item.email || '').trim().toLowerCase();
     if (!email) continue;
     const prev = byEmail.get(email);
@@ -261,7 +265,7 @@ export async function firebasePushDb(
       if (partial.auth) {
         const curAuth =
           (await getPath<RemoteDb['auth']>(`${ROOT}/auth`)) || emptyDb().auth;
-        const curAdmins = (curAuth.admins || []) as AdminLike[];
+        const curAdmins = dbList<AdminLike>(curAuth.admins);
         const incoming = Array.isArray(partial.auth.admins)
           ? (partial.auth.admins as AdminLike[])
           : [];
@@ -407,7 +411,7 @@ export async function firebaseFetchAdmins(): Promise<
   if (!isFirebaseConfigured()) return null;
   try {
     const auth = await getPath<RemoteDb['auth']>(`${ROOT}/auth`);
-    return auth?.admins ?? [];
+    return dbList(auth?.admins);
   } catch (err) {
     console.warn('[firebase] fetchAdmins failed', err);
     return null;
@@ -429,7 +433,7 @@ export async function firebasePostMentorRegistration(input: {
       const email = input.email.trim().toLowerCase();
       const curAuth =
         (await getPath<RemoteDb['auth']>(`${ROOT}/auth`)) || emptyDb().auth;
-      const curAdmins = (curAuth.admins || []) as AdminLike[];
+      const curAdmins = dbList<AdminLike>(curAuth.admins);
       const existing = curAdmins.find((a) => String(a.email || '').toLowerCase() === email);
       if (existing) return existing;
 
@@ -734,6 +738,24 @@ export async function firebaseFetchImage(id: string): Promise<string> {
 
 export function isFirebaseImageRef(value: string | undefined): boolean {
   return Boolean(value && String(value).startsWith('img:'));
+}
+
+export function firebaseWatchAdmins(
+  cb: (admins: RemoteDb['auth']['admins']) => void,
+): () => void {
+  if (!isFirebaseConfigured()) return () => undefined;
+  try {
+    const r = ref(getFirebaseDb(), `${ROOT}/auth/admins`);
+    return onValue(
+      r,
+      (snap) => {
+        cb(dbList(snap.val()));
+      },
+      () => undefined,
+    );
+  } catch {
+    return () => undefined;
+  }
 }
 
 export function firebaseWatchUpdates(cb: () => void): () => void {

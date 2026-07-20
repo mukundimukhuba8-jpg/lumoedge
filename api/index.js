@@ -84,7 +84,11 @@ function normalizeDb(db) {
   return {
     ...base,
     ...(db || {}),
-    auth: { ...base.auth, ...((db && db.auth) || {}) },
+    auth: {
+      ...base.auth,
+      ...((db && db.auth) || {}),
+      admins: toArray(db && db.auth && db.auth.admins),
+    },
     store: { workspaces: { ...((db && db.store && db.store.workspaces) || {}) } },
     clients: toArray(db && db.clients),
     sessions: db && db.sessions && typeof db.sessions === 'object' ? db.sessions : {},
@@ -205,7 +209,7 @@ async function firebaseWrite(path, value) {
 
 async function firebaseRegisterMentor(entry, workspace) {
   const curAuth = (await firebaseRead('lumo/auth')) || { admins: [], admin: null };
-  const admins = mergeAdmins(curAuth.admins || [], [entry]);
+  const admins = mergeAdmins(toArray(curAuth.admins), [entry]);
   const authOk = await firebaseWrite('lumo/auth', { admins, admin: null });
   const wsOk = await firebaseWrite(`lumo/store/workspaces/${entry.id}`, workspace);
   await firebaseWrite('lumo/updatedAt', new Date().toISOString()).catch(() => false);
@@ -214,7 +218,8 @@ async function firebaseRegisterMentor(entry, workspace) {
 
 async function firebaseFetchAdminList() {
   const curAuth = await firebaseRead('lumo/auth');
-  return Array.isArray(curAuth?.admins) ? curAuth.admins : null;
+  const admins = toArray(curAuth?.admins);
+  return admins.length ? admins : null;
 }
 
 /** Publish mentor licenses straight to Firebase — works even when client SDK writes fail. */
@@ -346,7 +351,7 @@ function adminRoleRank(role) {
 /** Approved mentors must never revert to pending when lists are merged. */
 function mergeAdmins(current, incoming) {
   const byEmail = new Map();
-  for (const item of [...(current || []), ...(incoming || [])]) {
+  for (const item of [...toArray(current), ...toArray(incoming)]) {
     const email = String(item?.email || '')
       .trim()
       .toLowerCase();
@@ -881,13 +886,11 @@ export default async function handler(req, res) {
     }
 
     if (pathname === '/api/auth/admins' && req.method === 'GET') {
-      const fbAdmins = await firebaseFetchAdminList();
-      if (fbAdmins) {
-        send(res, 200, fbAdmins);
-        return;
-      }
+      const curAuth = await firebaseRead('lumo/auth');
+      const fbAdmins = toArray(curAuth?.admins);
       const { db } = await loadDb();
-      send(res, 200, db.auth?.admins || []);
+      const localAdmins = toArray(db.auth?.admins);
+      send(res, 200, mergeAdmins(localAdmins, fbAdmins));
       return;
     }
 
@@ -906,14 +909,14 @@ export default async function handler(req, res) {
         send(res, 403, { error: 'This email is reserved for Super Admin.' });
         return;
       }
-      const fbAdmins = (await firebaseFetchAdminList()) || [];
+      const fbAdmins = toArray((await firebaseRead('lumo/auth'))?.admins);
       const existingFb = fbAdmins.find((a) => String(a.email || '').toLowerCase() === email);
       if (existingFb) {
         send(res, 200, existingFb);
         return;
       }
       const { db, sha } = await loadDb();
-      const admins = db.auth?.admins || [];
+      const admins = toArray(db.auth?.admins);
       const existing = admins.find((a) => String(a.email || '').toLowerCase() === email);
       if (existing) {
         send(res, 200, existing);

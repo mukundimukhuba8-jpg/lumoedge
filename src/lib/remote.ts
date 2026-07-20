@@ -12,6 +12,7 @@ import {
   firebasePostMentorRegistration,
   firebasePushDb,
   firebasePushSession,
+  mergeAdmins,
   type RemoteDb,
 } from './firebaseDb';
 import { isFirebaseConfigured } from './firebase';
@@ -209,15 +210,24 @@ export async function fetchClients() {
 }
 
 export async function fetchAdmins() {
+  let fb: RemoteDb['auth']['admins'] | null = null;
+  let api: RemoteDb['auth']['admins'] | null = null;
+
   if (isFirebaseConfigured()) {
-    const fb = await firebaseFetchAdmins();
-    if (fb) return fb;
+    fb = await firebaseFetchAdmins();
   }
   try {
-    return await req<RemoteDb['auth']['admins']>('/api/auth/admins');
+    api = await req<RemoteDb['auth']['admins']>('/api/auth/admins');
   } catch {
-    return null;
+    api = null;
   }
+
+  const merged = mergeAdmins(
+    (fb || []) as Parameters<typeof mergeAdmins>[0],
+    (api || []) as Parameters<typeof mergeAdmins>[1],
+  );
+  if (!merged.length && fb === null && api === null) return null;
+  return merged;
 }
 
 export async function postMentorRegistration(input: {
