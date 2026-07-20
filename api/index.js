@@ -1448,11 +1448,12 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Proxy → MT5 backend bridge (account info, trades — not broker search)
+    // Proxy → MT5API RESTFul swagger host (Search, ConnectEx, Account*, OrderSend)
     if (pathname.startsWith('/api/mt5')) {
-      // MT5 backend bridge host (account/trading after terminal connect)
+      // Swagger UI: https://66.23.225.158/swagger/index.html — API root is the host only
       const MT5_HOST = (process.env.MT5_API_HOST || '66.23.225.158').trim();
       const envBase = String(process.env.MT5_API_BASE || '').replace(/\/$/, '');
+      // Try env base first, then https and http on the swagger host
       const bases = [
         ...(envBase ? [envBase] : []),
         `https://${MT5_HOST}`,

@@ -186,7 +186,7 @@ export function MetaTraderPage() {
     if (user?.email) saveMt5(user.email, next);
   };
 
-  const runSearch = (query: string, open = true) => {
+  const runSearch = async (query: string, open = true) => {
     const q = query.trim();
     if (q.length < 2) {
       setCompanies([]);
@@ -194,7 +194,7 @@ export function MetaTraderPage() {
     }
     setSearching(true);
     try {
-      const list = searchBrokers(q);
+      const list = await searchBrokers(q);
       setCompanies(list);
       if (open) setBrokerOpen(true);
       const flat = list.flatMap((c) =>
@@ -215,6 +215,8 @@ export function MetaTraderPage() {
           );
         }
       }
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : 'Broker search failed');
     } finally {
       setSearching(false);
     }
@@ -224,7 +226,7 @@ export function MetaTraderPage() {
     setBrokerQuery(value);
     if (searchTimer.current) window.clearTimeout(searchTimer.current);
     searchTimer.current = window.setTimeout(() => {
-      runSearch(value);
+      void runSearch(value);
     }, 350);
   };
 
@@ -469,7 +471,7 @@ export function MetaTraderPage() {
                       if (!companies.length) setCompanies(listKnownBrokers());
                       setBrokerOpen(true);
                     }}
-                    placeholder="Search supported brokers"
+                    placeholder="Search Broker"
                   />
                   <span className="mt5-search-ico">
                     {searching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
@@ -518,6 +520,9 @@ export function MetaTraderPage() {
                         {s.name}
                       </option>
                     ))}
+                    {form.server && !servers.some((s) => s.name === form.server) ? (
+                      <option value={form.server}>{form.server}</option>
+                    ) : null}
                   </select>
                   <span className="mt5-chevron" aria-hidden>
                     <ChevronDown size={16} />

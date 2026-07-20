@@ -37,7 +37,7 @@ const MEDIA_DIR = path.join(DATA_DIR, 'media');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT || 4174);
 const MAX_MEDIA_BYTES = 30 * 1024 * 1024;
-/** MT5 backend bridge — account/trading proxy (brokers use web terminals locally) */
+/** MT5API RESTFul — https://66.23.225.158/swagger/index.html (API root = host only) */
 const MT5_API_BASE = (process.env.MT5_API_BASE || 'https://66.23.225.158').replace(/\/$/, '');
 /** Chart Scanner — put your OpenAI/OpenAPI key here or in env */
 const CHART_SCAN_API_KEY =
@@ -609,7 +609,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Proxy → MT5 backend bridge (account info, trades)
+    // Proxy → MT5API RESTFul (broker search, ConnectEx, account, trading)
     if (pathname.startsWith('/api/mt5')) {
       const targetPath = pathname === '/api/mt5' ? '/' : pathname.slice('/api/mt5'.length);
       const targetUrl = `${MT5_API_BASE}${targetPath}${url.search}`;

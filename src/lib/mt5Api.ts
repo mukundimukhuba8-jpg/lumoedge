@@ -1,10 +1,11 @@
 /**
- * MT5 client — broker pickers use the local web-terminal registry only.
- * Account, positions, and trades still go through /api/mt5 (backend bridge).
+ * MT5 client — broker search, connect, account, and trades via the
+ * MT5API RESTFul swagger host (https://66.23.225.158) through /api/mt5.
  */
 
 import {
   BROKER_TERMINALS,
+  getTerminalUrl,
   searchLocalBrokers,
   type BrokerTerminalEntry,
 } from './brokerTerminals';
@@ -46,7 +47,7 @@ export type Mt5ServerResult = {
   logo_url?: string;
   site?: string;
   access?: string[];
-  /** Web terminal URL for browser-based MT5 access */
+  /** Web terminal URL when broker supports browser MT5 */
   terminalUrl?: string;
 };
 
@@ -115,6 +116,15 @@ async function readBody(res: Response): Promise<unknown> {
   }
 }
 
+export async function pingMt5(): Promise<boolean> {
+  try {
+    const res = await mt5Fetch('/Ping');
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 function localEntriesToCompanies(entries: BrokerTerminalEntry[]): Mt5Company[] {
   const grouped = new Map<string, Mt5ServerResult[]>();
   for (const entry of entries) {
@@ -133,21 +143,60 @@ function localEntriesToCompanies(entries: BrokerTerminalEntry[]): Mt5Company[] {
   }));
 }
 
-/** All supported broker web terminals */
+/** Attach known web terminal URLs to swagger search results */
+function enrichWithTerminals(companies: Mt5Company[]): Mt5Company[] {
+  return companies.map((co) => ({
+    ...co,
+    results: (co.results || []).map((r) => ({
+      ...r,
+      terminalUrl: r.terminalUrl || getTerminalUrl(r.name),
+    })),
+  }));
+}
+
+/** Merge swagger API results with local terminal registry (dedupe by server name) */
+function mergeBrokerLists(remote: Mt5Company[], local: Mt5Company[]): Mt5Company[] {
+  const serverNames = new Set(
+    remote.flatMap((co) => (co.results || []).map((r) => r.name.toLowerCase())),
+  );
+  const extraLocal = local
+    .map((co) => ({
+      ...co,
+      results: (co.results || []).filter((r) => !serverNames.has(r.name.toLowerCase())),
+    }))
+    .filter((co) => co.results.length > 0);
+
+  return enrichWithTerminals([...remote, ...extraLocal]);
+}
+
+/** All supported broker terminals (for dropdown when search is empty) */
 export function listKnownBrokers(): Mt5Company[] {
   return localEntriesToCompanies(BROKER_TERMINALS);
 }
 
-/** Search broker companies from the local terminal registry only */
-export function searchBrokers(company: string): Mt5Company[] {
+/** Search broker companies — swagger /Search plus local terminal fallback */
+export async function searchBrokers(company: string): Promise<Mt5Company[]> {
   const q = company.trim();
   if (q.length < 2) return [];
-  return localEntriesToCompanies(searchLocalBrokers(q));
+  const local = localEntriesToCompanies(searchLocalBrokers(q));
+
+  try {
+    const res = await mt5Fetch(`/Search?company=${encodeURIComponent(q)}`);
+    const data = await readBody(res);
+    if (!res.ok) {
+      return local.length ? local : [];
+    }
+    const remote = Array.isArray(data) ? (data as Mt5Company[]) : [];
+    if (!remote.length) return local;
+    return mergeBrokerLists(remote, local);
+  } catch {
+    return local;
+  }
 }
 
 /**
- * Connect via backend bridge — resolves broker web terminal host server-side.
- * Returns session token for further /Account* calls.
+ * Connect via backend bridge — swagger ConnectEx first, web terminal fallback.
+ * Returns session token for further /Account* and /OrderSend calls.
  */
 export async function connectEx(input: {
   user: string | number;
@@ -245,7 +294,7 @@ export async function openedOrders(id: string): Promise<Mt5OpenedOrder[]> {
 export type Mt5OrderOperation = 'Buy' | 'Sell';
 
 /**
- * Send market order via MT5 bridge.
+ * Send market order via swagger MT5 bridge (/OrderSend).
  * Comment format: "{EA name} Lumo~edge"
  */
 export async function orderSend(input: {
