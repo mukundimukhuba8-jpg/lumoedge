@@ -32,7 +32,7 @@ function mergeSessionPreferLicense(prev, incoming) {
   const intentionalClear =
     nextBot.licenseKey !== undefined &&
     !incomingKey &&
-    incoming.accessStatus === 'paid';
+    (incoming.accessStatus === 'paid' || incoming.accessStatus === 'pending');
   const licenseKey = intentionalClear ? '' : incomingKey || prevKey;
   const accessStatus = licenseKey
     ? 'licensed'

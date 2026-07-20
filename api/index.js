@@ -106,7 +106,7 @@ function mergeSessionPreferLicense(prev, incoming) {
   const intentionalClear =
     nextBot.licenseKey !== undefined &&
     !incomingKey &&
-    incoming.accessStatus === 'paid';
+    (incoming.accessStatus === 'paid' || incoming.accessStatus === 'pending');
   const licenseKey = intentionalClear ? '' : incomingKey || prevKey;
   const accessStatus = licenseKey
     ? 'licensed'
@@ -603,6 +603,117 @@ export default async function handler(req, res) {
 
       await firebaseWrite('lumo/updatedAt', new Date().toISOString());
       send(res, 200, { ok: true, license: toClaimPayload(assigned) });
+      return;
+    }
+
+    if (pathname === '/api/licenses/release' && req.method === 'POST') {
+      const {
+        dbList,
+        findVaultEntry,
+        findWorkspaceLicense,
+        keysMatch,
+        normalizeLicenseKey,
+        releaseEntry,
+        toClaimPayload,
+      } = await import('./_lib/licenseClaim.mjs');
+      const body = await readBody(req);
+      const email = String(body.email || '').trim().toLowerCase();
+      const key = normalizeLicenseKey(String(body.key || ''));
+      if (!email || !key) {
+        send(res, 400, { error: 'key and email required' });
+        return;
+      }
+
+      const vault = dbList(await firebaseRead('lumo/vault'));
+      const workspacesRaw = await firebaseRead('lumo/store/workspaces');
+      const workspaces =
+        workspacesRaw && typeof workspacesRaw === 'object' ? workspacesRaw : {};
+
+      let entry = findVaultEntry(vault, key);
+      let ownerId = entry?.ownerAdminId || null;
+      if (!entry) {
+        const wsHit = findWorkspaceLicense(workspaces, key);
+        if (wsHit) {
+          entry = wsHit.license;
+          ownerId = wsHit.ownerId;
+        }
+      }
+
+      if (!entry) {
+        send(res, 404, { error: 'License not found.' });
+        return;
+      }
+
+      const released = releaseEntry(entry, email);
+      if (!released.ok) {
+        send(res, 403, { error: released.error || 'Release failed' });
+        return;
+      }
+
+      const nextEntry = released.entry;
+      const nextVault = [...vault];
+      const vaultIdx = nextVault.findIndex(
+        (v) => v?.id === nextEntry.id || keysMatch(String(v?.key || ''), key),
+      );
+      if (vaultIdx >= 0) nextVault[vaultIdx] = { ...nextVault[vaultIdx], ...nextEntry };
+      else nextVault.unshift(nextEntry);
+      await firebaseWrite('lumo/vault', nextVault);
+
+      if (ownerId) {
+        const ws = workspaces[ownerId] || {};
+        const licenses = dbList(ws.licenses);
+        const licenseRow = {
+          ...nextEntry,
+          clientEmail: nextEntry.email || nextEntry.clientEmail || email,
+        };
+        const nextLicenses = licenses.some(
+          (l) => l?.id === nextEntry.id || keysMatch(String(l?.key || ''), key),
+        )
+          ? licenses.map((l) =>
+              l?.id === nextEntry.id || keysMatch(String(l?.key || ''), key)
+                ? { ...l, ...licenseRow }
+                : l,
+            )
+          : [licenseRow, ...licenses];
+        await firebaseWrite(`lumo/store/workspaces/${ownerId}`, {
+          ...ws,
+          licenses: nextLicenses,
+        });
+      }
+
+      // Reset subscription payment so client must pay again
+      const clients = dbList(await firebaseRead('lumo/clients'));
+      const clientIdx = clients.findIndex(
+        (c) => String(c?.email || '').toLowerCase() === email,
+      );
+      if (clientIdx >= 0) {
+        clients[clientIdx] = {
+          ...clients[clientIdx],
+          paymentClaimed: false,
+          paymentClaimedAt: null,
+        };
+        await firebaseWrite('lumo/clients', clients);
+      }
+
+      const sessions = (await firebaseRead('lumo/sessions')) || {};
+      if (sessions[email]) {
+        const prev = sessions[email];
+        const prevBot = prev?.bot && typeof prev.bot === 'object' ? prev.bot : {};
+        sessions[email] = {
+          ...prev,
+          accessStatus: 'pending',
+          bot: {
+            ...prevBot,
+            licenseKey: '',
+            status: 'paused',
+            imageUrl: '',
+          },
+        };
+        await firebaseWrite('lumo/sessions', sessions);
+      }
+
+      await firebaseWrite('lumo/updatedAt', new Date().toISOString());
+      send(res, 200, { ok: true, license: toClaimPayload(nextEntry) });
       return;
     }
 
