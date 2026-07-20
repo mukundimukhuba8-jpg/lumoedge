@@ -563,7 +563,10 @@ function mergeWorkspaceKeepAll(a: AdminWorkspace, b: AdminWorkspace): AdminWorks
     profile: {
       ...a.profile,
       ...b.profile,
-      eaImage: b.profile?.eaImage || a.profile?.eaImage || '',
+      eaImage:
+        (a.profile?.eaImage && String(a.profile.eaImage).trim()) ||
+        (b.profile?.eaImage && String(b.profile.eaImage).trim()) ||
+        '',
       customMedia: normalizeCustomMedia(
         b.profile?.customMedia?.length
           ? b.profile.customMedia
@@ -1230,6 +1233,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           merged.revokedKeys,
         );
         if (
+          JSON.stringify(merged.profile) === JSON.stringify(localWs.profile) &&
           JSON.stringify(merged.licenses) === JSON.stringify(localWs.licenses) &&
           JSON.stringify(merged.eas) === JSON.stringify(localWs.eas)
         ) {
@@ -2228,7 +2232,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           let imagePatch = patch.eaImage;
           let displayBytes = '';
           if (imagePatch && imagePatch.startsWith('blob:')) {
-            imagePatch = undefined;
+            try {
+              const { blobUrlToDataUrl } = await import('../lib/storage');
+              imagePatch = await blobUrlToDataUrl(imagePatch);
+            } catch {
+              imagePatch = undefined;
+            }
           }
           if (imagePatch && imagePatch.startsWith('data:')) {
             displayBytes = imagePatch;
@@ -2355,6 +2364,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               workspaces: { ...prev.workspaces, [adminId]: merged },
             };
             saveJSON(STORE_KEY, next);
+            void pushDb({
+              store: { workspaces: { [adminId]: merged } },
+              vault: loadVault(),
+              ...(displayBytes
+                ? { images: { [`profile-${adminId}`]: displayBytes } }
+                : {}),
+            }).catch(() => undefined);
             return next;
           });
         })();
