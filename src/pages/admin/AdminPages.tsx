@@ -483,7 +483,11 @@ export function GenerateLicensePage() {
               setStatus({
                 type: 'success',
                 title: 'License key ready',
-                detail: `${rec.key} — copied for ${rec.clientEmail}. Send this key to your client so they can activate on their device.`,
+                detail:
+                  `Key: ${rec.key}\n\n` +
+                  `⚠️ Client must log in as: ${rec.clientEmail}\n` +
+                  `(The key only works for that exact email.)\n\n` +
+                  `Copied to clipboard — send the key to your client.`,
               });
               setClientName('');
               setClientEmail('');
