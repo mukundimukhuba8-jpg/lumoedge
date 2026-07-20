@@ -14,6 +14,7 @@ import {
   fetchDb,
   patchClient,
   postClient,
+  publishLicensesRemote,
   pushDb,
 } from '../lib/remote';
 import {
@@ -51,6 +52,7 @@ import {
   firebaseSaveImage,
   firebaseUploadDataUrl,
   mergeAdmins,
+  dbList,
 } from '../lib/firebaseDb';
 import { WelcomeSplash } from '../components/WelcomeSplash';
 
@@ -569,10 +571,18 @@ async function pushLicensesToRemote(adminId: string, ws: AdminWorkspace) {
     else mergedLocal.unshift(entry);
   }
   saveVaultLocal(mergedLocal);
-  await pushDb({
-    vault: entries,
-    store: { workspaces: { [adminId]: ws } },
+  const published = await publishLicensesRemote({
+    adminId,
+    vaultEntries: entries,
+    workspace: ws,
   });
+  if (!published) {
+    const fb = await pushDb({
+      vault: entries,
+      store: { workspaces: { [adminId]: ws } },
+    });
+    if (!fb) throw new Error('License cloud save failed');
+  }
 }
 
 function licenseExistsOnRemote(
@@ -581,7 +591,7 @@ function licenseExistsOnRemote(
 ): boolean {
   if (!remote) return false;
   if (
-    (remote.vault || []).some((v) =>
+    dbList(remote.vault).some((v) =>
       keysMatch(String((v as VaultLicense).key || ''), key),
     )
   ) {
@@ -865,9 +875,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             ...((db as { revokedKeys?: string[] }).revokedKeys || []),
           ]);
         }
-        if (Array.isArray(db.vault)) {
+        if (db.vault) {
           const revoked = loadRevokedKeys();
-          const vault = (db.vault as VaultLicense[]).filter(
+          const vault = dbList<VaultLicense>(db.vault).filter(
             (v) =>
               v.status !== 'deleted' &&
               !revoked.some((k) => keysMatch(k, v.key)),
@@ -959,10 +969,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         db.store.workspaces[mentorId] as AdminWorkspace,
         auth.admin ?? { id: mentorId },
       );
-      if (Array.isArray(db.vault)) {
+      if (db.vault) {
         const revoked = loadRevokedKeys();
         saveVaultLocal(
-          (db.vault as VaultLicense[]).filter(
+          dbList<VaultLicense>(db.vault).filter(
             (v) =>
               v.status !== 'deleted' &&
               !revoked.some((k) => keysMatch(k, v.key)),
@@ -1768,10 +1778,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               ...remote.revokedKeys.map((k) => normalizeLicenseKey(k)),
             ]);
           }
-          if (Array.isArray(remote.vault)) {
+          if (remote.vault) {
             const revoked = loadRevokedKeys();
             saveVaultLocal(
-              (remote.vault as VaultLicense[]).filter(
+              dbList<VaultLicense>(remote.vault).filter(
                 (v) =>
                   v.status !== 'deleted' &&
                   !revoked.some((k) => keysMatch(k, v.key)),

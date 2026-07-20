@@ -42,6 +42,23 @@ export async function fetchDb(): Promise<RemoteDb | null> {
   }
 }
 
+export async function publishLicensesRemote(input: {
+  adminId: string;
+  vaultEntries: unknown[];
+  workspace: unknown;
+}): Promise<boolean> {
+  try {
+    const res = await fetch('/api/licenses/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function pushDb(partial: Partial<RemoteDb>): Promise<RemoteDb | null> {
   if (isFirebaseConfigured()) {
     const fb = await firebasePushDb(partial);
