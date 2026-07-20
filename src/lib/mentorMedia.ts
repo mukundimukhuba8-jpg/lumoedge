@@ -262,7 +262,8 @@ export function resolveProfileImage(
         const all = JSON.parse(
           localStorage.getItem('ub-web/ea-images-v1') || '{}',
         ) as Record<string, string>;
-        return all[fromEa] || all[key] || all[`img:${key}`] || fromEa;
+        const resolved = all[fromEa] || all[key] || all[`img:${key}`] || fromEa;
+        return resolved && !isFakeLogo(resolved) ? resolved : '';
       } catch {
         return fromEa;
       }

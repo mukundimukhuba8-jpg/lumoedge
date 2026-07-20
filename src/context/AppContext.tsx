@@ -10,12 +10,13 @@ import {
 } from 'react';
 import {
   emptyCustomMedia,
+  isPlaceholderMentorImage,
   normalizeCustomMedia,
   type MentorMediaItem,
 } from '../lib/mentorMedia';
 import { fetchDb, fetchSession, pushSession } from '../lib/remote';
 import { dbList } from '../lib/firebaseDb';
-import { loadJSON, keysMatch, normalizeLicenseKey, saveJSON } from '../lib/storage';
+import { loadJSON, keysMatch, normalizeLicenseKey, purgePlaceholderEaImages, saveJSON } from '../lib/storage';
 
 export type UserProfile = { email: string; firstName: string; lastName: string };
 
@@ -86,6 +87,11 @@ type Ctx = {
 
 const AppContext = createContext<Ctx | null>(null);
 
+function sanitizeBotImage(url: string | undefined): string {
+  const v = String(url || '').trim();
+  return v && !isPlaceholderMentorImage(v) ? v : '';
+}
+
 /** Once a license key exists, stay licensed — never bounce back to payment */
 function normalizeSession(session: Session): Session {
   const bot = {
@@ -93,6 +99,7 @@ function normalizeSession(session: Session): Session {
     ...(session.bot ?? {}),
     customMedia: normalizeCustomMedia(session.bot?.customMedia),
     licenseKey: String(session.bot?.licenseKey || '').trim(),
+    imageUrl: sanitizeBotImage(session.bot?.imageUrl),
   };
   let accessStatus = session.accessStatus ?? 'none';
   if (bot.licenseKey) {
@@ -289,7 +296,7 @@ function applyVaultLicense(
       licenseKey: vault.licenseKey,
       status: session.bot.status === 'paused' ? 'paused' : 'active',
       // Vault entry belongs to this license's owner — use its image verbatim
-      imageUrl: vault.imageUrl || '',
+      imageUrl: sanitizeBotImage(vault.imageUrl),
       displayName: vault.displayName || session.bot.displayName,
       mainText: vault.mainText || session.bot.mainText,
       symbols: vault.symbols.length ? vault.symbols : session.bot.symbols,
@@ -298,7 +305,10 @@ function applyVaultLicense(
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session>(() => migrateSession());
+  const [session, setSession] = useState<Session>(() => {
+    purgePlaceholderEaImages();
+    return migrateSession();
+  });
   const sessionRef = useRef(session);
   sessionRef.current = session;
 

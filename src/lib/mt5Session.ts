@@ -4,8 +4,34 @@
  * (Web Crypto) so the raw password never sits in plain localStorage.
  */
 
-import { checkConnect, connectEx } from './mt5Api';
+import {
+  accountDetails,
+  accountSummary,
+  checkConnect,
+  connectEx,
+  openedOrders,
+  type Mt5AccountDetails,
+  type Mt5AccountSummary,
+  type Mt5OpenedOrder,
+} from './mt5Api';
 import { loadJSON, saveJSON } from './storage';
+
+export type Mt5AccountSnapshot = {
+  summary: Mt5AccountSummary | null;
+  details: Mt5AccountDetails | null;
+  positions: Mt5OpenedOrder[];
+  updatedAt: number;
+};
+
+const ACCOUNT_CACHE_KEY = 'ub-web/mt5-account-cache-v1';
+const ACCOUNT_REFRESH_MS = 20_000;
+
+const emptyAccount = (): Mt5AccountSnapshot => ({
+  summary: null,
+  details: null,
+  positions: [],
+  updatedAt: 0,
+});
 
 export type Mt5ConnState =
   | 'disconnected'
@@ -130,14 +156,17 @@ export async function saveMt5Session(
 }
 
 export function clearMt5Session(email: string) {
+  const key = emailKey(email);
   const store = loadStore();
-  delete store[emailKey(email)];
+  delete store[key];
   saveStore(store);
-  const s = sessions.get(emailKey(email));
+  stopAccountRefresh(key);
+  clearAccount(key);
+  const s = sessions.get(key);
   if (s) {
-    stopKeepAlive(emailKey(email));
+    stopKeepAlive(key);
     s.info = { ...s.info, state: 'disconnected', token: '' };
-    emit(emailKey(email));
+    emit(key);
   }
 }
 
@@ -152,13 +181,28 @@ export function getMt5Token(email?: string): string {
 
 type LiveSession = {
   info: Mt5SessionInfo;
+  account: Mt5AccountSnapshot;
   timer: number | null;
+  accountTimer: number | null;
   reconnectAttempt: number;
   subscribers: Set<(info: Mt5SessionInfo) => void>;
+  accountSubscribers: Set<(snap: Mt5AccountSnapshot) => void>;
   checking: boolean;
+  refreshingAccount: boolean;
 };
 
 const sessions = new Map<string, LiveSession>();
+
+function loadAccountCache(key: string): Mt5AccountSnapshot {
+  const all = loadJSON<Record<string, Mt5AccountSnapshot>>(ACCOUNT_CACHE_KEY, {});
+  return all[key] || emptyAccount();
+}
+
+function saveAccountCache(key: string, snap: Mt5AccountSnapshot) {
+  const all = loadJSON<Record<string, Mt5AccountSnapshot>>(ACCOUNT_CACHE_KEY, {});
+  all[key] = snap;
+  saveJSON(ACCOUNT_CACHE_KEY, all);
+}
 
 function ensureLive(key: string): LiveSession {
   let s = sessions.get(key);
@@ -173,14 +217,99 @@ function ensureLive(key: string): LiveSession {
         lastCheckedAt: 0,
         lastError: '',
       },
+      account: loadAccountCache(key),
       timer: null,
+      accountTimer: null,
       reconnectAttempt: 0,
       subscribers: new Set(),
+      accountSubscribers: new Set(),
       checking: false,
+      refreshingAccount: false,
     };
     sessions.set(key, s);
   }
   return s;
+}
+
+function emitAccount(key: string) {
+  const s = sessions.get(key);
+  if (!s) return;
+  for (const cb of s.accountSubscribers) cb({ ...s.account });
+}
+
+export function getMt5AccountSnapshot(email?: string): Mt5AccountSnapshot {
+  const key = emailKey(email);
+  if (!key) return emptyAccount();
+  const live = sessions.get(key);
+  if (live?.account.updatedAt) return { ...live.account };
+  return loadAccountCache(key);
+}
+
+export function subscribeMt5Account(
+  email: string | undefined,
+  cb: (snap: Mt5AccountSnapshot) => void,
+): () => void {
+  const key = emailKey(email);
+  if (!key) return () => undefined;
+  const s = ensureLive(key);
+  s.accountSubscribers.add(cb);
+  cb({ ...s.account });
+  return () => {
+    s.accountSubscribers.delete(cb);
+  };
+}
+
+async function refreshMt5Account(key: string, token: string) {
+  const s = ensureLive(key);
+  if (!token || s.refreshingAccount) return;
+  s.refreshingAccount = true;
+  try {
+    const [sum, det, pos] = await Promise.allSettled([
+      accountSummary(token),
+      accountDetails(token),
+      openedOrders(token),
+    ]);
+    const next: Mt5AccountSnapshot = {
+      summary: sum.status === 'fulfilled' ? sum.value : s.account.summary,
+      details: det.status === 'fulfilled' ? det.value : s.account.details,
+      positions: pos.status === 'fulfilled' ? pos.value : s.account.positions,
+      updatedAt: Date.now(),
+    };
+    s.account = next;
+    saveAccountCache(key, next);
+    emitAccount(key);
+  } finally {
+    s.refreshingAccount = false;
+  }
+}
+
+function stopAccountRefresh(key: string) {
+  const s = sessions.get(key);
+  if (s?.accountTimer != null) {
+    window.clearInterval(s.accountTimer);
+    s.accountTimer = null;
+  }
+}
+
+function scheduleAccountRefresh(key: string) {
+  const s = ensureLive(key);
+  stopAccountRefresh(key);
+  if (s.info.state !== 'connected' || !s.info.token) return;
+  s.accountTimer = window.setInterval(() => {
+    void refreshMt5Account(key, s.info.token);
+  }, ACCOUNT_REFRESH_MS);
+}
+
+function clearAccount(key: string) {
+  const s = ensureLive(key);
+  s.account = emptyAccount();
+  saveAccountCache(key, s.account);
+  emitAccount(key);
+}
+
+function shouldKeepAlive(key: string): boolean {
+  const stored = loadStore()[key];
+  return Boolean(stored?.token || stored?.enc);
 }
 
 function emit(key: string) {
@@ -219,6 +348,8 @@ async function verifyOrReconnect(key: string) {
         s.info = { ...s.info, state: 'connected', token, lastError: '' };
         s.reconnectAttempt = 0;
         emit(key);
+        void refreshMt5Account(key, token);
+        scheduleAccountRefresh(key);
         return;
       }
     }
@@ -248,6 +379,8 @@ async function verifyOrReconnect(key: string) {
         };
         s.reconnectAttempt = 0;
         emit(key);
+        void refreshMt5Account(key, fresh);
+        scheduleAccountRefresh(key);
         return;
       } catch (e) {
         s.reconnectAttempt += 1;
@@ -267,6 +400,8 @@ async function verifyOrReconnect(key: string) {
       state: 'disconnected',
       lastError: token ? 'Session expired — sign in again' : '',
     };
+    stopAccountRefresh(key);
+    clearAccount(key);
     emit(key);
   } finally {
     s.checking = false;
@@ -292,7 +427,7 @@ function scheduleNext(key: string) {
       : CHECK_INTERVAL_MS;
   s.timer = window.setTimeout(() => {
     void verifyOrReconnect(key).then(() => {
-      if (sessions.get(key)?.subscribers.size) scheduleNext(key);
+      if (shouldKeepAlive(key)) scheduleNext(key);
     });
   }, delay);
 }
@@ -300,9 +435,18 @@ function scheduleNext(key: string) {
 /** Start (or resume) keep-alive for this user. Safe to call repeatedly. */
 export function startMt5KeepAlive(email?: string) {
   const key = emailKey(email);
-  if (!key) return;
+  if (!key || !shouldKeepAlive(key)) return;
   ensureLive(key);
   void verifyOrReconnect(key).then(() => scheduleNext(key));
+}
+
+/** Refresh account summary/positions for a connected session. */
+export function refreshMt5AccountNow(email?: string) {
+  const key = emailKey(email);
+  if (!key) return;
+  const s = ensureLive(key);
+  const token = s.info.token || loadStore()[key]?.token || '';
+  if (token) void refreshMt5Account(key, token);
 }
 
 /** Stop the background timer (subscribers keep last status). */

@@ -13,7 +13,7 @@ import {
   Star,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { isPlaceholderMentorImage } from '../../lib/mentorMedia';
+import { isPlaceholderMentorImage, resolveProfileImage } from '../../lib/mentorMedia';
 import {
   accentHex,
   hexToRgb,
@@ -21,11 +21,8 @@ import {
   subscribeInterfacePrefs,
 } from '../../lib/interfaceStyle';
 import {
-  accountDetails,
-  accountSummary,
   connectEx,
   disconnectMt5,
-  openedOrders,
   RAZOR_MARKETS,
   searchBrokers,
   type Mt5AccountDetails,
@@ -36,9 +33,11 @@ import {
 } from '../../lib/mt5Api';
 import {
   clearMt5Session,
+  getMt5AccountSnapshot,
+  refreshMt5AccountNow,
   saveMt5Session,
   startMt5KeepAlive,
-  stopMt5KeepAlive,
+  subscribeMt5Account,
   subscribeMt5Status,
   type Mt5SessionInfo,
 } from '../../lib/mt5Session';
@@ -106,9 +105,8 @@ export function MetaTraderPage() {
   const accent = accentHex(prefs.accent);
   const accentRgb = hexToRgb(accent);
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
-  const eaImage =
-    bot.imageUrl && !isPlaceholderMentorImage(bot.imageUrl) ? bot.imageUrl : '';
-
+  const profileRef = resolveProfileImage(bot.imageUrl, bot.customMedia);
+  const [eaImage, setEaImage] = useState('');
   const [form, setForm] = useState<ClientMt5>(() => loadMt5(user?.email));
   const [showPass, setShowPass] = useState(false);
   const [brokerOpen, setBrokerOpen] = useState(false);
@@ -119,11 +117,34 @@ export function MetaTraderPage() {
   const [connecting, setConnecting] = useState(false);
   const [status, setStatus] = useState('');
   const [notConnecting, setNotConnecting] = useState(false);
-  const [summary, setSummary] = useState<Mt5AccountSummary | null>(null);
-  const [details, setDetails] = useState<Mt5AccountDetails | null>(null);
-  const [positions, setPositions] = useState<Mt5OpenedOrder[]>([]);
+  const [summary, setSummary] = useState<Mt5AccountSummary | null>(
+    () => getMt5AccountSnapshot(user?.email).summary,
+  );
+  const [details, setDetails] = useState<Mt5AccountDetails | null>(
+    () => getMt5AccountSnapshot(user?.email).details,
+  );
+  const [positions, setPositions] = useState<Mt5OpenedOrder[]>(
+    () => getMt5AccountSnapshot(user?.email).positions,
+  );
   const [conn, setConn] = useState<Mt5SessionInfo | null>(null);
   const searchTimer = useRef<number | null>(null);
+  const bootedEmail = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!profileRef || isPlaceholderMentorImage(profileRef)) {
+        if (!cancelled) setEaImage('');
+        return;
+      }
+      const { resolveDisplayImage } = await import('../../lib/storage');
+      const resolved = (await resolveDisplayImage(profileRef)) || profileRef;
+      if (!cancelled && !isPlaceholderMentorImage(resolved)) setEaImage(resolved);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profileRef]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -136,19 +157,26 @@ export function MetaTraderPage() {
   }, [accent, accentRgb]);
 
   useEffect(() => {
-    const saved = loadMt5(user?.email);
+    if (!user?.email) return;
+    if (bootedEmail.current === user.email) return;
+    bootedEmail.current = user.email;
+    const saved = loadMt5(user.email);
     setForm(saved);
     setBrokerQuery(saved.broker || RAZOR_MARKETS.broker);
+    const cached = getMt5AccountSnapshot(user.email);
+    setSummary(cached.summary);
+    setDetails(cached.details);
+    setPositions(cached.positions);
     if (!saved.connected) {
       void runSearch('Razor', false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
 
-  // Live connection status — keep-alive pings + auto-reconnect in mt5Session
+  // Live connection status — keep-alive runs app-wide; account data stays cached
   useEffect(() => {
     if (!user?.email) return;
-    const unsub = subscribeMt5Status(user.email, (info) => {
+    const unsubStatus = subscribeMt5Status(user.email, (info) => {
       setConn(info);
       if (info.state === 'connected' && info.token) {
         setForm((prev) =>
@@ -156,33 +184,25 @@ export function MetaTraderPage() {
             ? prev
             : { ...prev, connected: true, token: info.token },
         );
-        void refreshAccount(info.token);
       }
       if (info.state === 'disconnected') {
-        setSummary(null);
-        setPositions([]);
         setForm((prev) =>
           prev.connected ? { ...prev, connected: false, token: '' } : prev,
         );
       }
     });
+    const unsubAccount = subscribeMt5Account(user.email, (snap) => {
+      setSummary(snap.summary);
+      setDetails(snap.details);
+      setPositions(snap.positions);
+    });
     startMt5KeepAlive(user.email);
     return () => {
-      unsub();
-      stopMt5KeepAlive(user.email);
+      unsubStatus();
+      unsubAccount();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
-
-  // Refresh balance/equity/positions every 20s while connected
-  useEffect(() => {
-    if (conn?.state !== 'connected' || !conn.token) return;
-    const id = window.setInterval(() => {
-      void refreshAccount(conn.token);
-    }, 20_000);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conn?.state, conn?.token]);
 
   const persist = (next: ClientMt5) => {
     setForm(next);
@@ -270,19 +290,8 @@ export function MetaTraderPage() {
     setBrokerQuery(company);
   };
 
-  const refreshAccount = async (token: string) => {
-    try {
-      const [s, d, p] = await Promise.allSettled([
-        accountSummary(token),
-        accountDetails(token),
-        openedOrders(token),
-      ]);
-      if (s.status === 'fulfilled') setSummary(s.value);
-      if (d.status === 'fulfilled') setDetails(d.value);
-      if (p.status === 'fulfilled') setPositions(p.value);
-    } catch {
-      // keep-alive loop handles dead sessions
-    }
+  const refreshAccount = (_token: string) => {
+    if (user?.email) refreshMt5AccountNow(user.email);
   };
 
   const connect = async () => {
