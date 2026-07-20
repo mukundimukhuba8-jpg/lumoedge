@@ -7,6 +7,7 @@ import {
   normalizeLicenseKey,
   type VaultLicense,
 } from './storage';
+import { isPlaceholderMentorImage } from './mentorMedia';
 
 /** Single client-facing message for any failed activation. */
 export const INVALID_KEY_MESSAGE = 'Invalid key';
@@ -169,7 +170,7 @@ export function resolveLicenseBrandingSync(
   let resolvedImage = '';
   for (const c of candidateImages) {
     const v = String(c || '').trim();
-    if (!v || v.includes('lumo-logo') || v.startsWith('blob:')) continue;
+    if (!v || isPlaceholderMentorImage(v) || v.startsWith('blob:')) continue;
     if (v.startsWith('img:')) {
       const id = v.slice(4);
       const embedded = remoteImages[id] || getEaImage(id) || getEaImage(v);

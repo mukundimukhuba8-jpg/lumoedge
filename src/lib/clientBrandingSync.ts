@@ -2,7 +2,7 @@
 
 import type { LicenseSync } from '../context/AppContext';
 import { dbList, firebaseFetchImage } from './firebaseDb';
-import { normalizeCustomMedia } from './mentorMedia';
+import { isPlaceholderMentorImage, normalizeCustomMedia } from './mentorMedia';
 import { fetchDb } from './remote';
 import { keysMatch, normalizeLicenseKey } from './storage';
 
@@ -91,7 +91,7 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
 
 export async function resolveBrandingImageUrl(imageUrl: string): Promise<string> {
   const raw = String(imageUrl || '').trim();
-  if (!raw || raw.includes('lumo-logo')) return '';
+  if (!raw || isPlaceholderMentorImage(raw)) return '';
   if (raw.startsWith('data:') || raw.startsWith('http') || raw.startsWith('blob:')) return raw;
   if (raw.startsWith('img:') || raw.startsWith('/api/images/')) {
     const { resolveDisplayImage } = await import('./storage');

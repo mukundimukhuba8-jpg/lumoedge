@@ -13,6 +13,7 @@ import {
   Star,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { isPlaceholderMentorImage } from '../../lib/mentorMedia';
 import {
   accentHex,
   hexToRgb,
@@ -24,7 +25,6 @@ import {
   accountSummary,
   connectEx,
   disconnectMt5,
-  listKnownBrokers,
   openedOrders,
   searchBrokers,
   type Mt5AccountDetails,
@@ -106,7 +106,7 @@ export function MetaTraderPage() {
   const accentRgb = hexToRgb(accent);
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
   const eaImage =
-    bot.imageUrl && !bot.imageUrl.includes('lumo-logo') ? bot.imageUrl : '';
+    bot.imageUrl && !isPlaceholderMentorImage(bot.imageUrl) ? bot.imageUrl : '';
 
   const [form, setForm] = useState<ClientMt5>(() => loadMt5(user?.email));
   const [showPass, setShowPass] = useState(false);
@@ -117,6 +117,7 @@ export function MetaTraderPage() {
   const [searching, setSearching] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [status, setStatus] = useState('');
+  const [notConnecting, setNotConnecting] = useState(false);
   const [summary, setSummary] = useState<Mt5AccountSummary | null>(null);
   const [details, setDetails] = useState<Mt5AccountDetails | null>(null);
   const [positions, setPositions] = useState<Mt5OpenedOrder[]>([]);
@@ -195,7 +196,6 @@ export function MetaTraderPage() {
       const list = await searchBrokers(q);
       setCompanies(list);
       if (open) setBrokerOpen(true);
-      // If current broker matches first result, refresh its servers
       const flat = list.flatMap((c) =>
         (c.results || []).map((r) => ({ ...r, company: c.company })),
       );
@@ -264,14 +264,17 @@ export function MetaTraderPage() {
 
   const connect = async () => {
     if (!form.login.trim() || !form.password.trim()) {
-      alert('Enter login and password');
+      setNotConnecting(false);
+      setStatus('Enter login and password');
       return;
     }
     if (!form.server.trim()) {
-      alert('Select an MT5 server');
+      setNotConnecting(false);
+      setStatus('Select an MT5 server');
       return;
     }
     setConnecting(true);
+    setNotConnecting(false);
     setStatus('Connecting to broker…');
     try {
       const token = await connectEx({
@@ -296,11 +299,11 @@ export function MetaTraderPage() {
         });
         startMt5KeepAlive(user.email);
       }
+      setNotConnecting(false);
       setStatus('Connected');
       void refreshAccount(token);
-    } catch (e) {
-      setStatus(e instanceof Error ? e.message : 'Connection failed');
-      alert(e instanceof Error ? e.message : 'Connection failed');
+    } catch {
+      setNotConnecting(true);
     } finally {
       setConnecting(false);
     }
@@ -462,10 +465,7 @@ export function MetaTraderPage() {
                     style={{ paddingLeft: 40, paddingRight: 40 }}
                     value={brokerQuery}
                     onChange={(e) => onBrokerQuery(e.target.value)}
-                    onFocus={() => {
-                      if (!companies.length) setCompanies(listKnownBrokers());
-                      setBrokerOpen(true);
-                    }}
+                    onFocus={() => setBrokerOpen(true)}
                     placeholder="Search Broker"
                   />
                   <span className="mt5-search-ico">
@@ -587,6 +587,11 @@ export function MetaTraderPage() {
               {status ? (
                 <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
                   {status}
+                </p>
+              ) : null}
+              {notConnecting ? (
+                <p style={{ marginTop: status ? 4 : 0, fontSize: 12, color: '#f87171' }}>
+                  Not connecting
                 </p>
               ) : null}
 

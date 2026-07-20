@@ -61,7 +61,11 @@ function normalizeDb(raw: unknown): RemoteDb {
   return {
     ...base,
     ...db,
-    auth: { ...base.auth, ...(db.auth || {}) },
+    auth: {
+      ...base.auth,
+      ...(db.auth || {}),
+      admins: dbList(db.auth?.admins),
+    },
     store: {
       workspaces:
         db.store?.workspaces && typeof db.store.workspaces === 'object'
@@ -92,7 +96,7 @@ export function mergeAdmins<T extends AdminLike>(
   incoming: T[],
 ): T[] {
   const byEmail = new Map<string, T>();
-  for (const item of [...(current || []), ...(incoming || [])]) {
+  for (const item of [...dbList<T>(current), ...dbList<T>(incoming)]) {
     const email = String(item.email || '').trim().toLowerCase();
     if (!email) continue;
     const prev = byEmail.get(email);
@@ -111,6 +115,48 @@ export function mergeAdmins<T extends AdminLike>(
       }
     }
     byEmail.set(email, merged);
+  }
+  return Array.from(byEmail.values());
+}
+
+function pickClientStatus(
+  a: 'pending' | 'approved' | 'rejected' | undefined,
+  b: 'pending' | 'approved' | 'rejected' | undefined,
+): 'pending' | 'approved' | 'rejected' {
+  if (a === 'approved' || b === 'approved') return 'approved';
+  if (a === 'pending' || b === 'pending') return 'pending';
+  return 'rejected';
+}
+
+function mergeClientRecord<T extends { email?: string; status?: string; paymentClaimed?: boolean; paymentClaimedAt?: string }>(
+  prev: T,
+  incoming: T,
+): T {
+  const email = String(incoming.email || prev.email || '').toLowerCase();
+  return {
+    ...prev,
+    ...incoming,
+    email,
+    status: pickClientStatus(
+      prev.status as 'pending' | 'approved' | 'rejected' | undefined,
+      incoming.status as 'pending' | 'approved' | 'rejected' | undefined,
+    ),
+    paymentClaimed: Boolean(prev.paymentClaimed || incoming.paymentClaimed),
+    paymentClaimedAt: prev.paymentClaimedAt || incoming.paymentClaimedAt,
+  } as T;
+}
+
+/** Merge client lists by email — approved status and payment flags never downgrade. */
+export function mergeClients<T extends { email?: string }>(
+  current: T[],
+  incoming: T[],
+): T[] {
+  const byEmail = new Map<string, T>();
+  for (const item of [...dbList<T>(current), ...dbList<T>(incoming)]) {
+    const email = String(item.email || '').trim().toLowerCase();
+    if (!email) continue;
+    const prev = byEmail.get(email);
+    byEmail.set(email, prev ? mergeClientRecord(prev, item) : ({ ...item, email } as T));
   }
   return Array.from(byEmail.values());
 }
@@ -261,7 +307,7 @@ export async function firebasePushDb(
       if (partial.auth) {
         const curAuth =
           (await getPath<RemoteDb['auth']>(`${ROOT}/auth`)) || emptyDb().auth;
-        const curAdmins = (curAuth.admins || []) as AdminLike[];
+        const curAdmins = dbList<AdminLike>(curAuth.admins);
         const incoming = Array.isArray(partial.auth.admins)
           ? (partial.auth.admins as AdminLike[])
           : [];
@@ -407,7 +453,7 @@ export async function firebaseFetchAdmins(): Promise<
   if (!isFirebaseConfigured()) return null;
   try {
     const auth = await getPath<RemoteDb['auth']>(`${ROOT}/auth`);
-    return auth?.admins ?? [];
+    return dbList(auth?.admins);
   } catch (err) {
     console.warn('[firebase] fetchAdmins failed', err);
     return null;
@@ -429,7 +475,7 @@ export async function firebasePostMentorRegistration(input: {
       const email = input.email.trim().toLowerCase();
       const curAuth =
         (await getPath<RemoteDb['auth']>(`${ROOT}/auth`)) || emptyDb().auth;
-      const curAdmins = (curAuth.admins || []) as AdminLike[];
+      const curAdmins = dbList<AdminLike>(curAuth.admins);
       const existing = curAdmins.find((a) => String(a.email || '').toLowerCase() === email);
       if (existing) return existing;
 
@@ -493,6 +539,32 @@ export async function firebaseFetchDeletedClients(): Promise<string[]> {
   }
 }
 
+const SUPER_ADMIN_WS_ID = 'LM-004821';
+
+function mirrorClientToSuperWorkspace(
+  workspaces: Record<string, unknown>,
+  entry: RemoteDb['clients'][number],
+): Record<string, unknown> {
+  const next = { ...workspaces };
+  const ws = (next[SUPER_ADMIN_WS_ID] as Record<string, unknown>) || {
+    eas: [],
+    licenses: [],
+    clientRequests: [],
+    mt5: {},
+    profile: {},
+    orders: [],
+    revokedKeys: [],
+  };
+  const rest = dbList<RemoteDb['clients'][number]>(ws.clientRequests).filter(
+    (c) => c.id !== entry.id && c.email.toLowerCase() !== entry.email.toLowerCase(),
+  );
+  next[SUPER_ADMIN_WS_ID] = {
+    ...ws,
+    clientRequests: [entry, ...rest],
+  };
+  return next;
+}
+
 export async function firebasePostClient(input: {
   email: string;
   firstName: string;
@@ -502,8 +574,9 @@ export async function firebasePostClient(input: {
   return enqueueWrite(async () => {
     try {
       const email = input.email.trim().toLowerCase();
-      const curClients =
-        (await getPath<RemoteDb['clients']>(`${ROOT}/clients`)) || [];
+      const curClients = dbList<RemoteDb['clients'][number]>(
+        await getPath<RemoteDb['clients']>(`${ROOT}/clients`),
+      );
       const existing = curClients.find((c) => c.email.toLowerCase() === email);
       if (existing) return existing;
       const entry: RemoteDb['clients'][number] = {
@@ -516,10 +589,13 @@ export async function firebasePostClient(input: {
       };
       // A fresh registration lifts the deletion tombstone for this email
       const deleted =
-        (await getPath<string[]>(`${ROOT}/deletedClients`)) || [];
+        dbList<string>(await getPath<string[]>(`${ROOT}/deletedClients`)) || [];
+      const remoteWs =
+        (await getPath<Record<string, unknown>>(`${ROOT}/store/workspaces`)) || {};
       await update(ref(getFirebaseDb(), ROOT), {
         clients: [entry, ...curClients],
         deletedClients: deleted.filter((e) => e.toLowerCase() !== email),
+        'store/workspaces': mirrorClientToSuperWorkspace(remoteWs, entry),
         updatedAt: new Date().toISOString(),
       });
       return entry;
@@ -541,15 +617,28 @@ export async function firebasePatchClient(
   if (!isFirebaseConfigured()) return null;
   return enqueueWrite(async () => {
     try {
-      const curClients =
-        (await getPath<RemoteDb['clients']>(`${ROOT}/clients`)) || [];
+      const key = String(id || '').trim();
+      const curClients = dbList<RemoteDb['clients'][number]>(
+        await getPath<RemoteDb['clients']>(`${ROOT}/clients`),
+      );
       const idx = curClients.findIndex(
-        (c) => c.id === id || c.email.toLowerCase() === id.toLowerCase(),
+        (c) =>
+          c.id === key ||
+          c.email.toLowerCase() === key.toLowerCase(),
       );
       if (idx < 0) return null;
-      curClients[idx] = { ...curClients[idx], ...patch };
+      const prev = curClients[idx];
+      curClients[idx] = mergeClientRecord(prev, {
+        ...prev,
+        ...patch,
+        email: prev.email,
+        id: prev.id,
+      });
+      const remoteWs =
+        (await getPath<Record<string, unknown>>(`${ROOT}/store/workspaces`)) || {};
       await update(ref(getFirebaseDb(), ROOT), {
         clients: curClients,
+        'store/workspaces': mirrorClientToSuperWorkspace(remoteWs, curClients[idx]),
         updatedAt: new Date().toISOString(),
       });
       return curClients[idx];
@@ -734,6 +823,24 @@ export async function firebaseFetchImage(id: string): Promise<string> {
 
 export function isFirebaseImageRef(value: string | undefined): boolean {
   return Boolean(value && String(value).startsWith('img:'));
+}
+
+export function firebaseWatchAdmins(
+  cb: (admins: RemoteDb['auth']['admins']) => void,
+): () => void {
+  if (!isFirebaseConfigured()) return () => undefined;
+  try {
+    const r = ref(getFirebaseDb(), `${ROOT}/auth/admins`);
+    return onValue(
+      r,
+      (snap) => {
+        cb(dbList(snap.val()));
+      },
+      () => undefined,
+    );
+  } catch {
+    return () => undefined;
+  }
 }
 
 export function firebaseWatchUpdates(cb: () => void): () => void {

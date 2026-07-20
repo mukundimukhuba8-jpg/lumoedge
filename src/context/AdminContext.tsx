@@ -29,6 +29,7 @@ import {
 } from '../lib/prepaidClients';
 import {
   emptyCustomMedia,
+  isPlaceholderMentorImage,
   normalizeCustomMedia,
   type MentorMediaItem,
 } from '../lib/mentorMedia';
@@ -242,7 +243,7 @@ export type AdminWorkspace = {
 /** Resolve stored img:/data/http refs to something an <img> can show. */
 function displayableImage(value: string | undefined, adminId?: string): string {
   const v = String(value || '').trim();
-  if (!v || v.includes('lumo-logo') || v.startsWith('blob:')) return '';
+  if (!v || isPlaceholderMentorImage(v) || v.startsWith('blob:')) return '';
   if (v.startsWith('img:')) {
     const id = v.replace(/^img:/, '');
     return getEaImage(id) || getEaImage(v) || getEaImage(`profile-${adminId || ''}`) || '';
@@ -263,7 +264,7 @@ async function syncPortalBrandingToClients(
   const imageRef =
     options?.imageRef !== undefined
       ? options.imageRef
-      : ws.profile.eaImage && !ws.profile.eaImage.includes('lumo-logo')
+      : ws.profile.eaImage && !isPlaceholderMentorImage(ws.profile.eaImage)
         ? ws.profile.eaImage.startsWith('data:')
           ? `img:profile-${adminId}`
           : ws.profile.eaImage
@@ -994,7 +995,7 @@ function applyRemoteAdmins(
   prev: AuthState,
   remoteAdmins: AdminUser[],
 ): AuthState {
-  const admins = mergeAdmins(prev.admins, remoteAdmins);
+  const admins = mergeAdmins(prev.admins, remoteAdmins) as AdminUser[];
   const healed = admins.some((a) => {
     const remote = remoteAdmins.find(
       (r) => r.email.toLowerCase() === a.email.toLowerCase(),
@@ -1178,7 +1179,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   // Keep mentor registration queue fresh for Super Admin approval
   useEffect(() => {
     if (booting) return;
-    const tick = async () => {
+    const syncAdmins = async () => {
       const remoteAdmins = (await fetchAdmins()) as AdminUser[] | null;
       if (!remoteAdmins) return;
       setAuth((prev) => {
@@ -1188,9 +1189,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         return nextAuth;
       });
     };
-    void tick();
-    const id = window.setInterval(tick, 2500);
-    return () => window.clearInterval(id);
+    void syncAdmins();
+    const id = window.setInterval(() => void syncAdmins(), 2500);
+    let unwatch: (() => void) | undefined;
+    void import('../lib/firebaseDb').then(({ firebaseWatchAdmins }) => {
+      unwatch = firebaseWatchAdmins(() => void syncAdmins());
+    });
+    return () => {
+      window.clearInterval(id);
+      unwatch?.();
+    };
   }, [booting]);
 
   // Pull licenses from Firebase so every admin device sees the same keys
@@ -1467,10 +1475,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           return null;
         }
         const remoteAdmins = ((await fetchAdmins()) || []) as AdminUser[];
-        const admins = mergeAdmins(auth.admins, remoteAdmins);
+        const admins = mergeAdmins(auth.admins, remoteAdmins) as AdminUser[];
         if (remoteAdmins.length) {
           setAuth((prev) => {
-            const nextAdmins = mergeAdmins(prev.admins, remoteAdmins);
+            const nextAdmins = mergeAdmins(prev.admins, remoteAdmins) as AdminUser[];
             const next = { ...prev, admins: nextAdmins };
             saveJSON(AUTH_KEY, { ...next, portalOpen: false });
             return next;
@@ -1538,7 +1546,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           role: 'pending',
         };
         const workspace = createEmptyWorkspace(entry);
-        const nextAdmins = mergeAdmins(auth.admins, [entry]);
+        const nextAdmins = mergeAdmins(auth.admins, [entry]) as AdminUser[];
         const nextStore = {
           ...store,
           workspaces: {
@@ -1551,6 +1559,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         saveJSON(STORE_KEY, nextStore);
         setAuth(nextAuth);
         saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+        void pushDb({
+          auth: { admins: nextAdmins, admin: null },
+          store: { workspaces: { [entry.id]: workspace } },
+        }).catch(() => undefined);
         return null;
       },
       logout: () => saveAuth({ ...auth, admin: null, portalOpen: false }),
@@ -1708,26 +1720,44 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ...ws,
           clientRequests: mergeClientLists(ws.clientRequests, [approved]),
         }));
-        void patchClient(email, {
+        void pushDb({ clients: mergeClientLists(clients, [approved]) }).catch(() => undefined);
+        const persistApproval = async (server: ClientRequest | null) => {
+          const merged = server
+            ? ({
+                ...(server as ClientRequest),
+                status: 'approved',
+                paymentClaimed: true,
+                paymentClaimedAt: claimedAt,
+              } as ClientRequest)
+            : approved;
+          setClients((prev) => mergeClientLists(prev, [merged]));
+          const db = await fetchDb();
+          const session = (db?.sessions?.[email] as Record<string, unknown> | undefined) || {};
+          await pushSession(email, {
+            ...session,
+            accessStatus: 'approved',
+          });
+        };
+        void patchClient(hit.id, {
           status: 'approved',
           paymentClaimed: true,
           paymentClaimedAt: claimedAt,
         })
           .then(async (server) => {
-            const merged = server
-              ? ({ ...(server as ClientRequest), status: 'approved' } as ClientRequest)
-              : approved;
-            setClients((prev) => mergeClientLists(prev, [merged]));
-            const db = await fetchDb();
-            const session = db?.sessions?.[email] as Record<string, unknown> | undefined;
-            if (session) {
-              await pushSession(email, {
-                ...session,
-                accessStatus: 'approved',
-              });
+            if (server) {
+              await persistApproval(server as ClientRequest);
+              return;
             }
+            const byEmail = await patchClient(email, {
+              status: 'approved',
+              paymentClaimed: true,
+              paymentClaimedAt: claimedAt,
+            });
+            await persistApproval(byEmail as ClientRequest | null);
           })
-          .catch(() => undefined);
+          .catch(async () => {
+            await persistApproval(approved);
+          });
       },
       markClientPaid: (id) => {
         const hit = clients.find((c) => c.id === id);
@@ -1745,13 +1775,26 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ...ws,
           clientRequests: mergeClientLists(ws.clientRequests, [updated]),
         }));
-        void patchClient(email, {
+        void pushDb({ clients: mergeClientLists(clients, [updated]) }).catch(() => undefined);
+        const applyPaid = (server: ClientRequest | null) => {
+          if (!server) return;
+          setClients((prev) => mergeClientLists(prev, [server as ClientRequest]));
+        };
+        void patchClient(hit.id, {
           paymentClaimed: true,
           paymentClaimedAt: claimedAt,
         })
-          .then((server) => {
-            if (!server) return;
-            setClients((prev) => mergeClientLists(prev, [server as ClientRequest]));
+          .then(async (server) => {
+            if (server) {
+              applyPaid(server as ClientRequest);
+              return;
+            }
+            applyPaid(
+              (await patchClient(email, {
+                paymentClaimed: true,
+                paymentClaimedAt: claimedAt,
+              })) as ClientRequest | null,
+            );
           })
           .catch(() => undefined);
       },
@@ -1974,7 +2017,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const profileImage = ws.profile.eaImage || '';
         const realProfile =
           profileImage &&
-          !profileImage.includes('lumo-logo') &&
+          !isPlaceholderMentorImage(profileImage) &&
           !profileImage.startsWith('blob:')
             ? profileImage.startsWith('data:')
               ? `img:profile-${adminId}`
@@ -1982,7 +2025,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             : '';
         const realEa =
           ea.imageUrl &&
-          !ea.imageUrl.includes('lumo-logo') &&
+          !isPlaceholderMentorImage(ea.imageUrl) &&
           !ea.imageUrl.startsWith('blob:')
             ? ea.imageUrl.startsWith('data:')
               ? `img:profile-${adminId}`

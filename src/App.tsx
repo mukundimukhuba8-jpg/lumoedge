@@ -50,7 +50,7 @@ function ClientAppGate({ children }: { children: React.ReactNode }) {
     bot.imageUrl || '',
     bot.customMedia,
   );
-  const backdropSrc = custom?.src || bot.imageUrl || '/bull-hero.jpg';
+  const backdropSrc = custom?.src || bot.imageUrl || '';
   const backdropKind = custom?.kind || 'image';
   // Broker page stays clean dark (admin portal theme) — no photo backdrop
   const hideBackdrop = location.pathname.includes('metatrader');

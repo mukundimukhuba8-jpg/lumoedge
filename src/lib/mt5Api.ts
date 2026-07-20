@@ -1,16 +1,7 @@
 /**
- * Client for the brokers API (MT5API RESTFul swagger host).
- * All broker operations — search, connect, account info, trades — talk
- * to this API through the app server proxy (/api/mt5).
+ * MT5 client — broker search, connect, account, and trades via the
+ * MT5API RESTFul swagger host (https://66.23.225.158) through /api/mt5.
  */
-
-import {
-  BROKER_TERMINALS,
-  getTerminalUrl,
-  searchLocalBrokers,
-  type BrokerTerminalEntry,
-} from './brokerTerminals';
-
 
 const PROXY_BASE = '/api/mt5';
 
@@ -49,8 +40,6 @@ export type Mt5ServerResult = {
   logo_url?: string;
   site?: string;
   access?: string[];
-  /** Web terminal URL when broker supports browser MT5 */
-  terminalUrl?: string;
 };
 
 export type Mt5Company = {
@@ -127,78 +116,22 @@ export async function pingMt5(): Promise<boolean> {
   }
 }
 
-function localEntriesToCompanies(entries: BrokerTerminalEntry[]): Mt5Company[] {
-  const grouped = new Map<string, Mt5ServerResult[]>();
-  for (const entry of entries) {
-    const list = grouped.get(entry.company) ?? [];
-    list.push({
-      name: entry.server,
-      site: entry.site,
-      terminalUrl: entry.terminalUrl,
-      access: [entry.accountMode],
-    });
-    grouped.set(entry.company, list);
-  }
-  return Array.from(grouped.entries()).map(([company, results]) => ({
-    company,
-    results,
-  }));
-}
-
-/** Attach known web terminal URLs to remote search results */
-function enrichWithTerminals(companies: Mt5Company[]): Mt5Company[] {
-  return companies.map((co) => ({
-    ...co,
-    results: (co.results || []).map((r) => ({
-      ...r,
-      terminalUrl: r.terminalUrl || getTerminalUrl(r.name),
-    })),
-  }));
-}
-
-/** Merge remote API results with local registry (dedupe by server name) */
-function mergeBrokerLists(remote: Mt5Company[], local: Mt5Company[]): Mt5Company[] {
-  const serverNames = new Set(
-    remote.flatMap((co) => (co.results || []).map((r) => r.name.toLowerCase())),
-  );
-  const extraLocal = local
-    .map((co) => ({
-      ...co,
-      results: (co.results || []).filter((r) => !serverNames.has(r.name.toLowerCase())),
-    }))
-    .filter((co) => co.results.length > 0);
-
-  return enrichWithTerminals([...remote, ...extraLocal]);
-}
-
-/** All supported broker terminals (for dropdown when search is empty) */
-export function listKnownBrokers(): Mt5Company[] {
-  return localEntriesToCompanies(BROKER_TERMINALS);
-}
-
-/** Search broker companies — remote API plus local terminal registry fallback */
+/** Search broker companies via swagger /Search */
 export async function searchBrokers(company: string): Promise<Mt5Company[]> {
   const q = company.trim();
   if (q.length < 2) return [];
-  const local = localEntriesToCompanies(searchLocalBrokers(q));
 
-  try {
-    const res = await mt5Fetch(`/Search?company=${encodeURIComponent(q)}`);
-    const data = await readBody(res);
-    if (!res.ok) {
-      return local.length ? local : [];
-    }
-    const remote = Array.isArray(data) ? (data as Mt5Company[]) : [];
-    if (!remote.length) return local;
-    return mergeBrokerLists(remote, local);
-  } catch {
-    return local;
+  const res = await mt5Fetch(`/Search?company=${encodeURIComponent(q)}`);
+  const data = await readBody(res);
+  if (!res.ok) {
+    return [];
   }
+  return Array.isArray(data) ? (data as Mt5Company[]) : [];
 }
 
 /**
- * Connect via backend bridge — resolves broker web terminal host server-side.
- * Returns session token for further /Account* calls.
+ * Connect via backend bridge — swagger ConnectEx only.
+ * Returns session token for further /Account* and /OrderSend calls.
  */
 export async function connectEx(input: {
   user: string | number;
@@ -206,7 +139,7 @@ export async function connectEx(input: {
   server: string;
 }): Promise<string> {
   const ac = new AbortController();
-  const timer = window.setTimeout(() => ac.abort(), 18_000);
+  const timer = window.setTimeout(() => ac.abort(), 20_000);
   try {
     const res = await fetch('/api/mt5/connect', {
       method: 'POST',
@@ -243,7 +176,7 @@ export async function connectEx(input: {
     return token.replace(/^"|"$/g, '');
   } catch (err) {
     if (err instanceof Error && /abort/i.test(err.message)) {
-      throw new Error('Connection timed out — please try again.');
+      throw new Error('Not connecting');
     }
     throw err;
   } finally {
@@ -296,7 +229,7 @@ export async function openedOrders(id: string): Promise<Mt5OpenedOrder[]> {
 export type Mt5OrderOperation = 'Buy' | 'Sell';
 
 /**
- * Send market order via MT5 bridge.
+ * Send market order via swagger MT5 bridge (/OrderSend).
  * Comment format: "{EA name} Lumo~edge"
  */
 export async function orderSend(input: {
