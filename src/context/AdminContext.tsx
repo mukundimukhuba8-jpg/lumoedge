@@ -1608,11 +1608,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ],
         }));
         try {
-          const server = await patchClient(current.id, {
-            status: autoApprove ? 'approved' : undefined,
-            paymentClaimed: true,
-            paymentClaimedAt: claimedAt,
-          });
+          const server = await Promise.race([
+            patchClient(current.email, {
+              status: autoApprove ? 'approved' : undefined,
+              paymentClaimed: true,
+              paymentClaimedAt: claimedAt,
+            }),
+            new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
+          ]);
           if (server) {
             const merged = { ...updated, ...server, status: autoApprove ? 'approved' : server.status } as ClientRequest;
             setClients((prev) => {

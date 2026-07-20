@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { KeyRound } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
@@ -8,6 +8,10 @@ import { normalizeLicenseKey } from '../../lib/storage';
 
 export function ActivateLicensePage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const fromPayment = Boolean(
+    (location.state as { fromPayment?: boolean } | null)?.fromPayment,
+  );
   const { user, accessStatus, activateWithLicense, bot } = useApp();
   const { claimLicense } = useAdmin();
   const [key, setKey] = useState('');
@@ -18,11 +22,16 @@ export function ActivateLicensePage() {
     if (!user) navigate('/', { replace: true });
     else if (accessStatus === 'licensed' || bot.licenseKey?.trim()) {
       navigate('/app', { replace: true });
-    } else if (accessStatus === 'pending') navigate('/waiting', { replace: true });
-    else if (accessStatus !== 'approved' && accessStatus !== 'paid') {
+    }     else if (accessStatus === 'pending' && !fromPayment) {
+      navigate('/waiting', { replace: true });
+    } else if (
+      accessStatus !== 'approved' &&
+      accessStatus !== 'paid' &&
+      !fromPayment
+    ) {
       navigate('/', { replace: true });
     }
-  }, [user, accessStatus, bot.licenseKey, navigate]);
+  }, [user, accessStatus, bot.licenseKey, navigate, fromPayment]);
 
   const onActivate = async (e: React.FormEvent) => {
     e.preventDefault();

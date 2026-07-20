@@ -15,11 +15,8 @@ export function WaitingApprovalPage() {
   const [messageTone, setMessageTone] = useState<'ok' | 'warn' | 'err'>('warn');
 
   const goToLicense = () => {
-    if (accessStatus === 'pending' || accessStatus === 'approved') {
-      setAccessStatus('approved');
-    }
     markPaid();
-    navigate('/activate', { replace: true });
+    navigate('/activate', { replace: true, state: { fromPayment: true } });
   };
 
   useEffect(() => {
@@ -38,11 +35,14 @@ export function WaitingApprovalPage() {
     }
     const tick = () => {
       const client = getClientByEmail(user.email);
-      // Only auto-advance after approval when already past payment claim,
-      // or when Super Admin approved a non-prepaid pending user.
-      if (client?.status === 'approved' && client.paymentClaimed && !isPrepaidEmail(user.email)) {
+      // Only auto-advance after Super Admin approval for non-prepaid users.
+      if (
+        !isPrepaidEmail(user.email) &&
+        client?.status === 'approved' &&
+        client.paymentClaimed
+      ) {
         if (accessStatus === 'pending') setAccessStatus('approved');
-        navigate('/activate', { replace: true });
+        navigate('/activate', { replace: true, state: { fromPayment: true } });
       }
     };
     tick();
@@ -64,10 +64,21 @@ export function WaitingApprovalPage() {
         return;
       }
 
-      const claimed = await claimClientPayment(user.email);
+      // Pre-approved clients should not wait on a slow cloud write.
+      if (prepaid || client?.status === 'approved') {
+        goToLicense();
+        void claimClientPayment(user.email).catch(() => undefined);
+        return;
+      }
 
-      // Prepaid list + approved clients go straight to license key
-      if (prepaid || claimed?.status === 'approved' || client?.status === 'approved') {
+      const claimed = await Promise.race([
+        claimClientPayment(user.email),
+        new Promise<Awaited<ReturnType<typeof claimClientPayment>>>((resolve) =>
+          window.setTimeout(() => resolve(null), 8000),
+        ),
+      ]);
+
+      if (claimed?.status === 'approved') {
         goToLicense();
         return;
       }
