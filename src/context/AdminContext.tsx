@@ -445,19 +445,19 @@ function mergeWorkspaceKeepAll(a: AdminWorkspace, b: AdminWorkspace): AdminWorks
     const prev = easById.get(ea.id);
     easById.set(ea.id, prev ? { ...prev, ...ea, imageUrl: ea.imageUrl || prev.imageUrl || '' } : ea);
   }
-  const licById = new Map<string, LicenseRecord>();
+  const licByKey = new Map<string, LicenseRecord>();
   for (const lic of [...(a.licenses || []), ...(b.licenses || [])]) {
-    if (!lic?.id && !lic?.key) continue;
-    const id = lic.id || lic.key;
-    const prev = licById.get(id);
+    if (!lic?.key) continue;
+    const mergeKey = keyFingerprint(lic.key) || lic.id || lic.key;
+    const prev = licByKey.get(mergeKey);
     if (!prev) {
-      licById.set(id, lic);
+      licByKey.set(mergeKey, lic);
       continue;
     }
     // Prefer non-deleted; keep richer fields
     const preferIncoming = lic.status !== 'deleted' && prev.status === 'deleted';
     const base = preferIncoming ? { ...prev, ...lic } : { ...lic, ...prev, ...lic };
-    licById.set(id, {
+    licByKey.set(mergeKey, {
       ...base,
       eaImage: lic.eaImage || prev.eaImage || '',
       customMedia: normalizeCustomMedia(
@@ -479,7 +479,7 @@ function mergeWorkspaceKeepAll(a: AdminWorkspace, b: AdminWorkspace): AdminWorks
     ...b,
     deletedEaIds: [...deletedEaIds],
     eas: Array.from(easById.values()),
-    licenses: Array.from(licById.values()).filter((l) => l.status !== 'deleted'),
+    licenses: Array.from(licByKey.values()).filter((l) => l.status !== 'deleted'),
     profile: {
       ...a.profile,
       ...b.profile,
@@ -573,6 +573,28 @@ async function pushLicensesToRemote(adminId: string, ws: AdminWorkspace) {
     vault: entries,
     store: { workspaces: { [adminId]: ws } },
   });
+}
+
+function licenseExistsOnRemote(
+  remote: Awaited<ReturnType<typeof fetchDb>>,
+  key: string,
+): boolean {
+  if (!remote) return false;
+  if (
+    (remote.vault || []).some((v) =>
+      keysMatch(String((v as VaultLicense).key || ''), key),
+    )
+  ) {
+    return true;
+  }
+  for (const ws of Object.values(
+    (remote.store?.workspaces || {}) as StoreState['workspaces'],
+  )) {
+    if ((ws.licenses || []).some((l) => keysMatch(l.key, key) && l.status !== 'deleted')) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function uniqueKey(existing: LicenseRecord[]) {
@@ -703,7 +725,7 @@ type Ctx = {
     clientName: string;
     clientEmail: string;
     duration: string;
-  }) => { ok: true; license: LicenseRecord } | { ok: false; error: string };
+  }) => Promise<{ ok: true; license: LicenseRecord } | { ok: false; error: string }>;
   deleteLicense: (id: string) => void;
   claimLicense: (
     key: string,
@@ -925,6 +947,64 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const id = window.setInterval(tick, 2500);
     return () => window.clearInterval(id);
   }, [booting]);
+
+  // Pull licenses from Firebase so every admin device sees the same keys
+  useEffect(() => {
+    if (booting || !auth.admin?.id) return;
+    const mentorId = auth.admin.id;
+    const syncWorkspace = async () => {
+      const db = await fetchDb();
+      if (!db?.store?.workspaces?.[mentorId]) return;
+      const remoteWs = normalizeWorkspace(
+        db.store.workspaces[mentorId] as AdminWorkspace,
+        auth.admin ?? { id: mentorId },
+      );
+      if (Array.isArray(db.vault)) {
+        const revoked = loadRevokedKeys();
+        saveVaultLocal(
+          (db.vault as VaultLicense[]).filter(
+            (v) =>
+              v.status !== 'deleted' &&
+              !revoked.some((k) => keysMatch(k, v.key)),
+          ),
+        );
+      }
+      setStore((prev) => {
+        const localWs = prev.workspaces[mentorId];
+        if (!localWs) {
+          const next = {
+            ...prev,
+            workspaces: { ...prev.workspaces, [mentorId]: remoteWs },
+          };
+          saveJSON(STORE_KEY, next);
+          return next;
+        }
+        const merged = mergeWorkspaceKeepAll(localWs, remoteWs);
+        if (
+          JSON.stringify(merged.licenses) === JSON.stringify(localWs.licenses) &&
+          JSON.stringify(merged.eas) === JSON.stringify(localWs.eas)
+        ) {
+          return prev;
+        }
+        const next = {
+          ...prev,
+          workspaces: { ...prev.workspaces, [mentorId]: merged },
+        };
+        saveJSON(STORE_KEY, next);
+        return next;
+      });
+    };
+    void syncWorkspace();
+    const poll = window.setInterval(() => void syncWorkspace(), 4000);
+    let unwatch: (() => void) | undefined;
+    void import('../lib/firebaseDb').then(({ firebaseWatchUpdates }) => {
+      unwatch = firebaseWatchUpdates(() => void syncWorkspace());
+    });
+    return () => {
+      window.clearInterval(poll);
+      unwatch?.();
+    };
+  }, [booting, auth.admin?.id]);
 
   const saveAuth = useCallback((next: AuthState) => {
     setAuth(next);
@@ -1468,7 +1548,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           deletedEaIds: [...new Set([...(ws.deletedEaIds || []), id])],
         }));
       },
-      generateLicense: (input) => {
+      generateLicense: async (input) => {
         if (!adminId) {
           return { ok: false, error: 'Sign in to generate a license.' };
         }
@@ -1547,21 +1627,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           saveEaImage(`profile-${adminId}`, displayBytes);
           saveEaImage(`img:profile-${adminId}`, displayBytes);
         }
-        upsertVault({
-          id,
-          key,
-          email: clientEmail,
-          clientName,
-          eaName,
-          mainText,
-          symbols: ea.symbols,
-          eaImage,
-          customMedia,
-          duration: input.duration,
-          ownerAdminId: adminId,
-          eaId: ea.id,
-          status: 'active',
-        });
         const current = normalizeWorkspace(
           store.workspaces[adminId],
           auth.admin ?? { id: adminId },
@@ -1570,11 +1635,24 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ...current,
           licenses: [record, ...current.licenses.filter((l) => l.id !== id)],
         };
-        // Must reach Firebase immediately — client activation reads remote vault
-        void pushDb({
-          vault: [licenseToVaultEntry(record)],
-          store: { workspaces: { [adminId]: nextWs } },
-        }).catch(() => undefined);
+        // Save to cloud first — clients on any device read Firebase, not this browser
+        try {
+          await pushLicensesToRemote(adminId, nextWs);
+        } catch {
+          return {
+            ok: false,
+            error:
+              'Could not save the license to the cloud. Check your connection and try again.',
+          };
+        }
+        const remote = await fetchDb();
+        if (!licenseExistsOnRemote(remote, key)) {
+          return {
+            ok: false,
+            error:
+              'License was not confirmed on the server. Try generating again in a moment.',
+          };
+        }
         setStore((prev) => {
           const next = {
             ...prev,
