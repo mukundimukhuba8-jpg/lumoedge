@@ -67,78 +67,63 @@ export function AdminShell() {
   const drawer =
     open && typeof document !== 'undefined'
       ? createPortal(
-          <div className="drawer-backdrop smooth-fade">
-            <aside className="drawer smooth-drawer">
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 16,
-                }}
-              >
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span className="title-blue" style={{ fontSize: 18 }}>
-                    Lumo Admin
-                  </span>
-                  <span
-                    style={{
-                      background: 'transparent',
-                      color: isSuper ? 'var(--gold)' : 'var(--electric)',
-                      border: `1px solid ${isSuper ? 'var(--gold)' : 'var(--electric)'}`,
-                      borderRadius: 999,
-                      padding: '2px 8px',
-                      fontSize: 11,
-                      fontWeight: 700,
-                    }}
-                  >
+          <div className="drawer-backdrop smooth-fade admin-drawer-backdrop">
+            <aside className="drawer smooth-drawer admin-drawer">
+              <div className="admin-drawer-header">
+                <div className="admin-drawer-brand">
+                  <span className="admin-drawer-logo title-blue">Lumo Admin</span>
+                  <span className={`admin-role-badge${isSuper ? ' admin-role-badge-super' : ''}`}>
                     {isSuper ? 'SUPER' : 'MENTOR'}
                   </span>
                 </div>
                 <button
                   type="button"
+                  className="admin-drawer-close"
                   onClick={() => setOpen(false)}
-                  style={{ background: 'transparent', color: 'var(--muted)' }}
+                  aria-label="Close menu"
                 >
                   <X size={20} />
                 </button>
               </div>
-              <div className="muted" style={{ fontSize: 11, letterSpacing: 1.4 }}>
-                SIGNED IN AS
+              <div className="admin-drawer-user">
+                <div className="admin-drawer-user-label">SIGNED IN AS</div>
+                <div className="admin-drawer-user-name">{admin.fullName}</div>
+                <div className="admin-drawer-user-id">{admin.id}</div>
               </div>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>{admin.fullName}</div>
-              <div style={{ color: 'var(--electric)', marginBottom: 14 }}>{admin.id}</div>
               {!isSuper ? (
-                <p className="muted" style={{ fontSize: 12, marginTop: 0, marginBottom: 12 }}>
+                <p className="admin-drawer-note muted">
                   Your private mentor space — EAs, licenses, and stats are yours only.
                 </p>
               ) : null}
-              <nav style={{ flex: 1, overflow: 'auto' }}>
+              <nav className="admin-drawer-nav">
                 {menu.map(({ to, label, Icon }) => (
                   <NavLink
                     key={to}
                     to={to}
                     onClick={() => setOpen(false)}
-                    className={({ isActive }) => `drawer-item${isActive ? ' active' : ''}`}
+                    className={({ isActive }) =>
+                      `drawer-item admin-drawer-item${isActive ? ' active' : ''}`
+                    }
                   >
-                    <Icon size={18} /> {label}
+                    <span className="admin-drawer-item-icon">
+                      <Icon size={18} strokeWidth={2.1} />
+                    </span>
+                    <span className="admin-drawer-item-label">{label}</span>
                   </NavLink>
                 ))}
               </nav>
               <button
                 type="button"
-                className="drawer-item"
-                style={{
-                  color: 'var(--red)',
-                  borderTop: '1px solid rgba(255,255,255,0.08)',
-                  marginTop: 8,
-                }}
+                className="drawer-item admin-drawer-item admin-drawer-logout"
                 onClick={() => {
                   logout();
                   navigate('/');
                 }}
               >
-                <LogOut size={18} /> Logout
+                <span className="admin-drawer-item-icon">
+                  <LogOut size={18} strokeWidth={2.1} />
+                </span>
+                <span className="admin-drawer-item-label">Logout</span>
               </button>
             </aside>
             <button
@@ -153,20 +138,20 @@ export function AdminShell() {
       : null;
 
   return (
-    <div className="app-shell admin-shell-dark">
-      <div className="admin-top">
+    <div className={`app-shell admin-shell-dark${isSuper ? ' admin-shell-super' : ''}`}>
+      <div className="admin-top admin-top-cyber">
         <button
           type="button"
-          className="admin-menu-btn"
+          className="admin-menu-btn admin-menu-btn-cyber"
           onClick={() => setOpen(true)}
           aria-label="Open menu"
         >
           <Menu size={20} />
         </button>
-        <strong className="admin-top-title">{pageTitle}</strong>
-        <span style={{ width: 44 }} />
+        <strong className="admin-top-title admin-top-title-cyber">{pageTitle}</strong>
+        <span className="admin-top-spacer" aria-hidden />
       </div>
-      <div className="page-enter admin-page-body">
+      <div className="page-enter admin-page-body admin-page-body-cyber">
         <Outlet />
       </div>
       {drawer}

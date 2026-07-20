@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Copy, Loader2, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { resolveProfileImage } from '../../lib/mentorMedia';
 import { compressImageFile, getEaImage } from '../../lib/storage';
@@ -30,72 +30,47 @@ export function DashboardPage() {
   const isEmpty = eas.length === 0 && licenses.length === 0;
   const firstName = profile.firstName || admin?.fullName?.split(' ')[0] || 'Admin';
   return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      <div className="glow-card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+    <div className="admin-dashboard">
+      <div className="glow-card admin-welcome-card">
+        <div className="admin-welcome-row">
           <div>
-            <h2 style={{ margin: 0 }}>Welcome, {firstName}</h2>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-              <span className="muted" style={{ fontSize: 11 }}>MENTOR ID</span>
-              <span style={{ border: '1px solid var(--electric)', borderRadius: 999, padding: '3px 10px', color: 'var(--electric)', fontWeight: 700 }}>
-                {profile.mentorId || admin?.id}
-              </span>
+            <h2 className="admin-welcome-title">Welcome, {firstName}</h2>
+            <div className="admin-welcome-meta">
+              <span className="muted admin-welcome-label">MENTOR ID</span>
+              <span className="admin-id-pill">{profile.mentorId || admin?.id}</span>
             </div>
           </div>
-          <span
-            style={{
-              background: isSuper ? 'rgba(168,85,247,0.22)' : 'rgba(59,130,246,0.2)',
-              color: isSuper ? '#e9d5ff' : 'var(--electric)',
-              border: `1px solid ${isSuper ? 'rgba(168,85,247,0.65)' : 'var(--electric)'}`,
-              borderRadius: 999,
-              padding: '4px 10px',
-              fontWeight: 700,
-              height: 'fit-content',
-              fontSize: 11,
-              letterSpacing: 0.4,
-            }}
-          >
+          <span className={`admin-role-chip${isSuper ? ' admin-role-chip-super' : ''}`}>
             {isSuper ? 'SUPER ADMIN' : 'MENTOR'}
           </span>
         </div>
       </div>
       {isEmpty ? (
-        <div className="glow-card" style={{ borderColor: 'rgba(59,130,246,0.45)' }}>
+        <div className="glow-card admin-empty-card">
           <strong>Set up your own portal</strong>
           <p className="muted" style={{ marginBottom: 0 }}>
             This space is yours alone — no shared EAs or licenses. Upload your EA image in Profile Settings, create an EA, then generate license keys.
           </p>
         </div>
       ) : null}
-      <div className="stat-grid">
-        <Stat value={String(stats.activeLicenses)} label="Active Licenses" color="var(--electric)" />
-        <Stat value={String(stats.totalClients)} label="Total Clients" color="var(--electric)" />
+      <div className="stat-grid admin-stat-grid">
+        <Stat value={String(stats.activeLicenses)} label="Active Licenses" tone="cyan" />
+        <Stat value={String(stats.totalClients)} label="Total Clients" tone="blue" />
         <Stat
           value={String(isSuper ? stats.pendingClients : stats.activeLicenses)}
           label={isSuper ? 'Pending Approvals' : 'Paid Clients'}
-          color="var(--green)"
+          tone={isSuper ? 'purple' : 'green'}
         />
         <Stat
           value={String(stats.deletedLicenses)}
-          label={isSuper ? 'Revoked Keys' : 'Revoked Keys'}
-          color="var(--pink)"
+          label="Revoked Keys"
+          tone="pink"
         />
       </div>
-      <div className="glow-card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <strong className="muted" style={{ letterSpacing: 1 }}>CHART SCANNER</strong>
-          <span
-            style={{
-              border: '1px solid var(--electric)',
-              color: 'var(--electric)',
-              borderRadius: 999,
-              padding: '3px 10px',
-              fontSize: 11,
-              fontWeight: 700,
-            }}
-          >
-            ADMIN TOOLS
-          </span>
+      <div className="glow-card admin-tools-card">
+        <div className="admin-tools-head">
+          <strong className="muted admin-tools-label">CHART SCANNER</strong>
+          <span className="admin-tools-badge">ADMIN TOOLS</span>
         </div>
         <button
           type="button"
@@ -123,11 +98,37 @@ export function DashboardPage() {
   );
 }
 
-function Stat({ value, label, color }: { value: string; label: string; color: string }) {
+function Stat({
+  value,
+  label,
+  tone = 'cyan',
+}: {
+  value: string;
+  label: string;
+  tone?: 'cyan' | 'blue' | 'purple' | 'pink' | 'green' | 'orange';
+}) {
+  const Icon =
+    label.toLowerCase().includes('revoked') || label.toLowerCase().includes('deleted')
+      ? Ban
+      : label.toLowerCase().includes('pending') || label.toLowerCase().includes('awaiting')
+        ? Clock
+        : label.toLowerCase().includes('paid')
+          ? CreditCard
+          : label.toLowerCase().includes('approved')
+            ? UserCheck
+            : label.toLowerCase().includes('client')
+              ? Users
+              : label.toLowerCase().includes('license')
+                ? KeyRound
+                : ShieldCheck;
+
   return (
-    <div className="stat-card">
-      <div style={{ color, fontFamily: 'var(--font-body)', fontSize: 18, fontWeight: 700 }}>{value}</div>
-      <div className="muted">{label}</div>
+    <div className={`stat-card admin-stat-card admin-stat-${tone}`}>
+      <div className="admin-stat-icon-wrap">
+        <Icon size={18} strokeWidth={2.2} />
+      </div>
+      <div className="admin-stat-value">{value}</div>
+      <div className="admin-stat-label">{label}</div>
     </div>
   );
 }
@@ -939,9 +940,9 @@ export function ApproveAdminsPage() {
         />
       </div>
 
-      <div className="stat-grid">
-        <Stat value={String(pending.length)} label="Pending" color="var(--orange)" />
-        <Stat value={String(approved.length)} label="Approved" color="var(--green)" />
+      <div className="stat-grid admin-stat-grid">
+        <Stat value={String(pending.length)} label="Pending" tone="orange" />
+        <Stat value={String(approved.length)} label="Approved" tone="green" />
       </div>
 
       <div className="glow-card">
@@ -1050,10 +1051,10 @@ export function SubscriptionsPage() {
         />
       </div>
 
-      <div className="stat-grid">
-        <Stat value={String(stats.pendingClients)} label="Awaiting approval" color="var(--orange)" />
-        <Stat value={String(paidPending)} label="Marked I've Paid" color="var(--electric)" />
-        <Stat value={String(approved.length)} label="Approved clients" color="var(--green)" />
+      <div className="stat-grid admin-stat-grid">
+        <Stat value={String(stats.pendingClients)} label="Awaiting approval" tone="orange" />
+        <Stat value={String(paidPending)} label="Marked I've Paid" tone="blue" />
+        <Stat value={String(approved.length)} label="Approved clients" tone="green" />
       </div>
 
       <div className="glow-card">
