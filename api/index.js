@@ -189,16 +189,44 @@ async function firebaseWrite(path, value) {
 }
 
 /** Publish mentor licenses straight to Firebase — works even when client SDK writes fail. */
-async function publishLicensesToFirebase(adminId, vaultEntries, workspace) {
+async function publishLicensesToFirebase(adminId, vaultEntries, workspace, revokedKeys) {
   const curVault = toArray(await firebaseRead('lumo/vault'));
-  const mergedVault = mergeVault(curVault, vaultEntries);
+  const curRevoked = toArray(await firebaseRead('lumo/revokedKeys'));
+  const mergedRevoked = [
+    ...new Set([...curRevoked, ...toArray(revokedKeys)].map((k) => String(k || '').toUpperCase())),
+  ].filter(Boolean);
+  const revokedNorm = new Set(
+    mergedRevoked.map((k) =>
+      String(k || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, ''),
+    ),
+  );
+  const mergedVault = mergeVault(curVault, vaultEntries).filter((v) => {
+    const norm = String(v?.key || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+    return norm && !revokedNorm.has(norm);
+  });
   const curWs = (await firebaseRead(`lumo/store/workspaces/${adminId}`)) || {};
   const mergedWorkspaces = mergeWorkspaces({ [adminId]: curWs }, { [adminId]: workspace });
   const nextWs = mergedWorkspaces[adminId];
+  if (Array.isArray(nextWs.licenses)) {
+    nextWs.licenses = nextWs.licenses.filter((l) => {
+      const norm = String(l?.key || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '');
+      return norm && !revokedNorm.has(norm) && l.status !== 'deleted';
+    });
+  }
   const vaultOk = await firebaseWrite('lumo/vault', mergedVault);
   const wsOk = await firebaseWrite(`lumo/store/workspaces/${adminId}`, nextWs);
+  const revokedOk = await firebaseWrite('lumo/revokedKeys', mergedRevoked);
   await firebaseWrite('lumo/updatedAt', new Date().toISOString());
-  return vaultOk && wsOk;
+  return vaultOk && wsOk && revokedOk;
 }
 
 function mergeWorkspaces(existing = {}, incoming = {}) {
@@ -501,7 +529,12 @@ export default async function handler(req, res) {
         send(res, 400, { error: 'adminId and license key required' });
         return;
       }
-      const ok = await publishLicensesToFirebase(adminId, vaultEntries, workspace);
+      const ok = await publishLicensesToFirebase(
+        adminId,
+        vaultEntries,
+        workspace,
+        body.revokedKeys,
+      );
       if (!ok) {
         send(res, 502, { error: 'Could not save license to cloud database' });
         return;

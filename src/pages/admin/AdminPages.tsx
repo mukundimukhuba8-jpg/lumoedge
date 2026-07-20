@@ -364,7 +364,7 @@ export function GenerateLicensePage() {
         <h3 style={{ marginTop: 0 }}>License Details</h3>
         <p className="muted" style={{ marginTop: 0 }}>
           Short keys like <strong style={{ color: 'var(--electric)' }}>LUMO-XXXX-XXXX-XXXX</strong>.
-          Keys save to the cloud instantly — clients can activate on any phone once generated.
+          Keys save to the cloud — you copy and send them to the client yourself. The client enters the key manually; it is never auto-applied to their device.
           One live key per client email.
         </p>
         <div className="field">
@@ -439,7 +439,7 @@ export function GenerateLicensePage() {
               setLastKey(rec.key);
               navigator.clipboard?.writeText(rec.key).catch(() => undefined);
               alert(
-                `License key saved to cloud:\n${rec.key}\n\nFor: ${rec.clientEmail}\nEA: ${rec.eaName}\n\nCopied to clipboard. Client can activate on any device.`,
+                `License key saved to cloud:\n${rec.key}\n\nFor: ${rec.clientEmail}\nEA: ${rec.eaName}\n\nCopied — send this key to your client yourself. They enter it on the activate screen.`,
               );
               setClientName('');
               setClientEmail('');
