@@ -20,13 +20,11 @@ import {
   loadInterfacePrefs,
   subscribeInterfacePrefs,
 } from '../../lib/interfaceStyle';
-import { getTerminalUrl } from '../../lib/brokerTerminals';
 import {
   accountDetails,
   accountSummary,
   connectEx,
   disconnectMt5,
-  listKnownBrokers,
   openedOrders,
   searchBrokers,
   type Mt5AccountDetails,
@@ -119,6 +117,7 @@ export function MetaTraderPage() {
   const [searching, setSearching] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [status, setStatus] = useState('');
+  const [notConnecting, setNotConnecting] = useState(false);
   const [summary, setSummary] = useState<Mt5AccountSummary | null>(null);
   const [details, setDetails] = useState<Mt5AccountDetails | null>(null);
   const [positions, setPositions] = useState<Mt5OpenedOrder[]>([]);
@@ -265,14 +264,17 @@ export function MetaTraderPage() {
 
   const connect = async () => {
     if (!form.login.trim() || !form.password.trim()) {
-      alert('Enter login and password');
+      setNotConnecting(false);
+      setStatus('Enter login and password');
       return;
     }
     if (!form.server.trim()) {
-      alert('Select an MT5 server');
+      setNotConnecting(false);
+      setStatus('Select an MT5 server');
       return;
     }
     setConnecting(true);
+    setNotConnecting(false);
     setStatus('Connecting to broker…');
     try {
       const token = await connectEx({
@@ -297,11 +299,11 @@ export function MetaTraderPage() {
         });
         startMt5KeepAlive(user.email);
       }
+      setNotConnecting(false);
       setStatus('Connected');
       void refreshAccount(token);
-    } catch (e) {
-      setStatus(e instanceof Error ? e.message : 'Connection failed');
-      alert(e instanceof Error ? e.message : 'Connection failed');
+    } catch {
+      setNotConnecting(true);
     } finally {
       setConnecting(false);
     }
@@ -345,10 +347,6 @@ export function MetaTraderPage() {
       : conn?.state === 'reconnecting' || conn?.state === 'connecting'
         ? '#fbbf24'
         : '#f87171';
-
-  const terminalUrl =
-    servers.find((s) => s.name === form.server)?.terminalUrl ||
-    getTerminalUrl(form.server);
 
   return (
     <div className="app-shell mt5-shell">
@@ -467,10 +465,7 @@ export function MetaTraderPage() {
                     style={{ paddingLeft: 40, paddingRight: 40 }}
                     value={brokerQuery}
                     onChange={(e) => onBrokerQuery(e.target.value)}
-                    onFocus={() => {
-                      if (!companies.length) setCompanies(listKnownBrokers());
-                      setBrokerOpen(true);
-                    }}
+                    onFocus={() => setBrokerOpen(true)}
                     placeholder="Search Broker"
                   />
                   <span className="mt5-search-ico">
@@ -528,25 +523,6 @@ export function MetaTraderPage() {
                     <ChevronDown size={16} />
                   </span>
                 </div>
-                {terminalUrl ? (
-                  <a
-                    className="btn btn-ghost"
-                    href={terminalUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      width: '100%',
-                      marginTop: 8,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <ExternalLink size={16} />
-                    Open web terminal
-                  </a>
-                ) : null}
               </div>
 
               <div className="mt5-field">
@@ -611,6 +587,11 @@ export function MetaTraderPage() {
               {status ? (
                 <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
                   {status}
+                </p>
+              ) : null}
+              {notConnecting ? (
+                <p style={{ marginTop: status ? 4 : 0, fontSize: 12, color: '#f87171' }}>
+                  Not connecting
                 </p>
               ) : null}
 
