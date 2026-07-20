@@ -2,12 +2,14 @@
 
 import {
   firebaseDeleteClient,
+  firebaseFetchAdmins,
   firebaseFetchClients,
   firebaseFetchDb,
   firebaseFetchSession,
   firebaseHealthy,
   firebasePatchClient,
   firebasePostClient,
+  firebasePostMentorRegistration,
   firebasePushDb,
   firebasePushSession,
   type RemoteDb,
@@ -202,6 +204,44 @@ export async function fetchClients() {
   try {
     return await req<RemoteDb['clients']>('/api/clients');
   } catch {
+    return null;
+  }
+}
+
+export async function fetchAdmins() {
+  if (isFirebaseConfigured()) {
+    const fb = await firebaseFetchAdmins();
+    if (fb) return fb;
+  }
+  try {
+    return await req<RemoteDb['auth']['admins']>('/api/auth/admins');
+  } catch {
+    return null;
+  }
+}
+
+export async function postMentorRegistration(input: {
+  email: string;
+  password: string;
+  fullName: string;
+  mentorName?: string;
+  eaName?: string;
+  phone?: string;
+  mainText?: string;
+}) {
+  if (isFirebaseConfigured()) {
+    const fb = await firebasePostMentorRegistration(input);
+    if (fb) return fb;
+  }
+  try {
+    return await req<Record<string, unknown>>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('409')) {
+      throw new Error('An admin with this email already registered.');
+    }
     return null;
   }
 }

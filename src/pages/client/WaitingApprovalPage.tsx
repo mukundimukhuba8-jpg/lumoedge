@@ -38,8 +38,7 @@ export function WaitingApprovalPage() {
       // Only auto-advance after Super Admin approval for non-prepaid users.
       if (
         !isPrepaidEmail(user.email) &&
-        client?.status === 'approved' &&
-        client.paymentClaimed
+        client?.status === 'approved'
       ) {
         if (accessStatus === 'pending') setAccessStatus('approved');
         navigate('/activate', { replace: true, state: { fromPayment: true } });
