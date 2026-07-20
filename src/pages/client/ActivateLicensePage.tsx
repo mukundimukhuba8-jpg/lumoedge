@@ -90,7 +90,7 @@ export function ActivateLicensePage() {
         </div>
         {error ? <p className="error">{error}</p> : null}
         <button className="btn btn-blue" type="submit" disabled={busy}>
-          {busy ? 'Checking key…' : 'Activate & Open App'}
+          {busy ? 'Activating…' : 'Activate & Open App'}
         </button>
       </form>
     </div>

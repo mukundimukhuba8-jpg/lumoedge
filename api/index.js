@@ -514,6 +514,98 @@ export default async function handler(req, res) {
       return;
     }
 
+    if (pathname === '/api/licenses/claim' && req.method === 'POST') {
+      const {
+        assignEntry,
+        dbList,
+        findVaultEntry,
+        findWorkspaceLicense,
+        keysMatch,
+        normalizeLicenseKey,
+        toClaimPayload,
+        validateEmailAccess,
+      } = await import('./_lib/licenseClaim.mjs');
+      const body = await readBody(req);
+      const email = String(body.email || '').trim().toLowerCase();
+      const key = normalizeLicenseKey(String(body.key || ''));
+      if (!email || !key) {
+        send(res, 400, { error: 'key and email required' });
+        return;
+      }
+
+      const revoked = dbList(await firebaseRead('lumo/revokedKeys'));
+      if (revoked.some((k) => keysMatch(String(k || ''), key))) {
+        send(res, 403, {
+          error: 'This license key was deleted and is no longer valid. Generate a new one.',
+        });
+        return;
+      }
+
+      const vault = dbList(await firebaseRead('lumo/vault'));
+      const workspacesRaw = await firebaseRead('lumo/store/workspaces');
+      const workspaces =
+        workspacesRaw && typeof workspacesRaw === 'object' ? workspacesRaw : {};
+
+      let entry = findVaultEntry(vault, key);
+      let ownerId = entry?.ownerAdminId || null;
+      if (!entry) {
+        const wsHit = findWorkspaceLicense(workspaces, key);
+        if (wsHit) {
+          entry = wsHit.license;
+          ownerId = wsHit.ownerId;
+        }
+      }
+
+      if (!entry) {
+        send(res, 404, {
+          error:
+            'Invalid license key. Copy the new key from Admin → Generate License (deleted keys never work).',
+        });
+        return;
+      }
+
+      const emailErr = validateEmailAccess(entry, email, vault, workspaces);
+      if (emailErr) {
+        send(res, 403, { error: emailErr });
+        return;
+      }
+
+      const assigned = assignEntry(entry, email);
+      const nextVault = [...vault];
+      const vaultIdx = nextVault.findIndex(
+        (v) => v?.id === assigned.id || keysMatch(String(v?.key || ''), key),
+      );
+      if (vaultIdx >= 0) nextVault[vaultIdx] = { ...nextVault[vaultIdx], ...assigned };
+      else nextVault.unshift(assigned);
+      await firebaseWrite('lumo/vault', nextVault);
+
+      if (ownerId) {
+        const ws = workspaces[ownerId] || {};
+        const licenses = dbList(ws.licenses);
+        const licenseRow = {
+          ...assigned,
+          clientEmail: assigned.email || assigned.clientEmail || email,
+        };
+        const nextLicenses = licenses.some(
+          (l) => l?.id === assigned.id || keysMatch(String(l?.key || ''), key),
+        )
+          ? licenses.map((l) =>
+              l?.id === assigned.id || keysMatch(String(l?.key || ''), key)
+                ? { ...l, ...licenseRow }
+                : l,
+            )
+          : [licenseRow, ...licenses];
+        await firebaseWrite(`lumo/store/workspaces/${ownerId}`, {
+          ...ws,
+          licenses: nextLicenses,
+        });
+      }
+
+      await firebaseWrite('lumo/updatedAt', new Date().toISOString());
+      send(res, 200, { ok: true, license: toClaimPayload(assigned) });
+      return;
+    }
+
     if (pathname === '/api/licenses/publish' && req.method === 'POST') {
       const body = await readBody(req);
       const adminId = String(body.adminId || '').trim();
