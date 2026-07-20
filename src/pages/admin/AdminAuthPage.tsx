@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, X } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
+import { useAppLogo } from '../../lib/appLogo';
 
 export function AdminAuthPage() {
   const navigate = useNavigate();
   const { login, registerAdmin, closePortal, admin } = useAdmin();
+  const appLogo = useAppLogo();
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -42,7 +44,7 @@ export function AdminAuthPage() {
       </button>
 
       <img
-        src="/lumo-logo.png"
+        src={appLogo}
         alt="Lumo Edge"
         width={72}
         height={72}
@@ -50,7 +52,7 @@ export function AdminAuthPage() {
           margin: '20px auto 14px',
           borderRadius: 18,
           display: 'block',
-          background: '#fff',
+          objectFit: 'cover',
           boxShadow: '0 0 24px rgba(59,130,246,0.55)',
         }}
       />
