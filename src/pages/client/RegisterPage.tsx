@@ -2,11 +2,13 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
+import { useAppLogo } from '../../lib/appLogo';
 
 export function RegisterPage() {
   const navigate = useNavigate();
   const { registerLocal } = useApp();
   const { openPortal, submitClientRegistration } = useAdmin();
+  const appLogo = useAppLogo();
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -68,14 +70,14 @@ export function RegisterPage() {
         }}
       >
         <img
-          src="/lumo-logo.png"
+          src={appLogo}
           alt="Lumo Edge"
           width={92}
           height={92}
           style={{
             borderRadius: 22,
             display: 'block',
-            background: '#fff',
+            objectFit: 'cover',
           }}
         />
       </button>

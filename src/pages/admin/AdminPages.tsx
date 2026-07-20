@@ -620,6 +620,26 @@ export function ProfilePage() {
   const [imageError, setImageError] = useState('');
   const [savingImage, setSavingImage] = useState(false);
   const [imageSavedMsg, setImageSavedMsg] = useState('');
+  const [appLogoMsg, setAppLogoMsg] = useState('');
+  const isSuper = admin?.role === 'super';
+
+  const onPickAppLogo = async (file: File | null) => {
+    setAppLogoMsg('');
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setAppLogoMsg('Choose an image file (PNG, JPG, WEBP).');
+      return;
+    }
+    try {
+      const { fileToRawDataUrl, saveAppLogo } = await import('../../lib/appLogo');
+      // Byte-exact: no resizing, no compression — used exactly as uploaded
+      const raw = await fileToRawDataUrl(file);
+      await saveAppLogo(raw);
+      setAppLogoMsg('App logo saved — shown exactly as uploaded.');
+    } catch {
+      setAppLogoMsg('Could not save the logo. Try a smaller file.');
+    }
+  };
 
   useEffect(() => {
     const raw = resolveProfileImage(profile.eaImage) || profile.eaImage;
@@ -755,6 +775,37 @@ export function ProfilePage() {
         )}
         {imageError ? <p className="error">{imageError}</p> : null}
       </div>
+
+      {isSuper ? (
+        <div className="glow-card">
+          <h3 style={{ marginTop: 0 }}>App Logo</h3>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Shown on the sign-up screen and portal login. Used exactly as
+            uploaded — no cropping or edits.
+          </p>
+          <div className="field">
+            <label>Logo Image</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => void onPickAppLogo(e.target.files?.[0] ?? null)}
+            />
+          </div>
+          {appLogoMsg ? (
+            <p
+              style={{
+                color: appLogoMsg.startsWith('App logo saved')
+                  ? 'var(--green)'
+                  : '#f87171',
+                fontWeight: 700,
+                margin: '6px 0 0',
+              }}
+            >
+              {appLogoMsg}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <button
         className="btn btn-blue"
