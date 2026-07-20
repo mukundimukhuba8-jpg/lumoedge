@@ -25,6 +25,8 @@ export type RemoteDb = {
   }>;
   sessions: Record<string, unknown>;
   revokedKeys?: string[];
+  /** Emails deleted from Subscriptions — never re-added by merges/seeds */
+  deletedClients?: string[];
   updatedAt?: string;
 };
 
@@ -62,6 +64,7 @@ function normalizeDb(raw: unknown): RemoteDb {
     clients: Array.isArray(db.clients) ? db.clients : [],
     sessions: db.sessions && typeof db.sessions === 'object' ? db.sessions : {},
     revokedKeys: Array.isArray(db.revokedKeys) ? db.revokedKeys : [],
+    deletedClients: Array.isArray(db.deletedClients) ? db.deletedClients : [],
     updatedAt: db.updatedAt || new Date().toISOString(),
   };
 }
@@ -248,11 +251,16 @@ export async function firebasePushDb(
       if (Array.isArray(partial.clients)) {
         const curClients =
           (await getPath<RemoteDb['clients']>(`${ROOT}/clients`)) || [];
+        const deleted = new Set(
+          ((await getPath<string[]>(`${ROOT}/deletedClients`)) || []).map((e) =>
+            e.toLowerCase(),
+          ),
+        );
         patch.clients = mergeById(
           curClients,
           partial.clients,
           (c) => String(c.id || c.email || ''),
-        );
+        ).filter((c) => !deleted.has(String(c.email || '').toLowerCase()));
       }
 
       if (partial.images && typeof partial.images === 'object') {
@@ -276,6 +284,16 @@ export async function firebasePushDb(
           (await getPath<string[]>(`${ROOT}/revokedKeys`)) || [];
         patch.revokedKeys = Array.from(
           new Set([...cur, ...partial.revokedKeys]),
+        );
+      }
+
+      if (Array.isArray(partial.deletedClients)) {
+        const cur =
+          (await getPath<string[]>(`${ROOT}/deletedClients`)) || [];
+        patch.deletedClients = Array.from(
+          new Set(
+            [...cur, ...partial.deletedClients].map((e) => e.toLowerCase()),
+          ),
         );
       }
 
@@ -334,6 +352,17 @@ export async function firebaseFetchClients(): Promise<RemoteDb['clients'] | null
   return db?.clients ?? null;
 }
 
+/** Lightweight read of the deleted-subscriptions tombstone list. */
+export async function firebaseFetchDeletedClients(): Promise<string[]> {
+  if (!isFirebaseConfigured()) return [];
+  try {
+    const list = (await getPath<string[]>(`${ROOT}/deletedClients`)) || [];
+    return list.map((e) => String(e).toLowerCase());
+  } catch {
+    return [];
+  }
+}
+
 export async function firebasePostClient(input: {
   email: string;
   firstName: string;
@@ -355,8 +384,12 @@ export async function firebasePostClient(input: {
         status: 'pending',
         createdAt: new Date().toISOString(),
       };
+      // A fresh registration lifts the deletion tombstone for this email
+      const deleted =
+        (await getPath<string[]>(`${ROOT}/deletedClients`)) || [];
       await update(ref(getFirebaseDb(), ROOT), {
         clients: [entry, ...curClients],
+        deletedClients: deleted.filter((e) => e.toLowerCase() !== email),
         updatedAt: new Date().toISOString(),
       });
       return entry;
@@ -406,11 +439,23 @@ export async function firebaseDeleteClient(
       const curClients =
         (await getPath<RemoteDb['clients']>(`${ROOT}/clients`)) || [];
       const before = curClients.length;
+      const hit = curClients.find(
+        (c) => c.id === id || c.email.toLowerCase() === id.toLowerCase(),
+      );
       const next = curClients.filter(
         (c) => c.id !== id && c.email.toLowerCase() !== id.toLowerCase(),
       );
+      // Tombstone the email so merges and prepaid seeding never revive it
+      const emails = new Set(
+        ((await getPath<string[]>(`${ROOT}/deletedClients`)) || []).map((e) =>
+          e.toLowerCase(),
+        ),
+      );
+      const email = (hit?.email || (id.includes('@') ? id : '')).toLowerCase();
+      if (email) emails.add(email);
       await update(ref(getFirebaseDb(), ROOT), {
         clients: next,
+        deletedClients: [...emails],
         updatedAt: new Date().toISOString(),
       });
       return { ok: true, removed: before - next.length };
