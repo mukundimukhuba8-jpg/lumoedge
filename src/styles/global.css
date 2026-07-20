@@ -2452,6 +2452,78 @@ a {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 0 28px rgba(103, 232, 249, 0.55);
 }
 
+/* Uploaded chart shown inside the radar while scanning */
+.scan-radar.has-image {
+  width: 200px;
+  height: 200px;
+  transition: width 0.3s ease, height 0.3s ease;
+}
+
+.scan-radar-img {
+  position: absolute;
+  inset: 6px;
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
+  border-radius: 50%;
+  object-fit: cover;
+  z-index: 0;
+  opacity: 0.92;
+  animation: scan-img-pulse 1.6s ease-in-out infinite;
+}
+
+.scan-radar-grid {
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  z-index: 1;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 11px, rgba(56, 189, 248, 0.14) 11px 12px),
+    repeating-linear-gradient(90deg, transparent 0 11px, rgba(56, 189, 248, 0.14) 11px 12px);
+  pointer-events: none;
+}
+
+.scan-beam {
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.scan-beam::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 34%;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(103, 232, 249, 0.16) 40%,
+    rgba(103, 232, 249, 0.85) 96%,
+    #a5f3fc 100%
+  );
+  box-shadow: 0 2px 14px rgba(103, 232, 249, 0.8);
+  animation: scan-beam-move 1.5s ease-in-out infinite;
+}
+
+.scan-radar.has-image .scan-radar-core {
+  background: rgba(6, 12, 22, 0.55);
+  backdrop-filter: blur(1px);
+}
+
+@keyframes scan-beam-move {
+  0% { top: -36%; }
+  50% { top: 100%; }
+  100% { top: -36%; }
+}
+
+@keyframes scan-img-pulse {
+  0%, 100% { filter: saturate(1) brightness(1); }
+  50% { filter: saturate(1.25) brightness(1.14); }
+}
+
 @keyframes scan-orbit {
   to { transform: rotate(360deg); }
 }
