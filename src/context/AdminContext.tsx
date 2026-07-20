@@ -29,6 +29,7 @@ import {
 } from '../lib/prepaidClients';
 import {
   emptyCustomMedia,
+  isPlaceholderMentorImage,
   normalizeCustomMedia,
   type MentorMediaItem,
 } from '../lib/mentorMedia';
@@ -242,7 +243,7 @@ export type AdminWorkspace = {
 /** Resolve stored img:/data/http refs to something an <img> can show. */
 function displayableImage(value: string | undefined, adminId?: string): string {
   const v = String(value || '').trim();
-  if (!v || v.includes('lumo-logo') || v.startsWith('blob:')) return '';
+  if (!v || isPlaceholderMentorImage(v) || v.startsWith('blob:')) return '';
   if (v.startsWith('img:')) {
     const id = v.replace(/^img:/, '');
     return getEaImage(id) || getEaImage(v) || getEaImage(`profile-${adminId || ''}`) || '';
@@ -263,7 +264,7 @@ async function syncPortalBrandingToClients(
   const imageRef =
     options?.imageRef !== undefined
       ? options.imageRef
-      : ws.profile.eaImage && !ws.profile.eaImage.includes('lumo-logo')
+      : ws.profile.eaImage && !isPlaceholderMentorImage(ws.profile.eaImage)
         ? ws.profile.eaImage.startsWith('data:')
           ? `img:profile-${adminId}`
           : ws.profile.eaImage
@@ -1974,7 +1975,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const profileImage = ws.profile.eaImage || '';
         const realProfile =
           profileImage &&
-          !profileImage.includes('lumo-logo') &&
+          !isPlaceholderMentorImage(profileImage) &&
           !profileImage.startsWith('blob:')
             ? profileImage.startsWith('data:')
               ? `img:profile-${adminId}`
@@ -1982,7 +1983,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             : '';
         const realEa =
           ea.imageUrl &&
-          !ea.imageUrl.includes('lumo-logo') &&
+          !isPlaceholderMentorImage(ea.imageUrl) &&
           !ea.imageUrl.startsWith('blob:')
             ? ea.imageUrl.startsWith('data:')
               ? `img:profile-${adminId}`

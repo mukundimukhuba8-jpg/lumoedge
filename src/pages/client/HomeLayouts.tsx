@@ -13,7 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { BackdropMedia } from '../../components/BackdropMedia';
-import type { MentorMediaKind } from '../../lib/mentorMedia';
+import { isMentorProfileImage, type MentorMediaKind } from '../../lib/mentorMedia';
 
 export type LayoutActions = {
   eaTitle: string;
@@ -48,8 +48,8 @@ function LayoutBackdrop({
   children: ReactNode;
   className: string;
 }) {
-  const img = url || '/bull-hero.jpg';
-  const isVideo = kind === 'video';
+  const img = url?.trim() || '';
+  const isVideo = kind === 'video' && Boolean(img);
   return (
     <div
       className={className}
@@ -63,7 +63,7 @@ function LayoutBackdrop({
         boxShadow: `inset 0 0 80px rgba(${accentRgb},0.06)`,
         boxSizing: 'border-box',
         overflow: 'hidden',
-        background: isVideo
+        background: isVideo || !img
           ? '#05070d'
           : `
             linear-gradient(180deg, rgba(6,8,14,0.12) 0%, rgba(6,8,14,0.22) 45%, rgba(6,8,14,0.38) 100%),
@@ -89,8 +89,9 @@ function LayoutBackdrop({
 }
 
 function resolveBg(a: LayoutActions) {
+  const url = a.backdropUrl || a.eaImage || '';
   return {
-    url: a.backdropUrl || a.eaImage || '/bull-hero.jpg',
+    url: isMentorProfileImage(url) ? url : '',
     kind: a.backdropKind || 'image',
   };
 }
@@ -148,7 +149,7 @@ export function FocusLayout(a: LayoutActions) {
     <LayoutBackdrop className="lay-focus" url={bg.url} kind={bg.kind} accentRgb={a.accentRgb}>
       <div className="lay-focus-hero">
         <button type="button" className="lay-avatar-lg" onClick={a.onAvatarTap}>
-          {a.eaImage && !a.eaImage.includes('lumo-logo') ? (
+          {isMentorProfileImage(a.eaImage) ? (
             <img src={a.eaImage} alt="" />
           ) : (
             <span className="lay-avatar-empty" aria-hidden />
@@ -210,7 +211,7 @@ export function TerminalLayout(a: LayoutActions) {
 
         <div className="lay-term-id">
           <button type="button" className="lay-avatar-sm" onClick={a.onAvatarTap}>
-            {a.eaImage && !a.eaImage.includes('lumo-logo') ? (
+            {isMentorProfileImage(a.eaImage) ? (
               <img src={a.eaImage} alt="" />
             ) : (
               <span className="lay-avatar-empty" aria-hidden />
@@ -264,7 +265,7 @@ export function VortexLayout(a: LayoutActions) {
       <div className="lay-vortex-mesh" aria-hidden />
       <div className="lay-vortex-hero">
         <button type="button" className="lay-avatar-xl" onClick={a.onAvatarTap}>
-          {a.eaImage && !a.eaImage.includes('lumo-logo') ? (
+          {isMentorProfileImage(a.eaImage) ? (
             <img src={a.eaImage} alt="" />
           ) : (
             <span className="lay-avatar-empty" aria-hidden />
@@ -291,7 +292,7 @@ export function VortexLayout(a: LayoutActions) {
           large
           onClick={a.onSymbols}
           icon={
-            a.eaImage && !a.eaImage.includes('lumo-logo') ? (
+            isMentorProfileImage(a.eaImage) ? (
               <img
                 src={a.eaImage}
                 alt=""

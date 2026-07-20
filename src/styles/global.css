@@ -923,6 +923,10 @@ a {
   object-fit: cover;
 }
 
+.home-hero-media .home-hero-empty {
+  background: linear-gradient(145deg, #121826 0%, #0a0c12 100%);
+}
+
 .home-hero-shade {
   position: absolute;
   inset: auto 0 0;

@@ -13,7 +13,7 @@ import {
   saveInterfacePrefs,
   type InterfacePrefs,
 } from '../../lib/interfaceStyle';
-import { resolveCustomBackdrop, resolveProfileImage } from '../../lib/mentorMedia';
+import { resolveCustomBackdrop, resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
 import { clearMt5Session, getMt5Token } from '../../lib/mt5Session';
 import { loadJSON, normalizeLicenseKey, saveJSON } from '../../lib/storage';
 import { FocusLayout, TerminalLayout, VortexLayout } from './HomeLayouts';
@@ -45,13 +45,13 @@ export function HomePage() {
   const profileAvatar = resolveProfileImage(bot.imageUrl, bot.customMedia);
   const coverImage = (() => {
     const raw = String(bot.imageUrl || '').trim();
-    if (raw && !raw.includes('lumo-logo') && !raw.startsWith('blob:')) return raw;
+    if (raw && !isPlaceholderMentorImage(raw) && !raw.startsWith('blob:')) return raw;
     return profileAvatar || '';
   })();
-  const [displayCover, setDisplayCover] = useState(coverImage || '/bull-hero.jpg');
-  const [displayAvatar, setDisplayAvatar] = useState(profileAvatar);
+  const [displayCover, setDisplayCover] = useState('');
+  const [displayAvatar, setDisplayAvatar] = useState('');
   const eaImage = coverImage;
-  const heroImage = displayCover || '/bull-hero.jpg';
+  const heroImage = displayCover;
 
   useEffect(() => {
     let cancelled = false;
@@ -64,7 +64,7 @@ export function HomePage() {
         ? (await resolveDisplayImage(profileAvatar)) || profileAvatar
         : '';
       if (cancelled) return;
-      setDisplayCover(cover || '/bull-hero.jpg');
+      setDisplayCover(cover);
       setDisplayAvatar(avatar);
     })();
     return () => {
@@ -437,17 +437,18 @@ export function HomePage() {
               }}
             >
               <div className="home-hero-media">
-                <img
-                  className="home-hero"
-                  src={heroImage}
-                  alt={bot.displayName}
-                  onError={(e) => {
-                    const el = e.currentTarget;
-                    if (el.dataset.fallback === '1') return;
-                    el.dataset.fallback = '1';
-                    el.src = '/bull-hero.jpg';
-                  }}
-                />
+                {heroImage ? (
+                  <img
+                    className="home-hero"
+                    src={heroImage}
+                    alt={bot.displayName}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <div className="home-hero home-hero-empty" aria-hidden />
+                )}
                 <div className="home-hero-shade" />
                 <div className="home-hero-caption">
                   <div className="home-hero-ea">{eaTitle}</div>

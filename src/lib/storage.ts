@@ -1,11 +1,12 @@
 import type { MentorMediaItem } from './mentorMedia';
+import { isFirebaseConfigured } from './firebase';
 import {
   firebaseFetchImage,
   firebaseSaveImage,
   firebaseUploadDataUrl,
   isFirebaseImageRef,
 } from './firebaseDb';
-import { isFirebaseConfigured } from './firebase';
+import { isPlaceholderMentorImage } from './mentorMedia';
 import { pushDb } from './remote';
 
 export function loadJSON<T>(key: string, fallback: T): T {
@@ -391,7 +392,7 @@ async function pushDbImages(id: string, dataUrl: string) {
 /** Resolve img: refs / API paths / data URLs to something <img> can display */
 export async function resolveDisplayImage(value: string): Promise<string> {
   const v = String(value || '').trim();
-  if (!v) return '';
+  if (!v || isPlaceholderMentorImage(v)) return '';
   if (v.startsWith('data:') || v.startsWith('blob:') || v.startsWith('http')) return v;
   if (isFirebaseImageRef(v) || v.startsWith('img:')) {
     const id = v.replace(/^img:/, '');

@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Loader2, MoreVertical, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck } from 'lucide-react';
 import { useAdmin, type ClientRequest } from '../../context/AdminContext';
-import { resolveProfileImage } from '../../lib/mentorMedia';
+import { resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
 import { compressImageFile, getEaImage, blobUrlToDataUrl } from '../../lib/storage';
 import { Placeholder } from './AdminShell';
 
 function isRealImage(url?: string): boolean {
   const u = String(url || '').trim();
-  if (!u) return false;
-  if (u.includes('lumo-logo')) return false;
+  if (!u || isPlaceholderMentorImage(u)) return false;
   if (u.startsWith('blob:')) return false;
   if (u.startsWith('img:')) return true;
   return u.startsWith('data:') || u.startsWith('http') || u.startsWith('/');
@@ -16,7 +15,7 @@ function isRealImage(url?: string): boolean {
 
 function displayImageSrc(url?: string): string {
   const u = String(url || '').trim();
-  if (!u || u.includes('lumo-logo') || u.startsWith('blob:')) return '';
+  if (!u || isPlaceholderMentorImage(u) || u.startsWith('blob:')) return '';
   if (u.startsWith('img:')) {
     const id = u.replace(/^img:/, '');
     return getEaImage(id) || getEaImage(u) || '';

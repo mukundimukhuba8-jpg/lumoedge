@@ -231,20 +231,27 @@ export function mediaKey(adminId: string, slot: MentorMediaSlotId): string {
   return `${adminId}-${slot}`;
 }
 
-/** True profile photo for client avatars — never the default app logo. */
+/** Stock / placeholder art — not a mentor-uploaded profile photo. */
+export function isPlaceholderMentorImage(url?: string): boolean {
+  const u = String(url || '').trim().toLowerCase();
+  if (!u) return true;
+  return (
+    u.includes('lumo-logo.png') ||
+    u.includes('bull-hero.jpg') ||
+    u.includes('bull-avatar.jpg')
+  );
+}
+
+export function isMentorProfileImage(url?: string): boolean {
+  return !isPlaceholderMentorImage(url);
+}
+
+/** True profile photo for client avatars — never stock placeholder art. */
 export function resolveProfileImage(
   eaImage: string | undefined,
   customMedia?: MentorMediaItem[] | null,
 ): string {
-  const isFakeLogo = (url: string) => {
-    const u = url.trim().toLowerCase();
-    return (
-      !u ||
-      u === '/lumo-logo.png' ||
-      u.endsWith('/lumo-logo.png') ||
-      u.includes('lumo-logo.png')
-    );
-  };
+  const isFakeLogo = isPlaceholderMentorImage;
 
   const resolveRef = (raw: string): string => {
     const fromEa = String(raw || '').trim();

@@ -24,6 +24,7 @@ import {
 } from '../../lib/interfaceStyle';
 import {
   ALL_MEDIA_SLOTS,
+  isPlaceholderMentorImage,
   type MentorMediaItem,
 } from '../../lib/mentorMedia';
 
@@ -193,7 +194,7 @@ export function InterfaceStyleModal({
             <strong>Interface Style</strong>
           </div>
           <div className="iface-avatar-wrap">
-            {avatarUrl && !avatarUrl.includes('lumo-logo') ? (
+            {avatarUrl && !isPlaceholderMentorImage(avatarUrl) ? (
               <img src={avatarUrl} alt="" className="iface-avatar" />
             ) : (
               <div className="iface-avatar iface-avatar-empty" aria-hidden />

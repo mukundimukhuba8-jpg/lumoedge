@@ -13,6 +13,7 @@ import {
   Star,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { isPlaceholderMentorImage } from '../../lib/mentorMedia';
 import {
   accentHex,
   hexToRgb,
@@ -106,7 +107,7 @@ export function MetaTraderPage() {
   const accentRgb = hexToRgb(accent);
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
   const eaImage =
-    bot.imageUrl && !bot.imageUrl.includes('lumo-logo') ? bot.imageUrl : '';
+    bot.imageUrl && !isPlaceholderMentorImage(bot.imageUrl) ? bot.imageUrl : '';
 
   const [form, setForm] = useState<ClientMt5>(() => loadMt5(user?.email));
   const [showPass, setShowPass] = useState(false);
