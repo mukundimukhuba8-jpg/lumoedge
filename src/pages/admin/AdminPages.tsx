@@ -671,8 +671,16 @@ export function ProfilePage() {
     setForm((prev) => ({ ...prev, eaImage: previewUrl }));
     try {
       setSavingImage(true);
-      const dataUrl = await compressImageFile(file, 480, 0.72);
-      // Show the compressed image immediately so upload never looks like it "vanished"
+      // Animated GIFs keep their animation — canvas compression would
+      // flatten them to a single frame (looked like "nothing changed")
+      const isGif = file.type === 'image/gif';
+      if (isGif && file.size > 6 * 1024 * 1024) {
+        throw new Error('GIF too large — keep it under 6 MB.');
+      }
+      const dataUrl = isGif
+        ? await (await import('../../lib/appLogo')).fileToRawDataUrl(file)
+        : await compressImageFile(file, 480, 0.72);
+      // Show the image immediately so upload never looks like it "vanished"
       setForm((prev) => ({ ...prev, eaImage: dataUrl }));
       // Pass data URL into updateProfile so Firebase + every existing license get the bytes
       await updateProfile({
