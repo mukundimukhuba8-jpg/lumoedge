@@ -581,6 +581,34 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // Backend broker connect — resolves web terminal host from server name
+    if (pathname === '/api/mt5/connect' && req.method === 'POST') {
+      const { connectMt5Broker } = await import('./api/_lib/mt5Bridge.mjs');
+      const chunks = [];
+      await new Promise((resolve, reject) => {
+        req.on('data', (c) => chunks.push(c));
+        req.on('end', resolve);
+        req.on('error', reject);
+      });
+      let body = {};
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      } catch {
+        body = {};
+      }
+      const result = await connectMt5Broker({
+        user: body.user,
+        password: body.password,
+        server: body.server,
+      });
+      if (result.ok && result.token) {
+        sendJson(res, 200, { token: result.token });
+      } else {
+        sendJson(res, 502, { error: result.error || 'Connect failed' });
+      }
+      return;
+    }
+
     // Proxy → MT5API RESTFul (broker search, ConnectEx, account, trading)
     if (pathname.startsWith('/api/mt5')) {
       const targetPath = pathname === '/api/mt5' ? '/' : pathname.slice('/api/mt5'.length);

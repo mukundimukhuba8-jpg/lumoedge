@@ -1,8 +1,7 @@
 /**
  * Client for the brokers API (MT5API RESTFul swagger host).
  * All broker operations — search, connect, account info, trades — talk
- * to this API: straight from the user's device first, then through the
- * app server if the device route is blocked.
+ * to this API through the app server proxy (/api/mt5).
  */
 
 import {
@@ -12,11 +11,38 @@ import {
   type BrokerTerminalEntry,
 } from './brokerTerminals';
 
-const BROKER_API_BASE = 'https://66.23.225.158';
+
 const PROXY_BASE = '/api/mt5';
 
-/** Remember which base worked so later calls are fast */
-let preferredBase: string | null = null;
+async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
+  const ac = new AbortController();
+  const timer = window.setTimeout(() => ac.abort(), 14_000);
+  try {
+    const res = await fetch(`${PROXY_BASE}${path}`, {
+      ...init,
+      signal: init?.signal ?? ac.signal,
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+        ...(init?.headers || {}),
+      },
+    });
+    if (res.status === 502 || res.status === 504) {
+      throw new Error('Broker bridge unavailable');
+    }
+    return res;
+  } catch (err) {
+    throw new Error(
+      err instanceof Error &&
+      /certificate|Failed to fetch|network|abort|unavailable/i.test(err.message)
+        ? 'Cannot reach the broker server right now. Please try again shortly.'
+        : err instanceof Error
+          ? err.message
+          : 'Broker server unreachable',
+    );
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 export type Mt5ServerResult = {
   name: string;
@@ -69,50 +95,6 @@ export type Mt5OpenedOrder = {
   comment?: string;
   [key: string]: unknown;
 };
-
-async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
-  const bases = preferredBase
-    ? [preferredBase, ...[BROKER_API_BASE, PROXY_BASE].filter((b) => b !== preferredBase)]
-    : [BROKER_API_BASE, PROXY_BASE];
-  let lastError: unknown = null;
-  for (const base of bases) {
-    const ac = new AbortController();
-    const timer = window.setTimeout(
-      () => ac.abort(),
-      base === PROXY_BASE ? 14_000 : 10_000,
-    );
-    try {
-      const res = await fetch(`${base}${path}`, {
-        ...init,
-        signal: init?.signal ?? ac.signal,
-        headers: {
-          Accept: 'application/json, text/plain, */*',
-          ...(init?.headers || {}),
-        },
-      });
-      // Our proxy answers 502/504 only when it cannot reach the broker
-      // host at all — try the other route in that case
-      if (base === PROXY_BASE && (res.status === 502 || res.status === 504)) {
-        lastError = new Error('Broker server unreachable');
-        continue;
-      }
-      preferredBase = base;
-      return res;
-    } catch (err) {
-      lastError = err;
-    } finally {
-      window.clearTimeout(timer);
-    }
-  }
-  throw new Error(
-    lastError instanceof Error &&
-    /certificate|Failed to fetch|network|abort/i.test(lastError.message)
-      ? 'Cannot reach the broker server right now. Please try again shortly.'
-      : lastError instanceof Error
-        ? lastError.message
-        : 'Broker server unreachable',
-  );
-}
 
 /** Turn raw broker API failures into honest, readable messages */
 function brokerError(status: number, data: unknown, fallback: string): Error {
@@ -215,7 +197,7 @@ export async function searchBrokers(company: string): Promise<Mt5Company[]> {
 }
 
 /**
- * Connect using MT5 terminal server name (e.g. razormarkets-live).
+ * Connect via backend bridge — resolves broker web terminal host server-side.
  * Returns session token for further /Account* calls.
  */
 export async function connectEx(input: {
@@ -223,21 +205,50 @@ export async function connectEx(input: {
   password: string;
   server: string;
 }): Promise<string> {
-  const params = new URLSearchParams({
-    user: String(input.user).trim(),
-    password: input.password,
-    server: input.server.trim(),
-  });
-  const res = await mt5Fetch(`/ConnectEx?${params.toString()}`);
-  const data = await readBody(res);
-  if (!res.ok) {
-    throw brokerError(res.status, data, `Connect failed (${res.status})`);
+  const ac = new AbortController();
+  const timer = window.setTimeout(() => ac.abort(), 18_000);
+  try {
+    const res = await fetch('/api/mt5/connect', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user: String(input.user).trim(),
+        password: input.password,
+        server: input.server.trim(),
+      }),
+      signal: ac.signal,
+    });
+    const data = await readBody(res);
+    if (!res.ok) {
+      const msg =
+        data && typeof data === 'object' && 'error' in data
+          ? String((data as { error?: string }).error || '')
+          : typeof data === 'string'
+            ? data
+            : '';
+      throw brokerError(res.status, data, msg || `Connect failed (${res.status})`);
+    }
+    const token =
+      data && typeof data === 'object' && 'token' in data
+        ? String((data as { token?: string }).token || '').trim()
+        : typeof data === 'string'
+          ? data.trim()
+          : '';
+    if (!token || /error|fail|invalid/i.test(token)) {
+      throw new Error(token || 'Connect failed — no session token returned');
+    }
+    return token.replace(/^"|"$/g, '');
+  } catch (err) {
+    if (err instanceof Error && /abort/i.test(err.message)) {
+      throw new Error('Connection timed out — please try again.');
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timer);
   }
-  const token = typeof data === 'string' ? data.trim() : String(data ?? '').trim();
-  if (!token || /error|fail|invalid/i.test(token)) {
-    throw new Error(token || 'Connect failed — no session token returned');
-  }
-  return token.replace(/^"|"$/g, '');
 }
 
 export async function checkConnect(id: string): Promise<boolean> {
