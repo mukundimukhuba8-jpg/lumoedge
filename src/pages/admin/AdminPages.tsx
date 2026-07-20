@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Plus, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { resolveProfileImage } from '../../lib/mentorMedia';
@@ -641,7 +641,15 @@ export function ProfilePage() {
     }
   };
 
+  // Only reset the form when the SAVED profile content actually changes.
+  // The context rebuilds `profile` every few seconds (background refresh),
+  // and resetting on identity erased whatever the user was typing.
+  const lastProfileJson = useRef('');
   useEffect(() => {
+    const snapshot = JSON.stringify(profile);
+    if (snapshot === lastProfileJson.current) return;
+    lastProfileJson.current = snapshot;
+
     const raw = resolveProfileImage(profile.eaImage) || profile.eaImage;
     const resolved =
       displayImageSrc(raw) ||
