@@ -168,6 +168,21 @@ export function getBrokerTerminal(serverName: string): BrokerTerminalEntry | und
   return byServer.get(serverName.trim().toLowerCase());
 }
 
+/** Parse web terminal URL into MT5 Connect host/port (used server-side). */
+export function parseTerminalEndpoint(
+  terminalUrl: string,
+): { host: string; port: number } | null {
+  try {
+    const u = new URL(terminalUrl);
+    const host = u.hostname;
+    if (!host) return null;
+    const port = u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80;
+    return { host, port };
+  } catch {
+    return null;
+  }
+}
+
 /** Search local broker registry by company or server name. */
 export function searchLocalBrokers(query: string): BrokerTerminalEntry[] {
   const q = query.trim().toLowerCase();

@@ -33,7 +33,6 @@ import {
   type Mt5OpenedOrder,
   type Mt5ServerResult,
 } from '../../lib/mt5Api';
-import { getTerminalUrl } from '../../lib/brokerTerminals';
 import {
   clearMt5Session,
   saveMt5Session,
@@ -54,7 +53,6 @@ type ClientMt5 = {
   token?: string;
   company?: string;
   site?: string;
-  terminalUrl?: string;
 };
 
 const MT5_KEY = 'ub-web/client-mt5-v1';
@@ -71,7 +69,6 @@ const EMPTY: ClientMt5 = {
   token: '',
   company: '',
   site: '',
-  terminalUrl: '',
 };
 
 function loadMt5(email: string | undefined): ClientMt5 {
@@ -86,7 +83,6 @@ function loadMt5(email: string | undefined): ClientMt5 {
       broker: '',
       company: '',
       site: '',
-      terminalUrl: '',
       server: '',
       accountType: '',
     };
@@ -234,13 +230,11 @@ export function MetaTraderPage() {
   };
 
   const pickServer = (company: string, server: Mt5ServerResult) => {
-    const terminalUrl = server.terminalUrl || getTerminalUrl(server.name) || '';
     persist({
       ...form,
       broker: company.replace(/\s*\(.*\)\s*$/, '').trim() || company,
       company,
       server: server.name,
-      terminalUrl,
       site: server.site
         ? server.site.startsWith('http')
           ? server.site
@@ -290,7 +284,6 @@ export function MetaTraderPage() {
         connected: true,
         token,
         password: '',
-        terminalUrl: form.terminalUrl || getTerminalUrl(form.server.trim()) || '',
       };
       persist(next);
       // Save encrypted credentials so keep-alive can auto-reconnect
@@ -351,8 +344,6 @@ export function MetaTraderPage() {
       : conn?.state === 'reconnecting' || conn?.state === 'connecting'
         ? '#fbbf24'
         : '#f87171';
-  const terminalUrl =
-    form.terminalUrl || (form.server ? getTerminalUrl(form.server) : '') || '';
 
   return (
     <div className="app-shell mt5-shell">
@@ -438,25 +429,6 @@ export function MetaTraderPage() {
                 <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.4 }}>
                   Auto-reconnect is on — use the red button above to unlink
                 </div>
-                {terminalUrl ? (
-                  <a
-                    href={terminalUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      marginTop: 10,
-                      fontSize: 13,
-                      color: 'var(--electric)',
-                      fontWeight: 600,
-                    }}
-                  >
-                    Open Web Terminal
-                    <ExternalLink size={14} />
-                  </a>
-                ) : null}
               </div>
               {eaImage ? (
                 <img className="mt5-connected-avatar" src={eaImage} alt="" />
@@ -533,14 +505,7 @@ export function MetaTraderPage() {
                       color: form.server ? undefined : 'var(--muted)',
                     }}
                     value={form.server}
-                    onChange={(e) => {
-                      const server = e.target.value;
-                      persist({
-                        ...form,
-                        server,
-                        terminalUrl: getTerminalUrl(server) || form.terminalUrl,
-                      });
-                    }}
+                    onChange={(e) => persist({ ...form, server: e.target.value })}
                   >
                     <option value="" disabled hidden>
                       Select broker server
@@ -623,22 +588,6 @@ export function MetaTraderPage() {
                 <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
                   {status}
                 </p>
-              ) : null}
-
-              {terminalUrl ? (
-                <a
-                  className="mt5-recommended"
-                  href={terminalUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ marginBottom: 12 }}
-                >
-                  <span style={{ flex: 1, textAlign: 'left' }}>
-                    <div className="mt5-rec-label">WEB TERMINAL</div>
-                    <div className="mt5-rec-name">Open {form.broker || form.server} MT5</div>
-                  </span>
-                  <ExternalLink size={16} />
-                </a>
               ) : null}
 
               <button

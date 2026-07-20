@@ -994,6 +994,35 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Backend broker connect — resolves web terminal host from server name
+    if (pathname === '/api/mt5/connect') {
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 204;
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.end();
+        return;
+      }
+      if (req.method !== 'POST') {
+        send(res, 405, { error: 'Method not allowed' });
+        return;
+      }
+      const { connectMt5Broker } = await import('./_lib/mt5Bridge.mjs');
+      const body = await readBody(req);
+      const result = await connectMt5Broker({
+        user: body.user,
+        password: body.password,
+        server: body.server,
+      });
+      if (result.ok && result.token) {
+        send(res, 200, { token: result.token });
+      } else {
+        send(res, 502, { error: result.error || 'Connect failed' });
+      }
+      return;
+    }
+
     // Proxy → MT5API RESTFul (broker search, ConnectEx, account, trading)
     // Swagger UI: https://66.23.225.158/swagger/index.html — API root is the host only
     if (pathname.startsWith('/api/mt5')) {
