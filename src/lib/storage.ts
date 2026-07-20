@@ -6,6 +6,7 @@ import {
   isFirebaseImageRef,
 } from './firebaseDb';
 import { isFirebaseConfigured } from './firebase';
+import { pushDb } from './remote';
 
 export function loadJSON<T>(key: string, fallback: T): T {
   try {
@@ -114,19 +115,7 @@ export function saveVaultLocal(entries: VaultLicense[]) {
 
 export function saveVault(entries: VaultLicense[]) {
   saveVaultLocal(entries);
-  void syncVaultRemote(entries);
-}
-
-async function syncVaultRemote(entries: VaultLicense[]) {
-  try {
-    await fetch('/api/db', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ vault: entries }),
-    });
-  } catch {
-    // static host / offline
-  }
+  void pushDb({ vault: entries }).catch(() => undefined);
 }
 
 export function upsertVault(entry: VaultLicense) {
@@ -136,7 +125,9 @@ export function upsertVault(entry: VaultLicense) {
   );
   if (idx >= 0) all[idx] = entry;
   else all.unshift(entry);
-  saveVault(all);
+  saveVaultLocal(all);
+  // Path-scoped merge — one key at a time, safe under concurrent saves
+  void pushDb({ vault: [entry] }).catch(() => undefined);
   return entry;
 }
 

@@ -321,7 +321,8 @@ export function ManageEAsPage() {
 }
 
 export function GenerateLicensePage() {
-  const { eas, licenses, generateLicense, deleteLicense, profile } = useAdmin();
+  const { eas, licenses, generateLicense, deleteLicense, profile, resyncLicenses } =
+    useAdmin();
   const [eaId, setEaId] = useState('');
   const [clientName, setClientName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
@@ -330,6 +331,12 @@ export function GenerateLicensePage() {
   const [lastKey, setLastKey] = useState('');
   const effectiveEaId = eaId || eas[0]?.id || '';
   const selected = eas.find((e) => e.id === effectiveEaId) ?? eas[0];
+
+  // Repair keys that were generated locally but never reached Firebase
+  useEffect(() => {
+    resyncLicenses();
+  }, [resyncLicenses]);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return licenses.filter(
