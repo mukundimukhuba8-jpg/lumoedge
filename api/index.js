@@ -331,16 +331,18 @@ function adminRoleRank(role) {
 
 /** Approved mentors must never revert to pending when lists are merged. */
 function mergeAdmins(current, incoming) {
-  const map = new Map();
+  const byEmail = new Map();
   for (const item of [...(current || []), ...(incoming || [])]) {
-    const id = String(item?.id || '');
-    if (!id) continue;
-    const prev = map.get(id);
+    const email = String(item?.email || '')
+      .trim()
+      .toLowerCase();
+    if (!email) continue;
+    const prev = byEmail.get(email);
     if (!prev) {
-      map.set(id, item);
+      byEmail.set(email, { ...item, email });
       continue;
     }
-    const merged = { ...prev, ...item };
+    const merged = { ...prev, ...item, email };
     const prevRank = adminRoleRank(prev.role);
     const itemRank = adminRoleRank(item.role);
     merged.role = prevRank >= itemRank ? prev.role : item.role;
@@ -350,9 +352,9 @@ function mergeAdmins(current, incoming) {
         merged[k] = v;
       }
     }
-    map.set(id, merged);
+    byEmail.set(email, merged);
   }
-  return [...map.values()];
+  return [...byEmail.values()];
 }
 
 function mergeDatabases(base, patch) {
