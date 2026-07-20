@@ -583,7 +583,12 @@ export default async function handler(req, res) {
         return;
       }
 
-      const revoked = dbList(await firebaseRead('lumo/revokedKeys'));
+      const [revokedRaw, vaultRaw, workspacesRaw] = await Promise.all([
+        firebaseRead('lumo/revokedKeys'),
+        firebaseRead('lumo/vault'),
+        firebaseRead('lumo/store/workspaces'),
+      ]);
+      const revoked = dbList(revokedRaw);
       if (revoked.some((k) => keysMatch(String(k || ''), key))) {
         send(res, 403, {
           ok: false,
@@ -592,8 +597,7 @@ export default async function handler(req, res) {
         return;
       }
 
-      const vault = dbList(await firebaseRead('lumo/vault'));
-      const workspacesRaw = await firebaseRead('lumo/store/workspaces');
+      const vault = dbList(vaultRaw);
       const workspaces =
         workspacesRaw && typeof workspacesRaw === 'object' ? workspacesRaw : {};
 
@@ -641,70 +645,62 @@ export default async function handler(req, res) {
       );
       if (vaultIdx >= 0) nextVault[vaultIdx] = { ...nextVault[vaultIdx], ...assigned };
       else nextVault.unshift(assigned);
-      const vaultOk = await firebaseWrite('lumo/vault', nextVault);
+
+      const licenseRow = {
+        ...assigned,
+        clientEmail: assigned.email || assigned.clientEmail || email,
+      };
+      const ownerWs = ownerId ? nextWorkspaces[ownerId] || {} : null;
+      const ownerLicenses = ownerWs ? dbList(ownerWs.licenses) : [];
+      const nextOwnerLicenses = ownerWs
+        ? ownerLicenses.some(
+            (l) => l?.id === assigned.id || keysMatch(String(l?.key || ''), key),
+          )
+          ? ownerLicenses.map((l) =>
+              l?.id === assigned.id || keysMatch(String(l?.key || ''), key)
+                ? { ...l, ...licenseRow }
+                : l,
+            )
+          : [licenseRow, ...ownerLicenses]
+        : [];
+
+      const writeResults = await Promise.all([
+        firebaseWrite('lumo/vault', nextVault),
+        ownerId
+          ? firebaseWrite(`lumo/store/workspaces/${ownerId}`, {
+              ...ownerWs,
+              licenses: nextOwnerLicenses,
+            })
+          : Promise.resolve(true),
+      ]);
+      const vaultOk = writeResults[0];
+      const wsOk = writeResults[1];
       if (!vaultOk) {
         console.error('[license:claim] vault write failed', { email, key });
         send(res, 503, { ok: false, error: 'Could not save activation. Check your connection and try again.' });
         return;
       }
 
-      let wsOk = true;
-      if (ownerId) {
-        const ws = nextWorkspaces[ownerId] || {};
-        const licenses = dbList(ws.licenses);
-        const licenseRow = {
-          ...assigned,
-          clientEmail: assigned.email || assigned.clientEmail || email,
-        };
-        const nextLicenses = licenses.some(
-          (l) => l?.id === assigned.id || keysMatch(String(l?.key || ''), key),
-        )
-          ? licenses.map((l) =>
-              l?.id === assigned.id || keysMatch(String(l?.key || ''), key)
-                ? { ...l, ...licenseRow }
-                : l,
-            )
-          : [licenseRow, ...licenses];
-        wsOk = await firebaseWrite(`lumo/store/workspaces/${ownerId}`, {
-          ...ws,
-          licenses: nextLicenses,
-        });
-        nextWorkspaces[ownerId] = { ...ws, licenses: nextLicenses };
-      }
-
-      // Persist releases on other mentor workspaces (old keys unassigned)
-      for (const [wsId, ws] of Object.entries(nextWorkspaces)) {
-        if (wsId === ownerId) continue;
-        const origLicenses = JSON.stringify(dbList(workspaces[wsId]?.licenses));
-        const nextLicensesJson = JSON.stringify(dbList(ws?.licenses));
-        if (origLicenses !== nextLicensesJson) {
-          await firebaseWrite(`lumo/store/workspaces/${wsId}`, ws).catch(() => false);
+      // Background cleanup — never block the activation response
+      void (async () => {
+        for (const [wsId, ws] of Object.entries(nextWorkspaces)) {
+          if (wsId === ownerId) continue;
+          const origLicenses = JSON.stringify(dbList(workspaces[wsId]?.licenses));
+          const nextLicensesJson = JSON.stringify(dbList(ws?.licenses));
+          if (origLicenses !== nextLicensesJson) {
+            await firebaseWrite(`lumo/store/workspaces/${wsId}`, ws).catch(() => false);
+          }
         }
-      }
+        await firebaseWrite('lumo/updatedAt', new Date().toISOString()).catch(() => false);
+      })();
+
       if (!wsOk) {
         console.error('[license:claim] workspace write failed', { email, key, ownerId });
         send(res, 503, { ok: false, error: 'Could not save activation. Check your connection and try again.' });
         return;
       }
 
-      await firebaseWrite('lumo/updatedAt', new Date().toISOString()).catch(() => false);
-
-      const verifyVault = dbList(await firebaseRead('lumo/vault'));
-      const verified = findVaultEntry(verifyVault, key);
-      if (
-        !verified ||
-        verified.status !== 'assigned' ||
-        String(verified.assignedEmail || '').toLowerCase() !== email
-      ) {
-        console.error('[license:claim] verification failed after write', { email, key });
-        send(res, 409, {
-          ok: false,
-          error: 'Activation could not be confirmed. Refresh and try again.',
-        });
-        return;
-      }
-
-      send(res, 200, { ok: true, license: toClaimPayload(verified) });
+      send(res, 200, { ok: true, license: toClaimPayload(assigned) });
       return;
     }
 

@@ -63,8 +63,8 @@ export type ClaimLicenseRemoteResult =
   | { ok: false; error: string; retryable?: boolean; status?: number };
 
 const PUBLISH_TIMEOUT_MS = 45_000;
-const CLAIM_TIMEOUT_MS = 12_000;
-const CLAIM_HARD_CAP_MS = 18_000;
+const CLAIM_TIMEOUT_MS = 6_000;
+const CLAIM_HARD_CAP_MS = 8_000;
 
 async function fetchJsonWithTimeout(
   url: string,
@@ -156,18 +156,8 @@ export async function claimLicenseRemote(
   key: string,
   email: string,
 ): Promise<ClaimLicenseRemoteResult> {
-  const work = (async (): Promise<ClaimLicenseRemoteResult> => {
-    const first = await claimLicenseRemoteOnce(key, email);
-    if (first.ok) return first;
-    if (first.retryable) {
-      await new Promise((resolve) => window.setTimeout(resolve, 600));
-      return claimLicenseRemoteOnce(key, email);
-    }
-    return first;
-  })();
-
-  const capped = await Promise.race([
-    work,
+  return Promise.race([
+    claimLicenseRemoteOnce(key, email),
     new Promise<ClaimLicenseRemoteResult>((resolve) =>
       window.setTimeout(
         () =>
@@ -180,7 +170,6 @@ export async function claimLicenseRemote(
       ),
     ),
   ]);
-  return capped;
 }
 
 export async function pushDb(partial: Partial<RemoteDb>): Promise<RemoteDb | null> {

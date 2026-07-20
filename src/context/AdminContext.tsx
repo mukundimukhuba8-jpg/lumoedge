@@ -878,6 +878,8 @@ type Ctx = {
   ) => Promise<{ ok: true; license: LicenseRecord } | { ok: false; error: string }>;
   findLicense: (key: string) => LicenseRecord | undefined;
   resyncLicenses: () => void;
+  /** Pull license vault from cloud so activation can read keys instantly. */
+  warmLicenseCache: () => void;
   saveMt5: (mt5: Mt5Connection) => void;
   updateProfile: (patch: Partial<AdminProfile>) => Promise<void>;
   executeOrder: (order: Omit<CopyOrder, 'id' | 'copiedTo'>) => CopyOrder;
@@ -1264,6 +1266,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     },
     [flushApproveQueue],
   );
+
+  const warmLicenseCache = useCallback(() => {
+    void fetchDb().then((remote) => hydrateLicenseRemote(remote));
+  }, []);
 
   const resyncLicenses = useCallback(() => {
     const mentorId = auth.admin?.id ?? '';
@@ -2036,37 +2042,38 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           }
         };
 
-        const finishClaim = (license: LicenseRecord, syncRemote = true) => {
+        const finishClaim = (license: LicenseRecord) => {
           const branded = resolveLicenseBrandingSync(
             license,
             store.workspaces,
           ) as LicenseRecord;
           persistAssignment(branded, branded.ownerAdminId || null);
-          if (syncRemote) {
-            void fetchDb().then((remote) => hydrateLicenseRemote(remote));
-          }
           licenseLog('claim', 'success', { key: branded.key, email: normalizedEmail });
           return { ok: true as const, license: branded };
         };
 
-        // Instant path when this device already has the key assigned locally
-        const localHit = attemptClaim(store.workspaces);
-        if (localHit?.ok) {
-          const alreadyLocal =
-            localHit.license.status === 'assigned' &&
-            localHit.license.assignedEmail?.toLowerCase() === normalizedEmail;
-          if (alreadyLocal) {
-            licenseLog('claim', 'local cache hit', { key: normalizedKey });
-            void claimLicenseRemote(normalizedKey, normalizedEmail).then((server) => {
-              if (server.ok) {
-                void fetchDb().then((remote) => hydrateLicenseRemote(remote));
-              }
-            });
-            return finishClaim(localHit.license, false);
-          }
+        const resolveLocal = () => attemptClaim(store.workspaces);
+
+        let localHit = resolveLocal();
+        if (!localHit) {
+          const remote = await Promise.race([
+            fetchDb(),
+            new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500)),
+          ]);
+          if (remote) hydrateLicenseRemote(remote);
+          localHit = resolveLocal();
         }
 
-        // Authoritative server claim — binds email on Firebase
+        if (localHit && !localHit.ok) return localHit;
+
+        // Key already in database — activate instantly, sync assignment in background
+        if (localHit?.ok) {
+          licenseLog('claim', 'instant from database cache', { key: normalizedKey });
+          void claimLicenseRemote(normalizedKey, normalizedEmail).catch(() => undefined);
+          return finishClaim(localHit.license);
+        }
+
+        // First visit: one fast server read + bind
         const server = await claimLicenseRemote(normalizedKey, normalizedEmail);
         if (server.ok) {
           const lic = {
@@ -2079,40 +2086,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
 
         if (server.status && server.status >= 400 && server.status < 500 && !server.retryable) {
-          licenseWarn('claim', 'server rejected', { error: server.error, status: server.status });
           return { ok: false, error: server.error };
-        }
-
-        licenseWarn('claim', 'server unavailable, trying hydrated fallback', {
-          error: server.error,
-        });
-
-        const remote = await Promise.race([
-          fetchDb(),
-          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 4000)),
-        ]);
-        if (remote) {
-          hydrateLicenseRemote(remote);
-          const workspaces = remote.store?.workspaces
-            ? (remote.store.workspaces as StoreState['workspaces'])
-            : store.workspaces;
-          setStore((prev) => ({ ...prev, workspaces: mergeStoresKeepAll(prev, { workspaces }).workspaces }));
-          const remoteImages =
-            remote.images && typeof remote.images === 'object'
-              ? (remote.images as Record<string, string>)
-              : {};
-          const result = attemptClaim(workspaces, remoteImages);
-          if (result?.ok) {
-            if (result.isNew) persistAssignment(result.license, result.ownerId);
-            licenseLog('claim', 'fallback success', { key: result.license.key });
-            return finishClaim(result.license, false);
-          }
-          if (result && !result.ok) return result;
-        }
-
-        if (localHit?.ok) {
-          licenseWarn('claim', 'server failed — using local license', { key: normalizedKey });
-          return finishClaim(localHit.license, false);
         }
 
         licenseError('claim', 'failed', { email: normalizedEmail, key: normalizedKey, error: server.error });
@@ -2120,10 +2094,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ok: false,
           error:
             server.error ||
-            'Invalid license key. Copy the new key from Admin → Generate License (deleted keys never work).',
+            'License key not found yet. Wait a few seconds after admin generates it, then try again.',
         };
       },
       resyncLicenses,
+      warmLicenseCache,
       findLicense: (key) => {
         const vault = findInVault(key);
         if (vault) {
@@ -2319,7 +2294,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           : workspace.licenses.filter((l) => l.status === 'assigned').length,
       },
     };
-  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, queueApproveAdmins, resyncLicenses]);
+  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, queueApproveAdmins, resyncLicenses, warmLicenseCache]);
 
   if (booting) {
     return <WelcomeSplash />;

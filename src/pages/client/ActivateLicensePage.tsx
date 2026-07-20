@@ -14,11 +14,16 @@ export function ActivateLicensePage() {
     (location.state as { fromPayment?: boolean } | null)?.fromPayment,
   );
   const { user, accessStatus, activateWithLicense, bot } = useApp();
-  const { claimLicense } = useAdmin();
+  const { claimLicense, warmLicenseCache } = useAdmin();
   const [key, setKey] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [slow, setSlow] = useState(false);
+
+  // Pre-load license keys from cloud so activation is a quick read
+  useEffect(() => {
+    warmLicenseCache();
+  }, [warmLicenseCache]);
 
   useEffect(() => {
     if (!user) navigate('/', { replace: true });
@@ -46,7 +51,7 @@ export function ActivateLicensePage() {
     setBusy(true);
     setError('');
     setSlow(false);
-    const slowTimer = window.setTimeout(() => setSlow(true), 8000);
+    const slowTimer = window.setTimeout(() => setSlow(true), 3000);
     try {
       const result = await claimLicense(key, user.email);
       if (!result.ok) {
@@ -122,7 +127,7 @@ export function ActivateLicensePage() {
         ) : null}
         {busy && slow && !error ? (
           <p className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
-            Still connecting — slow network detected. This should finish within a few seconds.
+            Looking up your key in the database…
           </p>
         ) : null}
         <button className="btn btn-blue" type="submit" disabled={busy || !key.trim()}>
