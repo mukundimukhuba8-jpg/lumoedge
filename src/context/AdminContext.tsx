@@ -691,6 +691,38 @@ function prepaidAsClientRequests(): ClientRequest[] {
   }));
 }
 
+const DELETED_CLIENTS_KEY = 'ub-web/deleted-clients-v1';
+
+function loadDeletedClients(): Set<string> {
+  return new Set(
+    loadJSON<string[]>(DELETED_CLIENTS_KEY, []).map((e) => e.toLowerCase()),
+  );
+}
+
+function rememberDeletedClient(email: string) {
+  const all = loadDeletedClients();
+  all.add(email.toLowerCase());
+  saveJSON(DELETED_CLIENTS_KEY, [...all]);
+}
+
+/** Registration again lifts the local tombstone for that email */
+function forgetDeletedClient(email: string) {
+  const all = loadDeletedClients();
+  if (all.delete(email.toLowerCase())) {
+    saveJSON(DELETED_CLIENTS_KEY, [...all]);
+  }
+}
+
+function withoutDeleted(
+  list: ClientRequest[],
+  extra?: Iterable<string>,
+): ClientRequest[] {
+  const deleted = loadDeletedClients();
+  for (const e of extra || []) deleted.add(String(e).toLowerCase());
+  if (!deleted.size) return list;
+  return list.filter((c) => !deleted.has(c.email.toLowerCase()));
+}
+
 function mergeClientLists(...lists: ClientRequest[][]): ClientRequest[] {
   const byEmail = new Map<string, ClientRequest>();
   for (const list of lists) {
@@ -787,9 +819,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           });
         }
         if (Array.isArray(db.clients)) {
-          const merged = mergeClientLists(
-            prepaidAsClientRequests(),
-            db.clients as ClientRequest[],
+          const merged = withoutDeleted(
+            mergeClientLists(
+              prepaidAsClientRequests(),
+              db.clients as ClientRequest[],
+            ),
+            (db as { deletedClients?: string[] }).deletedClients,
           );
           setClients(merged);
           // Only seed Firebase when the remote list is empty — never rewrite
@@ -816,7 +851,19 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const tick = async () => {
       const list = await fetchClients();
       if (list) {
-        setClients(mergeClientLists(prepaidAsClientRequests(), list as ClientRequest[]));
+        let remoteDeleted: string[] = [];
+        try {
+          const { firebaseFetchDeletedClients } = await import('../lib/firebaseDb');
+          remoteDeleted = await firebaseFetchDeletedClients();
+        } catch {
+          remoteDeleted = [];
+        }
+        setClients(
+          withoutDeleted(
+            mergeClientLists(prepaidAsClientRequests(), list as ClientRequest[]),
+            remoteDeleted,
+          ),
+        );
       }
     };
     void tick();
@@ -1003,6 +1050,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       clientRequests: isSuper ? clients : [],
       submitClientRegistration: (input) => {
         const email = input.email.trim().toLowerCase();
+        // Registering again lifts a previous deletion for this email
+        forgetDeletedClient(email);
         const prepaid = findPrepaidClient(email);
         const existing =
           clients.find((c) => c.email === email) ||
@@ -1147,12 +1196,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }));
       },
       deleteClient: (id) => {
+        const hit = clients.find((c) => c.id === id);
+        if (hit) rememberDeletedClient(hit.email);
         setClients((prev) => prev.filter((c) => c.id !== id));
-        void deleteClientRemote(id).catch(() => undefined);
+        void deleteClientRemote(hit?.email || id).catch(() => undefined);
         const sid = SUPER_ADMIN.user.id;
         patchWorkspace(sid, (ws) => ({
           ...ws,
-          clientRequests: ws.clientRequests.filter((c) => c.id !== id),
+          clientRequests: ws.clientRequests.filter(
+            (c) => c.id !== id && (!hit || c.email !== hit.email),
+          ),
         }));
       },
       claimClientPayment: async (email) => {
