@@ -77,7 +77,8 @@ export function validateEmailAccess(license, email, vault, workspaces) {
     if (
       entry?.status === 'assigned' &&
       String(entry.assignedEmail || '').toLowerCase() === normalizedEmail &&
-      !keysMatch(String(entry.key || ''), String(license.key || ''))
+      !keysMatch(String(entry.key || ''), String(license.key || '')) &&
+      String(entry.ownerAdminId || '') === String(license.ownerAdminId || '')
     ) {
       return 'This email already has an active license. Use that key or contact your admin.';
     }
@@ -88,7 +89,8 @@ export function validateEmailAccess(license, email, vault, workspaces) {
       if (
         lic?.status === 'assigned' &&
         String(lic.assignedEmail || '').toLowerCase() === normalizedEmail &&
-        !keysMatch(String(lic.key || ''), String(license.key || ''))
+        !keysMatch(String(lic.key || ''), String(license.key || '')) &&
+        String(lic.ownerAdminId || '') === String(license.ownerAdminId || '')
       ) {
         return 'This email already has an active license. Use that key or contact your admin.';
       }
@@ -152,4 +154,47 @@ export function releaseEntry(entry, email) {
       assignedAt: null,
     },
   };
+}
+
+/** Unassign any other keys already bound to this email so a new mentor key can take over. */
+export function releaseOtherAssignedForEmail(vault, workspaces, email, keepKey) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const nextVault = dbList(vault).map((entry) => {
+    if (
+      entry?.status === 'assigned' &&
+      String(entry.assignedEmail || '').toLowerCase() === normalizedEmail &&
+      !keysMatch(String(entry.key || ''), String(keepKey || ''))
+    ) {
+      return {
+        ...entry,
+        status: 'active',
+        assignedEmail: null,
+        assignedAt: null,
+      };
+    }
+    return entry;
+  });
+
+  const nextWorkspaces =
+    workspaces && typeof workspaces === 'object' ? { ...workspaces } : {};
+  for (const [ownerId, ws] of Object.entries(nextWorkspaces)) {
+    const licenses = dbList(ws?.licenses).map((lic) => {
+      if (
+        lic?.status === 'assigned' &&
+        String(lic.assignedEmail || '').toLowerCase() === normalizedEmail &&
+        !keysMatch(String(lic.key || ''), String(keepKey || ''))
+      ) {
+        return {
+          ...lic,
+          status: 'active',
+          assignedEmail: null,
+          assignedAt: null,
+        };
+      }
+      return lic;
+    });
+    nextWorkspaces[ownerId] = { ...ws, licenses };
+  }
+
+  return { vault: nextVault, workspaces: nextWorkspaces };
 }

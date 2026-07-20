@@ -38,7 +38,6 @@ export function HomePage() {
     setSymbols,
     user,
     activateWithLicense,
-    refreshBranding,
   } = useApp();
   const { openPortal, claimLicense } = useAdmin();
   // Profile circles vs hero cover — both use mentor branding when available
@@ -186,7 +185,7 @@ export function HomePage() {
         if (imageUrl.startsWith('img:') || imageUrl.includes('lumo-logo')) {
           imageUrl = '';
         }
-        refreshBranding({
+        activateWithLicense(lic.key, {
           name: lic.eaName,
           displayName: lic.eaName,
           mainText: lic.mainText,

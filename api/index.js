@@ -566,6 +566,7 @@ export default async function handler(req, res) {
         keyFingerprint,
         keysMatch,
         normalizeLicenseKey,
+        releaseOtherAssignedForEmail,
         toClaimPayload,
         validateEmailAccess,
       } = await import('./_lib/licenseClaim.mjs');
@@ -621,8 +622,11 @@ export default async function handler(req, res) {
         return;
       }
 
+      const released = releaseOtherAssignedForEmail(vault, workspaces, email, key);
+      let nextVault = released.vault;
+      let nextWorkspaces = released.workspaces;
+
       const assigned = assignEntry(entry, email);
-      const nextVault = [...vault];
       const vaultIdx = nextVault.findIndex(
         (v) => v?.id === assigned.id || keysMatch(String(v?.key || ''), key),
       );
@@ -637,7 +641,7 @@ export default async function handler(req, res) {
 
       let wsOk = true;
       if (ownerId) {
-        const ws = workspaces[ownerId] || {};
+        const ws = nextWorkspaces[ownerId] || {};
         const licenses = dbList(ws.licenses);
         const licenseRow = {
           ...assigned,
@@ -656,6 +660,17 @@ export default async function handler(req, res) {
           ...ws,
           licenses: nextLicenses,
         });
+        nextWorkspaces[ownerId] = { ...ws, licenses: nextLicenses };
+      }
+
+      // Persist releases on other mentor workspaces (old keys unassigned)
+      for (const [wsId, ws] of Object.entries(nextWorkspaces)) {
+        if (wsId === ownerId) continue;
+        const origLicenses = JSON.stringify(dbList(workspaces[wsId]?.licenses));
+        const nextLicensesJson = JSON.stringify(dbList(ws?.licenses));
+        if (origLicenses !== nextLicensesJson) {
+          await firebaseWrite(`lumo/store/workspaces/${wsId}`, ws).catch(() => false);
+        }
       }
       if (!wsOk) {
         console.error('[license:claim] workspace write failed', { email, key, ownerId });

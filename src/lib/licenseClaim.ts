@@ -107,7 +107,8 @@ export function validateLicenseEmailAccess(
     if (
       entry.status === 'assigned' &&
       entry.assignedEmail?.toLowerCase() === normalizedEmail &&
-      !keysMatch(entry.key, license.key)
+      !keysMatch(entry.key, license.key) &&
+      (entry.ownerAdminId || '') === (license.ownerAdminId || '')
     ) {
       return 'This email already has an active license. Use that key or contact your admin.';
     }
@@ -118,7 +119,8 @@ export function validateLicenseEmailAccess(
       if (
         lic.status === 'assigned' &&
         lic.assignedEmail?.toLowerCase() === normalizedEmail &&
-        !keysMatch(lic.key, license.key)
+        !keysMatch(lic.key, license.key) &&
+        (lic.ownerAdminId || '') === (license.ownerAdminId || '')
       ) {
         return 'This email already has an active license. Use that key or contact your admin.';
       }
@@ -221,6 +223,30 @@ export function prepareAssignedLicense(
     assignedEmail: normalizedEmail,
     assignedAt: new Date().toISOString(),
   };
+}
+
+/** Unassign other keys bound to this email so a new mentor key can take over. */
+export function releaseOtherAssignedForEmail(
+  email: string,
+  keepKey: string,
+  vault: VaultLicense[] = loadVault(),
+): VaultLicense[] {
+  const normalizedEmail = email.trim().toLowerCase();
+  return vault.map((entry) => {
+    if (
+      entry.status === 'assigned' &&
+      entry.assignedEmail?.toLowerCase() === normalizedEmail &&
+      !keysMatch(entry.key, keepKey)
+    ) {
+      return {
+        ...entry,
+        status: 'active' as const,
+        assignedEmail: undefined,
+        assignedAt: undefined,
+      };
+    }
+    return entry;
+  });
 }
 
 export function isClaimableKey(key: string): string | null {

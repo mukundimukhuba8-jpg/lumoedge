@@ -15,7 +15,7 @@ import {
 } from '../lib/mentorMedia';
 import { fetchDb, fetchSession, pushSession } from '../lib/remote';
 import { dbList } from '../lib/firebaseDb';
-import { loadJSON, normalizeLicenseKey, saveJSON } from '../lib/storage';
+import { loadJSON, keysMatch, normalizeLicenseKey, saveJSON } from '../lib/storage';
 
 export type UserProfile = { email: string; firstName: string; lastName: string };
 
@@ -179,7 +179,10 @@ function mergeSessions(local: Session, remote: Session | null): Session {
 }
 
 /** Look up a vault / workspace license for this email (server may have lost session). */
-async function restoreLicenseFromVault(email: string): Promise<{
+async function restoreLicenseFromVault(
+  email: string,
+  licenseKey?: string,
+): Promise<{
   licenseKey: string;
   imageUrl: string;
   displayName: string;
@@ -189,7 +192,7 @@ async function restoreLicenseFromVault(email: string): Promise<{
   try {
     const db = await fetchDb();
     if (!db) return null;
-    const vaultHit = dbList<{
+    type VaultHit = {
       key?: string;
       assignedEmail?: string;
       status?: string;
@@ -197,18 +200,39 @@ async function restoreLicenseFromVault(email: string): Promise<{
       eaName?: string;
       mainText?: string;
       symbols?: string[];
-    }>(db.vault).find(
-      (v) =>
-        String(v.assignedEmail || '').toLowerCase() === email.toLowerCase() &&
-        v.status === 'assigned' &&
-        v.key,
+      assignedAt?: string;
+    };
+    const vault = dbList<VaultHit>(db.vault);
+    const normalizedEmail = email.toLowerCase();
+    const normalizedKey = licenseKey ? normalizeLicenseKey(licenseKey) : '';
+
+    const pickBest = (hits: VaultHit[]) => {
+      if (!hits.length) return null;
+      if (normalizedKey) {
+        const byKey = hits.find((v) => keysMatch(String(v.key || ''), normalizedKey));
+        if (byKey) return byKey;
+      }
+      return hits.sort(
+        (a, b) =>
+          Date.parse(String(b.assignedAt || '')) - Date.parse(String(a.assignedAt || '')),
+      )[0];
+    };
+
+    const vaultHit = pickBest(
+      vault.filter(
+        (v) =>
+          String(v.assignedEmail || '').toLowerCase() === normalizedEmail &&
+          v.status === 'assigned' &&
+          v.key,
+      ),
     );
-    let licenseKey = vaultHit?.key || '';
+    let licenseKeyOut = vaultHit?.key || '';
     let imageUrl = vaultHit?.eaImage || '';
     let displayName = vaultHit?.eaName || '';
     let mainText = vaultHit?.mainText || '';
     let symbols = vaultHit?.symbols || [];
-    if (!licenseKey && db.store?.workspaces) {
+    if (!licenseKeyOut && db.store?.workspaces) {
+      const workspaceHits: VaultHit[] = [];
       for (const ws of Object.values(
         db.store.workspaces as Record<
           string,
@@ -222,28 +246,32 @@ async function restoreLicenseFromVault(email: string): Promise<{
               eaName?: string;
               mainText?: string;
               symbols?: string[];
+              assignedAt?: string;
             }>;
           }
         >,
       )) {
-        const hit = (ws.licenses || []).find(
-          (l) =>
-            String(l.assignedEmail || '').toLowerCase() === email.toLowerCase() &&
+        for (const l of ws.licenses || []) {
+          if (
+            String(l.assignedEmail || '').toLowerCase() === normalizedEmail &&
             l.status === 'assigned' &&
-            l.key,
-        );
-        if (hit) {
-          licenseKey = hit.key;
-          imageUrl = hit.eaImage || imageUrl;
-          displayName = hit.eaName || displayName;
-          mainText = hit.mainText || mainText;
-          symbols = hit.symbols || symbols;
-          break;
+            l.key
+          ) {
+            workspaceHits.push(l);
+          }
         }
       }
+      const hit = pickBest(workspaceHits);
+      if (hit) {
+        licenseKeyOut = hit.key || '';
+        imageUrl = hit.eaImage || imageUrl;
+        displayName = hit.eaName || displayName;
+        mainText = hit.mainText || mainText;
+        symbols = hit.symbols || symbols;
+      }
     }
-    if (!licenseKey) return null;
-    return { licenseKey, imageUrl, displayName, mainText, symbols };
+    if (!licenseKeyOut) return null;
+    return { licenseKey: licenseKeyOut, imageUrl, displayName, mainText, symbols };
   } catch {
     return null;
   }
@@ -296,7 +324,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let merged = mergeSessions(latest, remote);
 
       if (!merged.bot.licenseKey) {
-        const vault = await restoreLicenseFromVault(email);
+        const vault = await restoreLicenseFromVault(email, latest.bot.licenseKey);
         if (cancelled) return;
         if (vault) merged = applyVaultLicense(merged, vault);
       }

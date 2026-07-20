@@ -367,7 +367,7 @@ export function GenerateLicensePage() {
             <Loader2 size={34} className="spin" style={{ color: 'var(--electric)' }} />
             <strong style={{ color: 'var(--electric)', marginTop: 12 }}>Generating license key…</strong>
             <span className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-              Saving to cloud — this only takes a moment
+              Creating your key — cloud sync continues in the background
             </span>
           </div>
         ) : null}

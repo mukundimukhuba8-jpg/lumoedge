@@ -60,6 +60,7 @@ import {
   findLicenseByKey,
   isClaimableKey,
   prepareAssignedLicense,
+  releaseOtherAssignedForEmail,
   resolveLicenseBrandingSync,
   validateLicenseEmailAccess,
 } from '../lib/licenseClaim';
@@ -626,28 +627,6 @@ function findLiveLicenseForOwner(
   );
 }
 
-function vaultHitToRecord(hit: LicenseRecord | VaultLicense): LicenseRecord {
-  if ('clientEmail' in hit && hit.clientEmail) return hit as LicenseRecord;
-  const v = hit as VaultLicense;
-  return {
-    id: v.id,
-    key: v.key,
-    eaId: v.eaId,
-    eaName: v.eaName,
-    eaImage: v.eaImage,
-    mainText: v.mainText,
-    symbols: v.symbols,
-    customMedia: normalizeCustomMedia(v.customMedia),
-    ownerAdminId: v.ownerAdminId,
-    clientName: v.clientName,
-    clientEmail: v.email,
-    duration: v.duration,
-    status: v.status,
-    assignedEmail: v.assignedEmail,
-    assignedAt: v.assignedAt,
-  };
-}
-
 function mergeVaultKeepAll(local: VaultLicense[], remote: VaultLicense[]): VaultLicense[] {
   const byKey = new Map<string, VaultLicense>();
   for (const v of [...local, ...remote]) {
@@ -685,27 +664,6 @@ function saveMergedVaultForMentor(
         (!v.ownerAdminId || v.ownerAdminId === adminId || extraLocal.some((e) => keysMatch(e.key, v.key))),
     ),
   );
-}
-
-async function findLicenseOnRemote(
-  clientEmail: string,
-  adminId: string,
-  key?: string,
-): Promise<LicenseRecord | null> {
-  const remote = await fetchDb();
-  if (!remote) return null;
-  const remoteWs = normalizeWorkspace(
-    (remote.store?.workspaces?.[adminId] as AdminWorkspace) || createEmptyWorkspace({ id: adminId }),
-    { id: adminId } as AdminUser,
-  );
-  const vaultSlice = dbList<VaultLicense>(remote.vault).filter(
-    (v) => v.ownerAdminId === adminId,
-  );
-  const hit = findLiveLicenseForOwner(clientEmail, adminId, remoteWs, vaultSlice);
-  if (!hit) return null;
-  const record = vaultHitToRecord(hit);
-  if (key && !keysMatch(record.key, key)) return null;
-  return record;
 }
 
 function licenseToVaultEntry(lic: LicenseRecord): VaultLicense {
@@ -776,17 +734,6 @@ async function pushLicensesToRemote(adminId: string, ws: AdminWorkspace) {
       saveMergedVaultForMentor(adminId, [], entries);
       licenseLog('publish', 'fallback pushDb succeeded');
       return;
-    }
-
-    for (const entry of entries) {
-      const saved = await findLicenseOnRemote(entry.email, adminId, entry.key);
-      if (saved) {
-        saveMergedVaultForMentor(adminId, [], entries);
-        licenseWarn('publish', 'verified on remote despite publish error', {
-          key: saved.key,
-        });
-        return;
-      }
     }
 
     throw new Error(published.error || 'License cloud save failed');
@@ -1857,22 +1804,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           };
         }
 
-        const remoteExisting = await findLicenseOnRemote(clientEmail, adminId);
-        if (remoteExisting) {
-          licenseWarn('generate', 'duplicate blocked via remote check', {
-            email: clientEmail,
-            key: remoteExisting.key,
-          });
-          return {
-            ok: false,
-            error:
-              `This email already has a license key (${normalizeLicenseKey(
-                remoteExisting.key,
-              )}) on the server.\n\n` +
-              'Delete it first, then generate another one.',
-          };
-        }
-
         licenseLog('generate', 'creating license', { email: clientEmail, eaId: input.eaId });
 
         const profileImage = ws.profile.eaImage || '';
@@ -1931,42 +1862,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ...current,
           licenses: [record, ...current.licenses.filter((l) => l.id !== id)],
         };
-        // Save to cloud first — clients on any device read Firebase, not this browser
-        try {
-          await pushLicensesToRemote(adminId, nextWs);
-        } catch (err) {
-          licenseError('generate', 'cloud push failed, verifying remote', {
-            error: err instanceof Error ? err.message : String(err),
-            key,
-            clientEmail,
-          });
-          const verified = await findLicenseOnRemote(clientEmail, adminId, key);
-          if (verified) {
-            licenseWarn('generate', 'remote verified after error — treating as success', {
-              key: verified.key,
-            });
-            setStore((prev) => {
-              const next = {
-                ...prev,
-                workspaces: {
-                  ...prev.workspaces,
-                  [adminId]: nextWs,
-                },
-              };
-              saveJSON(STORE_KEY, next);
-              return next;
-            });
-            return {
-              ok: true,
-              license: { ...record, ...verified, eaImage: displayBytes || eaImage },
-            };
-          }
-          return {
-            ok: false,
-            error:
-              `Could not save the license to the cloud. ${err instanceof Error ? err.message : 'Check your connection and try again.'}`,
-          };
-        }
+        // Save locally first so the admin sees the key immediately
         setStore((prev) => {
           const next = {
             ...prev,
@@ -1978,6 +1874,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           saveJSON(STORE_KEY, next);
           return next;
         });
+        upsertVault(licenseToVaultEntry(record));
+        licenseLog('generate', 'saved locally', { key, clientEmail });
+
+        // Cloud sync runs in the background — clients read Firebase, not this browser
+        void pushLicensesToRemote(adminId, nextWs).catch((err) => {
+          licenseError('generate', 'background cloud push failed', {
+            error: err instanceof Error ? err.message : String(err),
+            key,
+            clientEmail,
+          });
+        });
+
         licenseLog('generate', 'success', { key, clientEmail });
         return { ok: true, license: { ...record, eaImage: displayBytes || eaImage } };
       },
@@ -2067,15 +1975,37 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             saveEaImage(license.id, license.eaImage);
             saveEaImage(`key-${normalizedKey}`, license.eaImage);
           }
+          saveVaultLocal(releaseOtherAssignedForEmail(normalizedEmail, normalizedKey));
           upsertVault(licenseRecordToVault(license, normalizedEmail));
-          if (ownerId) {
-            patchWorkspace(ownerId, (ws) => ({
-              ...ws,
-              licenses: ws.licenses.some((l) => l.id === license.id)
-                ? ws.licenses.map((l) => (l.id === license.id ? license : l))
-                : [license, ...ws.licenses],
-            }));
-          }
+          setStore((prev) => {
+            const workspaces: StoreState['workspaces'] = {};
+            for (const [wsId, ws] of Object.entries(prev.workspaces)) {
+              let licenses = ws.licenses.map((l) => {
+                if (
+                  l.status === 'assigned' &&
+                  l.assignedEmail?.toLowerCase() === normalizedEmail &&
+                  !keysMatch(l.key, normalizedKey)
+                ) {
+                  return {
+                    ...l,
+                    status: 'active' as const,
+                    assignedEmail: undefined,
+                    assignedAt: undefined,
+                  };
+                }
+                return l;
+              });
+              if (ownerId === wsId) {
+                licenses = licenses.some((l) => l.id === license.id)
+                  ? licenses.map((l) => (l.id === license.id ? license : l))
+                  : [license, ...licenses];
+              }
+              workspaces[wsId] = { ...ws, licenses };
+            }
+            const next = { ...prev, workspaces };
+            saveJSON(STORE_KEY, next);
+            return next;
+          });
         };
 
         const attemptClaim = (
