@@ -1465,7 +1465,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           saveAuth({ ...auth, admin: SUPER_ADMIN.user, portalOpen: true });
           return null;
         }
-        const found = auth.admins.find(
+        const remoteAdmins = ((await fetchAdmins()) || []) as AdminUser[];
+        const admins = mergeAdmins(auth.admins, remoteAdmins);
+        if (remoteAdmins.length) {
+          setAuth((prev) => {
+            const nextAdmins = mergeAdmins(prev.admins, remoteAdmins);
+            const next = { ...prev, admins: nextAdmins };
+            saveJSON(AUTH_KEY, { ...next, portalOpen: false });
+            return next;
+          });
+        }
+        const found = admins.find(
           (a) => a.email.toLowerCase() === normalized && a.password === password,
         );
         if (found) {
@@ -1485,7 +1495,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           saveAuth({ ...auth, admin: user, portalOpen: true });
           return null;
         }
-        return 'Invalid email or password.';
+        const byEmail = admins.find((a) => a.email.toLowerCase() === normalized);
+        if (byEmail?.role === 'pending') {
+          return 'Your admin account is waiting for Super Admin approval.';
+        }
+        if (byEmail) {
+          return 'Invalid email or password.';
+        }
+        return 'No admin account found for this email. Tap Register first, then wait for Super Admin approval.';
       },
       registerAdmin: async (form) => {
         const email = form.email.trim().toLowerCase();
@@ -1495,7 +1512,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         if (email === SUPER_ADMIN.email.toLowerCase()) {
           return 'This email is reserved for Super Admin.';
         }
-        if (auth.admins.some((a) => a.email.toLowerCase() === email)) {
+        const remoteAdmins = ((await fetchAdmins()) || []) as AdminUser[];
+        const knownEmails = new Set(
+          [...auth.admins, ...remoteAdmins].map((a) => a.email.toLowerCase()),
+        );
+        if (knownEmails.has(email)) {
           return 'An admin with this email already registered.';
         }
         const serverEntry = await postMentorRegistration({

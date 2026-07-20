@@ -229,21 +229,20 @@ export async function postMentorRegistration(input: {
   phone?: string;
   mainText?: string;
 }) {
+  try {
+    const created = await req<Record<string, unknown>>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    if (created) return created;
+  } catch {
+    // fall through to direct Firebase write
+  }
   if (isFirebaseConfigured()) {
     const fb = await firebasePostMentorRegistration(input);
     if (fb) return fb;
   }
-  try {
-    return await req<Record<string, unknown>>('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    });
-  } catch (err) {
-    if (err instanceof Error && err.message.includes('409')) {
-      throw new Error('An admin with this email already registered.');
-    }
-    return null;
-  }
+  return null;
 }
 
 export async function postClient(input: {

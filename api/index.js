@@ -203,6 +203,20 @@ async function firebaseWrite(path, value) {
   }
 }
 
+async function firebaseRegisterMentor(entry, workspace) {
+  const curAuth = (await firebaseRead('lumo/auth')) || { admins: [], admin: null };
+  const admins = mergeAdmins(curAuth.admins || [], [entry]);
+  const authOk = await firebaseWrite('lumo/auth', { admins, admin: null });
+  const wsOk = await firebaseWrite(`lumo/store/workspaces/${entry.id}`, workspace);
+  await firebaseWrite('lumo/updatedAt', new Date().toISOString()).catch(() => false);
+  return authOk && wsOk;
+}
+
+async function firebaseFetchAdminList() {
+  const curAuth = await firebaseRead('lumo/auth');
+  return Array.isArray(curAuth?.admins) ? curAuth.admins : null;
+}
+
 /** Publish mentor licenses straight to Firebase — works even when client SDK writes fail. */
 async function publishLicensesToFirebase(adminId, vaultEntries, workspace, revokedKeys) {
   const { keysMatch, normalizeLicenseKey } = await import('./_lib/licenseClaim.mjs');
@@ -867,6 +881,11 @@ export default async function handler(req, res) {
     }
 
     if (pathname === '/api/auth/admins' && req.method === 'GET') {
+      const fbAdmins = await firebaseFetchAdminList();
+      if (fbAdmins) {
+        send(res, 200, fbAdmins);
+        return;
+      }
       const { db } = await loadDb();
       send(res, 200, db.auth?.admins || []);
       return;
@@ -885,6 +904,12 @@ export default async function handler(req, res) {
       }
       if (email === 'mukundimukhuba8@gmail.com') {
         send(res, 403, { error: 'This email is reserved for Super Admin.' });
+        return;
+      }
+      const fbAdmins = (await firebaseFetchAdminList()) || [];
+      const existingFb = fbAdmins.find((a) => String(a.email || '').toLowerCase() === email);
+      if (existingFb) {
+        send(res, 200, existingFb);
         return;
       }
       const { db, sha } = await loadDb();
@@ -926,17 +951,22 @@ export default async function handler(req, res) {
         orders: [],
         revokedKeys: [],
       };
+      const savedToFirebase = await firebaseRegisterMentor(entry, workspace);
+      if (!savedToFirebase) {
+        send(res, 503, { error: 'Could not save registration to cloud database' });
+        return;
+      }
       db.auth = db.auth || { admins: [], admin: null };
       db.auth.admins = mergeAdmins(admins, [entry]);
       db.store = db.store || { workspaces: {} };
       db.store.workspaces = db.store.workspaces || {};
       db.store.workspaces[entry.id] = workspace;
-      const saved = await saveDb(db, sha);
-      const created =
-        (saved.db.auth?.admins || []).find(
-          (a) => String(a.email || '').toLowerCase() === email,
-        ) || entry;
-      send(res, 201, created);
+      try {
+        await saveDb(db, sha);
+      } catch {
+        // Firebase is the source of truth for live mentor registrations
+      }
+      send(res, 201, entry);
       return;
     }
 

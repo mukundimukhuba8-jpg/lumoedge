@@ -12,6 +12,7 @@ export function AdminAuthPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -48,7 +49,11 @@ export function AdminAuthPage() {
       <h1 className="title-blue" style={{ fontSize: 30, margin: 0 }}>
         Admin Portal
       </h1>
-      <p className="muted">Sign in to access the dashboard</p>
+      <p className="muted">
+        {tab === 'register'
+          ? 'Create a mentor account — Super Admin must approve before you can log in.'
+          : 'Sign in after Super Admin has approved your mentor account.'}
+      </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', border: '1px solid #2a2a33', borderRadius: 14, overflow: 'hidden', margin: '18px 0 16px' }}>
         {(['login', 'register'] as const).map((t) => (
@@ -74,21 +79,29 @@ export function AdminAuthPage() {
         style={{ textAlign: 'left' }}
         onSubmit={(e) => {
           e.preventDefault();
+          if (submitting) return;
           setError('');
           setSuccess('');
+          setSubmitting(true);
           if (tab === 'login') {
-            void login(form.email, form.password).then((err) => {
-              if (err) setError(err);
-              else navigate('/admin/dashboard');
-            });
+            void login(form.email, form.password)
+              .then((err) => {
+                if (err) setError(err);
+                else navigate('/admin/dashboard');
+              })
+              .finally(() => setSubmitting(false));
           } else {
-            void registerAdmin(form).then((err) => {
-              if (err) setError(err);
-              else {
-                setSuccess('Registered. Wait for Super Admin approval, then login.');
-                setTab('login');
-              }
-            });
+            void registerAdmin(form)
+              .then((err) => {
+                if (err) setError(err);
+                else {
+                  setSuccess(
+                    'Registration saved. Super Admin will see your email in Approve Admins. Log in after approval.',
+                  );
+                  setTab('login');
+                }
+              })
+              .finally(() => setSubmitting(false));
           }
         }}
       >
@@ -129,8 +142,14 @@ export function AdminAuthPage() {
         </div>
         {error ? <p className="error">{error}</p> : null}
         {success ? <p className="success">{success}</p> : null}
-        <button className="btn btn-blue" type="submit">
-          {tab === 'login' ? 'Login' : 'Register as Admin'}
+        <button className="btn btn-blue" type="submit" disabled={submitting}>
+          {submitting
+            ? tab === 'login'
+              ? 'Signing in…'
+              : 'Saving registration…'
+            : tab === 'login'
+              ? 'Login'
+              : 'Register as Admin'}
         </button>
       </form>
     </div>
