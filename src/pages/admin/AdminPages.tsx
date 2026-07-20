@@ -329,6 +329,7 @@ export function GenerateLicensePage() {
   const [duration, setDuration] = useState('1 Year');
   const [search, setSearch] = useState('');
   const [lastKey, setLastKey] = useState('');
+  const [generating, setGenerating] = useState(false);
   const effectiveEaId = eaId || eas[0]?.id || '';
   const selected = eas.find((e) => e.id === effectiveEaId) ?? eas[0];
 
@@ -363,7 +364,8 @@ export function GenerateLicensePage() {
         <h3 style={{ marginTop: 0 }}>License Details</h3>
         <p className="muted" style={{ marginTop: 0 }}>
           Short keys like <strong style={{ color: 'var(--electric)' }}>LUMO-XXXX-XXXX-XXXX</strong>.
-          One live key per client email. If that email already has a key, delete it first — then generate a new one (client pays subscription and logs in with the new key).
+          Keys save to the cloud instantly — clients can activate on any phone once generated.
+          One live key per client email.
         </p>
         <div className="field">
           <label>Select EA *</label>
@@ -418,28 +420,35 @@ export function GenerateLicensePage() {
         <button
           className="btn btn-blue"
           type="button"
-          onClick={() => {
-            const result = generateLicense({
-              eaId: effectiveEaId,
-              clientName,
-              clientEmail,
-              duration,
-            });
-            if (!result.ok) {
-              alert(result.error);
-              return;
+          disabled={generating}
+          onClick={async () => {
+            if (generating) return;
+            setGenerating(true);
+            try {
+              const result = await generateLicense({
+                eaId: effectiveEaId,
+                clientName,
+                clientEmail,
+                duration,
+              });
+              if (!result.ok) {
+                alert(result.error);
+                return;
+              }
+              const rec = result.license;
+              setLastKey(rec.key);
+              navigator.clipboard?.writeText(rec.key).catch(() => undefined);
+              alert(
+                `License key saved to cloud:\n${rec.key}\n\nFor: ${rec.clientEmail}\nEA: ${rec.eaName}\n\nCopied to clipboard. Client can activate on any device.`,
+              );
+              setClientName('');
+              setClientEmail('');
+            } finally {
+              setGenerating(false);
             }
-            const rec = result.license;
-            setLastKey(rec.key);
-            navigator.clipboard?.writeText(rec.key).catch(() => undefined);
-            alert(
-              `License key:\n${rec.key}\n\nFor: ${rec.clientEmail}\nEA: ${rec.eaName}\n\nCopied to clipboard.`,
-            );
-            setClientName('');
-            setClientEmail('');
           }}
         >
-          Generate License
+          {generating ? 'Saving to cloud…' : 'Generate License'}
         </button>
         {lastKey ? (
           <div
