@@ -151,6 +151,8 @@ export type AdminWorkspace = {
   orders: CopyOrder[];
   /** Keys this mentor revoked — private to their portal stats */
   revokedKeys: string[];
+  /** Tombstones — deleted EAs can never be merged back by another device */
+  deletedEaIds?: string[];
 };
 
 /** Resolve stored img:/data/http refs to something an <img> can show. */
@@ -371,6 +373,7 @@ export function createEmptyWorkspace(seed?: {
     profile: emptyProfile(seed),
     orders: [],
     revokedKeys: [],
+    deletedEaIds: [],
   };
 }
 
@@ -388,10 +391,12 @@ function normalizeWorkspace(
 ): AdminWorkspace {
   const base = createEmptyWorkspace(seed);
   if (!ws) return base;
+  const tombstones = new Set(ws.deletedEaIds ?? []);
   return {
     ...base,
     ...ws,
-    eas: ws.eas ?? [],
+    deletedEaIds: [...tombstones],
+    eas: (ws.eas ?? []).filter((e) => !tombstones.has(e.id)),
     licenses: (ws.licenses ?? [])
       .filter((l) => l.status !== 'deleted')
       .map((l) => ({
@@ -415,9 +420,13 @@ function normalizeWorkspace(
 
 /** Merge two workspaces — keep every EA and license from either side. */
 function mergeWorkspaceKeepAll(a: AdminWorkspace, b: AdminWorkspace): AdminWorkspace {
+  const deletedEaIds = new Set([
+    ...(a.deletedEaIds || []),
+    ...(b.deletedEaIds || []),
+  ]);
   const easById = new Map<string, ManagedEA>();
   for (const ea of [...(a.eas || []), ...(b.eas || [])]) {
-    if (!ea?.id) continue;
+    if (!ea?.id || deletedEaIds.has(ea.id)) continue;
     const prev = easById.get(ea.id);
     easById.set(ea.id, prev ? { ...prev, ...ea, imageUrl: ea.imageUrl || prev.imageUrl || '' } : ea);
   }
@@ -453,6 +462,7 @@ function mergeWorkspaceKeepAll(a: AdminWorkspace, b: AdminWorkspace): AdminWorks
   return normalizeWorkspace({
     ...a,
     ...b,
+    deletedEaIds: [...deletedEaIds],
     eas: Array.from(easById.values()),
     licenses: Array.from(licById.values()).filter((l) => l.status !== 'deleted'),
     profile: {
@@ -1279,6 +1289,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         patchWorkspace(adminId, (ws) => ({
           ...ws,
           eas: ws.eas.filter((e) => e.id !== id),
+          // Tombstone stops any other device from merging this EA back
+          deletedEaIds: [...new Set([...(ws.deletedEaIds || []), id])],
         }));
       },
       generateLicense: (input) => {
