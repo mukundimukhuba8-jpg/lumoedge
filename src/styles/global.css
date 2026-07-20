@@ -919,43 +919,179 @@ a {
   z-index: 2;
 }
 
-/* Layout variants on home */
-.home-layout-bold .home-hero {
-  max-height: 420px !important;
+/* ——— Layout variants on home (current markup) ——— */
+
+/* BOLD — huge hero, heavy type, thick action buttons */
+.home-layout-bold .home-hero-box {
+  border-width: 2.5px !important;
 }
-.home-layout-minimal .home-hero-wrap {
-  border: none !important;
-  box-shadow: none !important;
+.home-layout-bold .home-hero-media {
+  aspect-ratio: auto !important;
+  height: min(52vh, 430px) !important;
+  max-height: none !important;
+}
+.home-layout-bold .home-main-text {
+  font-size: 34px !important;
+  font-weight: 900 !important;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.home-layout-bold .home-hero-ea {
+  font-size: 22px !important;
+  font-weight: 900 !important;
+}
+.home-layout-bold .neon-action button {
+  font-weight: 900;
+  font-size: 13px;
+}
+.home-layout-bold .neon-action .circle-btn {
+  width: 56px !important;
+  height: 56px !important;
+  border-width: 2.5px !important;
+}
+
+/* MINIMAL — no hero picture, quiet borders, thin clean text */
+.home-layout-minimal .home-hero-box {
+  display: none !important;
+}
+.home-layout-minimal .home-powered {
+  display: none !important;
 }
 .home-layout-minimal .home-main-text {
-  font-size: 18px !important;
+  font-size: 17px !important;
+  font-weight: 500 !important;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 26px;
 }
-.home-layout-expanded .home-status-pill {
-  padding: 16px 18px !important;
+.home-layout-minimal .pill,
+.home-layout-minimal .home-status-pill,
+.home-layout-minimal .home-connect-pill {
+  background: transparent !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: none !important;
+}
+.home-layout-minimal .neon-action .circle-btn {
+  border-width: 1px !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+/* EXPANDED — roomy cards, big status row, smaller hero */
+.home-layout-expanded .home-hero-media {
+  aspect-ratio: auto !important;
+  height: min(26vh, 210px) !important;
+  max-height: none !important;
+}
+.home-layout-expanded .home-status-pill,
+.home-layout-expanded .home-connect-pill {
+  padding: 18px 18px !important;
+  border-radius: 22px !important;
+  border-width: 1.8px !important;
+}
+.home-layout-expanded .home-status-pill img,
+.home-layout-expanded .home-status-pill .circle-btn {
+  width: 52px !important;
+  height: 52px !important;
+}
+.home-layout-expanded .home-main-text {
+  font-size: 26px !important;
+  margin-bottom: 14px;
+}
+.home-layout-expanded .page.home-page-fill {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* DASHBOARD — tiled grid of panels */
+.home-layout-dashboard .home-hero-media {
+  aspect-ratio: auto !important;
+  height: min(24vh, 190px) !important;
+  max-height: none !important;
+}
+.home-layout-dashboard .home-hero-box {
+  border-radius: 12px !important;
 }
 .home-layout-dashboard .neon-action {
   grid-template-columns: 1fr 1fr 1fr !important;
+  gap: 8px;
 }
-.home-layout-terminal .home-main-text {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
-  letter-spacing: 2px !important;
+.home-layout-dashboard .neon-action button {
+  background: #10151f !important;
+  border: 1px solid rgba(59, 130, 246, 0.35) !important;
+  border-radius: 12px !important;
+  padding: 12px 6px !important;
 }
-.home-layout-focus .home-hero {
-  max-height: 440px !important;
+.home-layout-dashboard .pill,
+.home-layout-dashboard .home-status-pill,
+.home-layout-dashboard .home-connect-pill {
+  background: #10151f !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(59, 130, 246, 0.35) !important;
 }
-.home-layout-focus .pill:not(.home-status-pill) {
+.home-layout-dashboard .home-main-text {
+  text-align: left !important;
+  font-size: 20px !important;
+}
+
+/* PHANTOM — ghost mode: dim, desaturated, faint outlines */
+.home-layout-phantom .page.home-page-fill {
+  filter: saturate(0.55);
+}
+.home-layout-phantom .home-hero-box {
   opacity: 0.85;
+  border-color: rgba(148, 163, 184, 0.35) !important;
+  box-shadow: none !important;
 }
-.home-layout-vortex .home-hero-wrap {
-  border-radius: 50% 50% 24px 24px !important;
-  overflow: hidden;
+.home-layout-phantom .home-hero-shade {
+  background: linear-gradient(180deg, transparent 30%, rgba(5, 7, 12, 0.92) 100%) !important;
 }
-.home-layout-phantom .home-hero-wrap {
-  opacity: 0.92;
-  filter: saturate(0.85);
+.home-layout-phantom .home-main-text {
+  color: rgba(226, 232, 240, 0.6) !important;
+  text-shadow: none !important;
 }
-.home-layout-apex .neon-action {
-  border-radius: 16px !important;
+.home-layout-phantom .pill,
+.home-layout-phantom .home-status-pill,
+.home-layout-phantom .home-connect-pill {
+  background: rgba(10, 12, 18, 0.85) !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  box-shadow: none !important;
+}
+.home-layout-phantom .neon-action .circle-btn {
+  border-color: rgba(148, 163, 184, 0.4) !important;
+  box-shadow: none !important;
+}
+
+/* APEX — sharp squared edges, gold rank accents */
+.home-layout-apex .home-hero-box,
+.home-layout-apex .pill,
+.home-layout-apex .home-status-pill,
+.home-layout-apex .home-connect-pill {
+  border-radius: 6px !important;
+}
+.home-layout-apex .home-hero-box {
+  border-color: rgba(245, 215, 110, 0.65) !important;
+  box-shadow: 0 0 0 1px rgba(245, 215, 110, 0.15), 0 10px 30px rgba(0, 0, 0, 0.5) !important;
+}
+.home-layout-apex .home-main-text {
+  color: var(--gold) !important;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  font-size: 22px !important;
+}
+.home-layout-apex .home-hero-ea {
+  color: var(--gold) !important;
+}
+.home-layout-apex .neon-action .circle-btn {
+  border-radius: 8px !important;
+  border-color: rgba(245, 215, 110, 0.55) !important;
+  color: var(--gold);
+}
+.home-layout-apex .home-status-pill,
+.home-layout-apex .home-connect-pill {
+  border-color: rgba(245, 215, 110, 0.35) !important;
 }
 
 /* Visual effects overlays */
