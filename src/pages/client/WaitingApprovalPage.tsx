@@ -72,16 +72,6 @@ export function WaitingApprovalPage() {
         return;
       }
 
-      const subject = encodeURIComponent('Lumo Edge — Payment proof / pending approval');
-      const body = encodeURIComponent(
-        `I have paid the Lumo Edge subscription (R600).\n\n` +
-          `Name: ${user.firstName} ${user.lastName}\n` +
-          `Email: ${user.email}\n` +
-          `Status: PENDING approval\n\n` +
-          `Please approve my subscription in Super Admin → Subscriptions.`,
-      );
-      window.open(`mailto:lumoedge08@gmail.com?subject=${subject}&body=${body}`, '_blank');
-
       setMessageTone('ok');
       setMessage(
         claimed?.paymentClaimed

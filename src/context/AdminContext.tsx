@@ -84,6 +84,8 @@ export type ManagedEA = {
   lotSize: number;
   direction: 'buy' | 'sell' | 'both';
   imageUrl?: string;
+  /** Mentor who created this EA — EAs never show in another portal */
+  ownerAdminId?: string;
 };
 
 export type LicenseRecord = {
@@ -708,10 +710,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           // Never take remote "admin" (logged-in user) — that is per-device only.
           // Syncing it made Super Admin and mentors overwrite each other.
           setAuth((prev) => {
+            const admins = db.auth!.admins as AdminUser[];
+            // If this device's logged-in mentor was un-approved or deleted
+            // remotely, kick them out of the portal immediately
+            let admin = prev.admin;
+            if (admin && admin.role !== 'super') {
+              const remote = admins.find((a) => a.id === admin!.id);
+              if (!remote || remote.role !== 'admin') admin = null;
+            }
             const nextAuth: AuthState = {
               portalOpen: prev.portalOpen,
-              admin: prev.admin,
-              admins: db.auth!.admins as AdminUser[],
+              admin,
+              admins,
             };
             // Keep super in the list conceptually; mentors stay as stored
             saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
@@ -1197,8 +1207,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             .find((c) => c.email.toLowerCase() === normalized)
         );
       },
-      eas: workspace.eas,
-      licenses: workspace.licenses,
+      // Strict per-mentor isolation: even if data ever gets cross-merged,
+      // an EA stamped with another mentor's id never renders in this portal
+      eas: workspace.eas.filter(
+        (ea) => !ea.ownerAdminId || ea.ownerAdminId === adminId,
+      ),
+      licenses: workspace.licenses.filter(
+        (l) => !l.ownerAdminId || l.ownerAdminId === adminId,
+      ),
       mt5: workspace.mt5,
       profile: workspace.profile,
       orders: workspace.orders,
@@ -1209,6 +1225,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             ...ea,
             id: `ea-${Date.now()}`,
             imageUrl: ea.imageUrl || '',
+            ownerAdminId: adminId,
           };
           return { ...ws, eas: [created, ...ws.eas] };
         });
@@ -1959,18 +1976,3 @@ export function useAdmin() {
   return ctx;
 }
 
-export function notifySuperAdminEmail(client: {
-  firstName: string;
-  lastName: string;
-  email: string;
-}) {
-  const notifyTo = 'lumoedge08@gmail.com';
-  const subject = encodeURIComponent('Lumo Edge — New client registration');
-  const body = encodeURIComponent(
-    `A new client registered on Lumo Edge and needs approval.\n\n` +
-      `Name: ${client.firstName} ${client.lastName}\n` +
-      `Email: ${client.email}\n\n` +
-      `Open the Super Admin portal → Subscriptions to approve.`,
-  );
-  window.open(`mailto:${notifyTo}?subject=${subject}&body=${body}`, '_blank');
-}

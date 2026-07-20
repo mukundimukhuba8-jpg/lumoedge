@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { notifySuperAdminEmail, useAdmin } from '../../context/AdminContext';
+import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
 
 export function RegisterPage() {
@@ -39,9 +39,10 @@ export function RegisterPage() {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
     };
+    // Registration is recorded in the Super Admin Subscriptions queue —
+    // no email is sent (the queue is the single source of truth)
     submitClientRegistration(profile);
     const next = await registerLocal(profile);
-    notifySuperAdminEmail(profile);
     // Already licensed (same email / vault) → home, not payment again
     if (next.accessStatus === 'licensed' || next.bot.licenseKey?.trim()) {
       navigate('/app', { replace: true });

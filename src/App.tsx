@@ -69,6 +69,10 @@ function AdminGate({ children }: { children: React.ReactNode }) {
   const { admin, portalOpen } = useAdmin();
   if (!admin && !portalOpen) return <Navigate to="/" replace />;
   if (!admin) return <Navigate to="/admin/login" replace />;
+  // Unapproved mentors can never reach the portal, even with stale state
+  if (admin.role !== 'super' && admin.role !== 'admin') {
+    return <Navigate to="/admin/login" replace />;
+  }
   return <>{children}</>;
 }
 
