@@ -947,20 +947,34 @@ function withoutDeleted(
   return list.filter((c) => !deleted.has(c.email.toLowerCase()));
 }
 
+function pickClientStatus(
+  a: ClientRequest['status'],
+  b: ClientRequest['status'],
+): ClientRequest['status'] {
+  if (a === 'approved' || b === 'approved') return 'approved';
+  if (a === 'pending' || b === 'pending') return 'pending';
+  return 'rejected';
+}
+
+function mergeClientRecord(prev: ClientRequest, incoming: ClientRequest): ClientRequest {
+  const email = incoming.email.toLowerCase();
+  return {
+    ...prev,
+    ...incoming,
+    email,
+    status: pickClientStatus(prev.status, incoming.status),
+    paymentClaimed: Boolean(prev.paymentClaimed || incoming.paymentClaimed),
+    paymentClaimedAt: prev.paymentClaimedAt || incoming.paymentClaimedAt,
+  };
+}
+
 function mergeClientLists(...lists: ClientRequest[][]): ClientRequest[] {
   const byEmail = new Map<string, ClientRequest>();
   for (const list of lists) {
     for (const c of list) {
       const email = c.email.toLowerCase();
       const prev = byEmail.get(email);
-      if (!prev) {
-        byEmail.set(email, { ...c, email });
-        continue;
-      }
-      const rank = (x: ClientRequest) =>
-        (x.status === 'approved' ? 2 : x.status === 'pending' ? 1 : 0) +
-        (x.paymentClaimed ? 1 : 0);
-      byEmail.set(email, rank(c) >= rank(prev) ? { ...prev, ...c, email } : prev);
+      byEmail.set(email, prev ? mergeClientRecord(prev, { ...c, email }) : { ...c, email });
     }
   }
   return [...byEmail.values()].sort((a, b) =>
@@ -1124,9 +1138,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         } catch {
           remoteDeleted = [];
         }
-        setClients(
+        setClients((prev) =>
           withoutDeleted(
-            mergeClientLists(prepaidAsClientRequests(), list as ClientRequest[]),
+            mergeClientLists(prepaidAsClientRequests(), prev, list as ClientRequest[]),
             remoteDeleted,
           ),
         );
@@ -1601,17 +1615,24 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         return entry;
       },
       approveClient: (id) => {
-        setClients((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, status: 'approved' } : c)),
-        );
-        void patchClient(id, { status: 'approved' }).catch(() => undefined);
+        const hit = clients.find((c) => c.id === id);
+        if (!hit) return;
+        const email = hit.email.toLowerCase();
+        const approved: ClientRequest = { ...hit, status: 'approved' };
+        setClients((prev) => mergeClientLists(prev, [approved]));
         const sid = SUPER_ADMIN.user.id;
         patchWorkspace(sid, (ws) => ({
           ...ws,
-          clientRequests: ws.clientRequests.map((c) =>
-            c.id === id ? { ...c, status: 'approved' } : c,
-          ),
+          clientRequests: mergeClientLists(ws.clientRequests, [approved]),
         }));
+        void patchClient(email, { status: 'approved' })
+          .then((server) => {
+            if (!server) return;
+            setClients((prev) =>
+              mergeClientLists(prev, [{ ...(server as ClientRequest), status: 'approved' }]),
+            );
+          })
+          .catch(() => undefined);
       },
       rejectClient: (id) => {
         setClients((prev) =>
@@ -1716,12 +1737,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       },
       getClientByEmail: (email) => {
         const normalized = email.trim().toLowerCase();
-        return (
-          clients.find((c) => c.email.toLowerCase() === normalized) ||
-          Object.values(store.workspaces)
-            .flatMap((ws) => ws.clientRequests)
-            .find((c) => c.email.toLowerCase() === normalized)
-        );
+        const fromClients = clients.find((c) => c.email.toLowerCase() === normalized);
+        const fromWorkspace = Object.values(store.workspaces)
+          .flatMap((ws) => ws.clientRequests)
+          .find((c) => c.email.toLowerCase() === normalized);
+        if (!fromClients) return fromWorkspace;
+        if (!fromWorkspace) return fromClients;
+        return mergeClientLists([fromClients], [fromWorkspace])[0];
       },
       // Strict per-mentor isolation: even if data ever gets cross-merged,
       // an EA stamped with another mentor's id never renders in this portal

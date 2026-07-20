@@ -127,6 +127,24 @@ function clone(v) {
   return JSON.parse(JSON.stringify(v));
 }
 
+function pickClientStatus(a, b) {
+  if (a === 'approved' || b === 'approved') return 'approved';
+  if (a === 'pending' || b === 'pending') return 'pending';
+  return 'rejected';
+}
+
+function mergeClientRecord(prev, incoming) {
+  const email = String(incoming.email).toLowerCase();
+  return {
+    ...prev,
+    ...incoming,
+    email,
+    status: pickClientStatus(prev.status, incoming.status),
+    paymentClaimed: Boolean(prev.paymentClaimed || incoming.paymentClaimed),
+    paymentClaimedAt: prev.paymentClaimedAt || incoming.paymentClaimedAt,
+  };
+}
+
 /** Never drop existing clients / vault / licenses on sync — only add or upgrade */
 function mergeClients(existing = [], incoming = []) {
   const byEmail = new Map();
@@ -137,14 +155,7 @@ function mergeClients(existing = [], incoming = []) {
     if (!c?.email) continue;
     const email = String(c.email).toLowerCase();
     const prev = byEmail.get(email);
-    if (!prev) {
-      byEmail.set(email, { ...c, email });
-      continue;
-    }
-    const rank = (x) =>
-      (x.status === 'approved' ? 2 : x.status === 'pending' ? 1 : 0) +
-      (x.paymentClaimed ? 1 : 0);
-    byEmail.set(email, rank(c) >= rank(prev) ? { ...prev, ...c, email } : { ...c, ...prev, email });
+    byEmail.set(email, prev ? mergeClientRecord(prev, { ...c, email }) : { ...c, email });
   }
   return [...byEmail.values()];
 }
