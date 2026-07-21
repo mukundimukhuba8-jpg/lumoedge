@@ -127,14 +127,14 @@ export async function uploadMentorMedia(
         const hosted = await Promise.race([
           firebaseUploadDataUrl(`media/${key}`, dataUrl),
           new Promise<string | null>((resolve) =>
-            window.setTimeout(() => resolve(null), 10_000),
+            window.setTimeout(() => resolve(null), 25_000),
           ),
         ]);
         if (hosted) return hosted;
         const saved = await Promise.race([
           firebaseSaveImage(key, dataUrl),
           new Promise<string | null>((resolve) =>
-            window.setTimeout(() => resolve(null), 8_000),
+            window.setTimeout(() => resolve(null), 20_000),
           ),
         ]);
         if (saved) return dataUrl;
@@ -151,7 +151,7 @@ export async function uploadMentorMedia(
           body: JSON.stringify({ dataUrl }),
         }),
         new Promise<Response>((_, reject) =>
-          window.setTimeout(() => reject(new Error('timeout')), 10_000),
+          window.setTimeout(() => reject(new Error('timeout')), 25_000),
         ),
       ]);
       if (res.ok) {
@@ -170,7 +170,7 @@ export async function uploadMentorMedia(
           body: JSON.stringify({ key, dataUrl }),
         }),
         new Promise<Response>((_, reject) =>
-          window.setTimeout(() => reject(new Error('timeout')), 10_000),
+          window.setTimeout(() => reject(new Error('timeout')), 25_000),
         ),
       ]);
       if (res.ok) {
@@ -223,9 +223,9 @@ export async function uploadMentorMediaFile(
     // fall through to data-URL path
   }
 
-  if (file.size > 2_500_000) {
+  if (file.size > 6_000_000) {
     throw new Error(
-      'File too large for cloud upload (max ~2.5 MB). Use a shorter MP4 or compress the image.',
+      'File too large for cloud upload (max ~6 MB). Use a shorter MP4 or compress the image.',
     );
   }
   const dataUrl = await fileToDataUrl(file);

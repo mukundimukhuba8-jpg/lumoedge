@@ -1,6 +1,8 @@
 const OWNER = process.env.LUMO_DATA_OWNER || 'mukundimukhuba8-jpg';
 const REPO = process.env.LUMO_DATA_REPO || 'lumoedge';
 const PATH = process.env.LUMO_DATA_PATH || 'cloud-data/db.json';
+/** Base64 data URLs for mentor media — ~6 MB decoded image budget */
+const MAX_DATA_URL_CHARS = 8_000_000;
 
 function emptyDb() {
   return {
@@ -1121,6 +1123,10 @@ export default async function handler(req, res) {
         send(res, 400, { error: 'dataUrl required' });
         return;
       }
+      if (dataUrl.length > MAX_DATA_URL_CHARS) {
+        send(res, 413, { error: 'File too large for cloud upload (max ~6 MB image)' });
+        return;
+      }
       const { db, sha } = await loadDb();
       db.images = { ...(db.images || {}), [key]: dataUrl };
       await saveDb(db, sha);
@@ -1172,8 +1178,8 @@ export default async function handler(req, res) {
         send(res, 400, { error: 'key and dataUrl required' });
         return;
       }
-      if (dataUrl.length > 3_500_000) {
-        send(res, 413, { error: 'File too large for cloud upload' });
+      if (dataUrl.length > MAX_DATA_URL_CHARS) {
+        send(res, 413, { error: 'File too large for cloud upload (max ~6 MB image)' });
         return;
       }
       const { db, sha } = await loadDb();

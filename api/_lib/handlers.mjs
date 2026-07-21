@@ -9,6 +9,9 @@ function json(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+/** Base64 data URLs for mentor media — ~6 MB decoded image budget */
+const MAX_DATA_URL_CHARS = 8_000_000;
+
 async function readBody(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -250,6 +253,10 @@ export async function handleApi(req, res, pathname) {
       const dataUrl = String(body.dataUrl || '');
       if (!dataUrl.startsWith('data:')) {
         json(res, 400, { error: 'dataUrl required' });
+        return true;
+      }
+      if (dataUrl.length > MAX_DATA_URL_CHARS) {
+        json(res, 413, { error: 'File too large for cloud upload (max ~6 MB image)' });
         return true;
       }
       const { db, sha } = await loadDb();
