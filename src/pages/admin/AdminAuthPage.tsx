@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
+import { MENTOR_AUTH_MSG, MENTOR_LOGIN_UI_TIMEOUT_MS } from '../../lib/mentorAuthUi';
 import { useAppLogo } from '../../lib/appLogo';
 
 export function AdminAuthPage() {
@@ -13,6 +14,7 @@ export function AdminAuthPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const submitGuard = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -29,7 +31,34 @@ export function AdminAuthPage() {
     }
   }, [admin, navigate]);
 
+  useEffect(
+    () => () => {
+      if (submitGuard.current) window.clearTimeout(submitGuard.current);
+    },
+    [],
+  );
+
   const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
+
+  const finishSubmit = () => {
+    if (submitGuard.current) {
+      window.clearTimeout(submitGuard.current);
+      submitGuard.current = null;
+    }
+    setSubmitting(false);
+  };
+
+  const startSubmit = () => {
+    setError('');
+    setSuccess('');
+    setSubmitting(true);
+    if (submitGuard.current) window.clearTimeout(submitGuard.current);
+    submitGuard.current = window.setTimeout(() => {
+      console.warn('[mentor-auth] Login/register UI timeout — resetting spinner');
+      setSubmitting(false);
+      setError(MENTOR_AUTH_MSG.unavailable);
+    }, MENTOR_LOGIN_UI_TIMEOUT_MS);
+  };
 
   return (
     <div className="page cyber-page" style={{ textAlign: 'center' }}>
@@ -80,28 +109,32 @@ export function AdminAuthPage() {
         onSubmit={(e) => {
           e.preventDefault();
           if (submitting) return;
-          setError('');
-          setSuccess('');
-          setSubmitting(true);
+          startSubmit();
           if (tab === 'login') {
             void login(form.email, form.password)
               .then((err) => {
                 if (err) setError(err);
                 else navigate('/admin/dashboard');
               })
-              .finally(() => setSubmitting(false));
+              .catch((err) => {
+                console.error('[mentor-auth] Login failed', err);
+                setError(MENTOR_AUTH_MSG.unableToSignIn);
+              })
+              .finally(finishSubmit);
           } else {
             void registerAdmin(form)
               .then((err) => {
                 if (err) setError(err);
                 else {
-                  setSuccess(
-                    'Registration saved. Super Admin will see your email in Approve Admins. Log in after approval.',
-                  );
+                  setSuccess(MENTOR_AUTH_MSG.registerSuccess);
                   setTab('login');
                 }
               })
-              .finally(() => setSubmitting(false));
+              .catch((err) => {
+                console.error('[mentor-auth] Registration failed', err);
+                setError(MENTOR_AUTH_MSG.registerUnavailable);
+              })
+              .finally(finishSubmit);
           }
         }}
       >
@@ -119,7 +152,7 @@ export function AdminAuthPage() {
 
         <div className="field">
           <label>Email *</label>
-          <input value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="Enter your email" />
+          <input value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="Enter your email" autoComplete="email" />
         </div>
         <div className="field">
           <label>Password *</label>
@@ -130,6 +163,7 @@ export function AdminAuthPage() {
               onChange={(e) => set('password', e.target.value)}
               placeholder="Enter your password"
               style={{ width: '100%', paddingRight: 44 }}
+              autoComplete={tab === 'login' ? 'current-password' : 'new-password'}
             />
             <button
               type="button"

@@ -41,6 +41,8 @@ const FETCH_DB_CACHE_MS = 4000;
 const FETCH_SESSION_TIMEOUT_MS = 8000;
 const FETCH_CLIENTS_TIMEOUT_MS = 15_000;
 const FETCH_ADMINS_TIMEOUT_MS = 12_000;
+const FETCH_ADMINS_SOURCE_TIMEOUT_MS = 7_000;
+const FETCH_ADMINS_LOGIN_RETRIES = 2;
 const MENTOR_REGISTER_TIMEOUT_MS = 20_000;
 const MENTOR_APPROVE_TIMEOUT_MS = 20_000;
 
@@ -274,28 +276,57 @@ export async function repairClientQueueRemote(): Promise<{
   }
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => window.setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
+/** Firebase + API in parallel — sequential fetch was timing out before API could respond. */
+async function fetchAdminsParallel(): Promise<RemoteDb['auth']['admins'] | null> {
+  const fbWork = isFirebaseConfigured()
+    ? withTimeout(firebaseFetchAdmins(), FETCH_ADMINS_SOURCE_TIMEOUT_MS, null)
+    : Promise.resolve(null);
+  const apiWork = withTimeout(
+    req<RemoteDb['auth']['admins']>('/api/auth/admins').catch((err) => {
+      console.warn('[remote] fetchAdmins API failed', err);
+      return null;
+    }),
+    FETCH_ADMINS_SOURCE_TIMEOUT_MS,
+    null,
+  );
+  const [fb, api] = await Promise.all([fbWork, apiWork]);
+  if (fb === null && api === null) return null;
+  return mergeAdminsLive(
+    (fb || []) as Parameters<typeof mergeAdminsLive>[0],
+    (api || []) as Parameters<typeof mergeAdminsLive>[1],
+  );
+}
+
+async function fetchAdminsWithRetry(retries: number): Promise<RemoteDb['auth']['admins'] | null> {
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    const merged = await fetchAdminsParallel();
+    if (merged !== null) return merged;
+    if (attempt < retries - 1) await sleep(1200);
+  }
+  return null;
+}
+
 export async function fetchAdmins() {
-  const work = async (): Promise<RemoteDb['auth']['admins'] | null> => {
-    let fb: RemoteDb['auth']['admins'] | null = null;
-    let api: RemoteDb['auth']['admins'] | null = null;
+  return fetchWithTimeout(fetchAdminsWithRetry(1), FETCH_ADMINS_TIMEOUT_MS);
+}
 
-    if (isFirebaseConfigured()) {
-      fb = await firebaseFetchAdmins();
-    }
-    try {
-      api = await req<RemoteDb['auth']['admins']>('/api/auth/admins');
-    } catch {
-      api = null;
-    }
-
-    const merged = mergeAdminsLive(
-      (fb || []) as Parameters<typeof mergeAdminsLive>[0],
-      (api || []) as Parameters<typeof mergeAdminsLive>[1],
-    );
-    if (!merged.length && fb === null && api === null) return null;
-    return merged;
-  };
-  return fetchWithTimeout(work(), FETCH_ADMINS_TIMEOUT_MS);
+/** Login path — extra retry for flaky mobile networks. */
+export async function fetchAdminsForLogin() {
+  return fetchWithTimeout(
+    fetchAdminsWithRetry(FETCH_ADMINS_LOGIN_RETRIES),
+    FETCH_ADMINS_TIMEOUT_MS + 4000,
+  );
 }
 
 export async function repairAdminQueueRemote(): Promise<{
