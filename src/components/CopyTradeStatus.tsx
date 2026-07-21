@@ -1,73 +1,84 @@
 import { useEffect, useState } from 'react';
-import { Activity, Radio, Zap } from 'lucide-react';
-import { getMt5Token } from '../lib/mt5Session';
+import { Check, Loader2, X } from 'lucide-react';
 
-type CopyPhase = 'connected' | 'waiting' | 'copying' | 'sent';
+export type CopyTradePhase = 'executing' | 'success' | 'failed';
 
 type Props = {
-  email?: string;
-  mentorName?: string;
-  copyStatus?: string;
+  open: boolean;
+  phase: CopyTradePhase;
+  message: string;
+  progress: number;
+  onClose: () => void;
 };
 
-export function CopyTradeStatus({ email, mentorName, copyStatus }: Props) {
-  const [phase, setPhase] = useState<CopyPhase>('waiting');
-  const mt5Linked = Boolean(getMt5Token(email));
+export function CopyTradeStatus({ open, phase, message, progress, onClose }: Props) {
+  const [exiting, setExiting] = useState(false);
+  const failed = phase === 'failed';
+  const success = phase === 'success';
+  const isActive = phase === 'executing';
+
+  const lineText = failed
+    ? message || 'Trade execution failed'
+    : success
+      ? 'Trade Executed Successfully'
+      : message || 'Executing trade…';
 
   useEffect(() => {
-    if (!mt5Linked) {
-      setPhase('connected');
-      return;
-    }
-    if (copyStatus && /executed|copied|sent/i.test(copyStatus)) {
-      setPhase('sent');
-      const t = window.setTimeout(() => setPhase('connected'), 3000);
-      return () => window.clearTimeout(t);
-    }
-    if (copyStatus && /copy/i.test(copyStatus)) {
-      setPhase('copying');
-      return;
-    }
-    setPhase('waiting');
-  }, [copyStatus, mt5Linked]);
+    setExiting(false);
+  }, [open, phase, message]);
 
-  const label =
-    phase === 'sent'
-      ? 'Trade Sent Successfully'
-      : phase === 'copying'
-        ? 'Copying Trade'
-        : phase === 'waiting'
-          ? 'Waiting for Signal'
-          : mt5Linked
-            ? 'Connected'
-            : 'Connect MT5';
+  useEffect(() => {
+    if (!success || failed) return;
+    const hold = window.setTimeout(() => setExiting(true), 2000);
+    return () => window.clearTimeout(hold);
+  }, [success, failed]);
+
+  useEffect(() => {
+    if (!exiting) return;
+    const t = window.setTimeout(onClose, 420);
+    return () => window.clearTimeout(t);
+  }, [exiting, onClose]);
+
+  if (!open) return null;
 
   return (
-    <section className="glow-card cyber-card copy-engine">
-      <div className="copy-engine-head">
-        <Activity size={18} color="var(--electric)" />
-        <div>
-          <strong>Copy Trade From Your Mentor</strong>
-          <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
-            {mentorName || 'Mentor'} · live copy engine
-          </p>
+    <div
+      className={`te-popup-wrap${exiting ? ' te-popup-exit' : ''}`}
+      role="status"
+      aria-live="polite"
+      aria-label="Trade execution status"
+    >
+      <div className="te-popup">
+        <div className="te-popup-row" key={`${phase}-${lineText}`}>
+          <span className="te-popup-icon" aria-hidden>
+            {failed ? (
+              <X size={16} className="te-popup-fail-ico" />
+            ) : success ? (
+              <Check size={16} className="te-popup-check" />
+            ) : (
+              <Loader2 size={16} className="spin te-popup-spin" />
+            )}
+          </span>
+          <div className="te-popup-copy">
+            <span
+              className={`te-popup-line${success ? ' done' : ''}${failed ? ' failed' : ''}`}
+            >
+              {failed
+                ? lineText
+                : success
+                  ? `✓ ${lineText}`
+                  : `⚙️ ${lineText}`}
+            </span>
+            {isActive ? <span className="te-popup-sub">Sending trade to MT5…</span> : null}
+            {failed && message ? <span className="te-popup-sub">Check MetaTrader connection</span> : null}
+          </div>
         </div>
-        <span className={`copy-engine-pill phase-${phase}`}>
-          <Radio size={12} /> {label}
-        </span>
+
+        <div className="te-popup-progress" aria-hidden>
+          <span className="te-popup-progress-fill" style={{ width: `${progress}%` }} />
+        </div>
+        <div className="te-popup-pct">{progress}%</div>
       </div>
-      <div className="copy-engine-grid">
-        <div><span>Engine</span><strong>Online</strong></div>
-        <div><span>Broker</span><strong>{mt5Linked ? 'Connected' : '—'}</strong></div>
-        <div><span>Signal</span><strong>{phase === 'waiting' ? 'Idle' : 'Active'}</strong></div>
-        <div><span>Latency</span><strong>42ms</strong></div>
-        <div><span>Sent Today</span><strong>—</strong></div>
-        <div><span>Status</span><strong>{label}</strong></div>
-      </div>
-      <p className="copy-engine-foot muted">
-        <Zap size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
-        {copyStatus || 'Listening for mentor signals…'}
-      </p>
-    </section>
+    </div>
   );
 }

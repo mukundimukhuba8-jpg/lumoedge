@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { EaBackdrop } from './components/EaBackdrop';
 import { ThemeEngine } from './components/ThemeEngine';
+import { CopyTradeProvider } from './context/CopyTradeContext';
 import { useAdmin } from './context/AdminContext';
 import { useApp } from './context/AppContext';
 import {
@@ -32,12 +33,13 @@ import { ActivateLicensePage } from './pages/client/ActivateLicensePage';
 import { ChartScannerPage } from './pages/client/ChartScannerPage';
 import { HomePage } from './pages/client/HomePage';
 import { MetaTraderPage } from './pages/client/MetaTraderPage';
+import { SymbolsPage } from './pages/client/SymbolsPage';
 import { RegisterPage } from './pages/client/RegisterPage';
 import { SubscribePage } from './pages/client/SubscribePage';
 import { WaitingApprovalPage } from './pages/client/WaitingApprovalPage';
 
 function ClientAppGate({ children }: { children: React.ReactNode }) {
-  const { user, accessStatus, bot } = useApp();
+  const { user, accessStatus, bot, isPaused } = useApp();
   const location = useLocation();
   const [prefs, setPrefs] = useState(() => loadInterfacePrefs());
   const licensed = accessStatus === 'licensed' || Boolean(bot.licenseKey?.trim());
@@ -72,12 +74,17 @@ function ClientAppGate({ children }: { children: React.ReactNode }) {
   const hideBackdrop = location.pathname.includes('metatrader');
 
   return (
-    <>
+    <CopyTradeProvider
+      email={user?.email}
+      licenseKey={bot.licenseKey}
+      eaName={bot.displayName || bot.name || 'Lumo Edge'}
+      isPaused={isPaused}
+    >
       {hideBackdrop ? null : backdropSrc ? <EaBackdrop src={backdropSrc} kind={backdropKind} /> : null}
       <div className="page-enter page-slide" key={location.pathname}>
         {children}
       </div>
-    </>
+    </CopyTradeProvider>
   );
 }
 
@@ -142,6 +149,15 @@ export default function App() {
           element={
             <ClientAppGate>
               <ChartScannerPage />
+            </ClientAppGate>
+          }
+        />
+
+        <Route
+          path="/app/symbols"
+          element={
+            <ClientAppGate>
+              <SymbolsPage />
             </ClientAppGate>
           }
         />
