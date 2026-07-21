@@ -234,6 +234,25 @@ export async function accountDetails(id: string): Promise<Mt5AccountDetails> {
   return (data && typeof data === 'object' ? data : {}) as Mt5AccountDetails;
 }
 
+/** Broker instrument list for the connected session (symbol verification). */
+export async function fetchBrokerSymbols(id: string): Promise<string[]> {
+  const res = await mt5Fetch(`/Symbols?id=${encodeURIComponent(id)}`);
+  const data = await readBody(res);
+  if (!res.ok) {
+    throw new Error(typeof data === 'string' ? data : 'Symbols list unavailable');
+  }
+  if (!Array.isArray(data)) return [];
+  return data
+    .map((row) => {
+      if (row && typeof row === 'object') {
+        const r = row as { currency?: string; symbol?: string; name?: string };
+        return String(r.currency || r.symbol || r.name || '').trim();
+      }
+      return '';
+    })
+    .filter(Boolean);
+}
+
 /** Open positions / orders for the connected account */
 export async function openedOrders(id: string): Promise<Mt5OpenedOrder[]> {
   const res = await mt5Fetch(`/OpenedOrders?id=${encodeURIComponent(id)}`);

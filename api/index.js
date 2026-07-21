@@ -1263,26 +1263,39 @@ export default async function handler(req, res) {
       }
 
       const prompt =
-        'You analyze MT5 / trading chart screenshots.\n' +
-        'CRITICAL RULES FOR SYMBOL:\n' +
-        '- Read the EXACT trading symbol text shown on the chart UI (title bar, market watch, or chart header).\n' +
-        '- Do NOT guess, invent, or substitute a different pair (never default to XAUUSD/EURUSD unless that text is clearly visible).\n' +
-        '- If the symbol text is not clearly readable on the image, set symbol to null and symbol_visible to false.\n' +
-        '- Copy the symbol characters as shown (e.g. XAUUSD, EURUSD.r, NAS100, BTCUSD).\n' +
-        'Also read timeframe only if visible (M1,M5,M15,H1,H4,D1, etc), else null.\n' +
-        'Decide direction buy or sell from the chart structure only.\n' +
-        'CONFIDENCE (accuracy_percent):\n' +
-        '- Score YOUR REAL confidence that price moves in that direction, integer 55-89.\n' +
-        '- 84-89 = textbook setup: clean trend, clear structure break/retest, strong momentum.\n' +
-        '- 74-83 = decent setup with some noise or mixed signals.\n' +
-        '- 55-73 = choppy, ranging, unclear or counter-trend.\n' +
-        '- Use the whole range. NEVER default to a round number like 80 or 85 — pick the exact integer your analysis supports (e.g. 71, 77, 82, 86).\n' +
-        'PRICES (read numbers from the price scale on the right of the chart):\n' +
-        '- entry_price: the current/last price where the chart ends.\n' +
-        '- stop_loss: logical protective level — below the most recent swing low for buy, above the most recent swing high for sell.\n' +
-        '- Use the exact decimal style shown on the scale. If the scale is not readable, set both to null.\n' +
+        'You analyze MT5 / trading chart screenshots for institutional-grade trade signals.\n' +
+        'SYMBOL (highest priority):\n' +
+        '- Read the EXACT symbol text from the chart UI (title bar, tab, market watch, or header).\n' +
+        '- Copy characters exactly including broker suffixes/prefixes (.m, .M, .pro, .PRO, .std, .STD, .r, .ecn, etc.).\n' +
+        '- Do NOT guess, substitute, or default to XAUUSD/EURUSD unless that exact text is visible.\n' +
+        '- Distinguish similar symbols (EURUSD vs GBPUSD, XAUUSD vs XAGUSD, NAS100 vs US100).\n' +
+        '- If symbol text is unreadable, set symbol to null and symbol_visible to false.\n' +
+        'TIMEFRAME: read only if visible (M1,M5,M15,M30,H1,H4,D1,W1), else null.\n' +
+        'MARKET STRUCTURE:\n' +
+        '- Identify trend: higher highs/higher lows (bullish) or lower highs/lower lows (bearish).\n' +
+        '- Mark swing highs/lows, break of structure (BOS), change of character (CHoCH), and ranging vs trending.\n' +
+        '- Note key support/resistance zones from visible horizontal levels and recent swing points.\n' +
+        'CANDLESTICK & MOMENTUM:\n' +
+        '- Recognize engulfing, pin bars, doji indecision, momentum candles, and rejection wicks at S/R.\n' +
+        '- Weigh momentum vs exhaustion near structure.\n' +
+        'DIRECTION (buy or sell):\n' +
+        '- BUY only with bullish structure + supportive price action at demand/support.\n' +
+        '- SELL only with bearish structure + rejection at supply/resistance.\n' +
+        '- If structure is mixed, ranging, or unclear → lower confidence below 65 and explain why.\n' +
+        'CONFIDENCE (accuracy_percent) integer 55-89:\n' +
+        '- 84-89 = textbook: clean trend, BOS/retest, strong momentum, clear S/R, RR ≥ 1:2.\n' +
+        '- 74-83 = decent setup with minor noise or imperfect structure.\n' +
+        '- 65-73 = marginal — only tradeable if structure still favors direction.\n' +
+        '- 55-64 = low confidence — choppy, counter-trend, or unreadable; prefer this range when unsure.\n' +
+        '- NEVER use lazy round numbers (80, 85) — pick the exact integer your analysis supports.\n' +
+        '- If confidence would be below 65, still return JSON but set accuracy_percent in 55-64 range.\n' +
+        'PRICES (from the right-hand price scale):\n' +
+        '- entry_price: last/current visible price where the chart ends.\n' +
+        '- stop_loss: logical protective level — below recent swing low for buy, above swing high for sell.\n' +
+        '- Place SL beyond structure, not inside noise. Target minimum 1:1.5 risk:reward to next S/R.\n' +
+        '- Match decimal precision on the scale. If scale unreadable, set entry_price and stop_loss to null.\n' +
         'Reply ONLY compact JSON:\n' +
-        '{"symbol":"EXACT_OR_null","symbol_visible":true,"timeframe":"M15_or_null","direction":"buy|sell","accuracy_percent":77,"entry_price":2345.6,"stop_loss":2339.8,"summary":"one short sentence"}';
+        '{"symbol":"EXACT_OR_null","symbol_visible":true,"timeframe":"M15_or_null","direction":"buy|sell","accuracy_percent":77,"entry_price":2345.6,"stop_loss":2339.8,"summary":"one concise sentence citing structure + pattern"}';
 
       const upstream = await fetch(CHART_SCAN_API_URL, {
         method: 'POST',
@@ -1366,6 +1379,14 @@ export default async function handler(req, res) {
       }
       // Confidence floor/ceiling: honest range, never past 89
       accuracy = Math.max(55, Math.min(89, Math.round(accuracy)));
+      if (accuracy < 65) {
+        send(res, 422, {
+          ok: false,
+          accuracy,
+          error: `Low confidence (${accuracy}%). Chart setup unclear — no trade signal. Upload a clearer chart or wait for a stronger setup.`,
+        });
+        return;
+      }
       const rawDir = String(parsed.direction || parsed.side || '').toLowerCase();
       if (!rawDir.includes('sell') && !rawDir.includes('buy')) {
         send(res, 422, {

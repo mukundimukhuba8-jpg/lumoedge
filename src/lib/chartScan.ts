@@ -2,6 +2,7 @@ import { fetchDb, pushDb } from './remote';
 import { loadJSON, saveJSON } from './storage';
 
 export const DAILY_SCAN_LIMIT = 7;
+export const MIN_SCAN_CONFIDENCE = 65;
 export const SCAN_RESET_EVENT = 'ub-scan-reset';
 export const SAST_TIMEZONE = 'Africa/Johannesburg';
 
