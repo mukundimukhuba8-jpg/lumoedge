@@ -4,14 +4,18 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { CopyTradeStatus, type CopyTradePhase } from '../components/CopyTradeStatus';
 import {
   executeCopyOrder,
+  isCopyOrderProcessed,
+  markProcessed,
   mentorIdForLicense,
-  seedProcessedOrders,
+  rememberLicenseOwner,
+  sortCopyOrders,
   type CopyOrderPayload,
 } from '../lib/copyTrade';
 import { getSastDayKey } from '../lib/chartScan';
@@ -60,12 +64,14 @@ export function CopyTradeProvider({
   licenseKey,
   eaName,
   isPaused,
+  ownerAdminId,
   children,
 }: {
   email?: string;
   licenseKey?: string;
   eaName: string;
   isPaused: boolean;
+  ownerAdminId?: string;
   children: ReactNode;
 }) {
   const mt5Linked = Boolean(getMt5Token(email));
@@ -77,8 +83,15 @@ export function CopyTradeProvider({
   const [popupPhase, setPopupPhase] = useState<CopyTradePhase>('executing');
   const [popupMessage, setPopupMessage] = useState('');
   const [popupProgress, setPopupProgress] = useState(0);
+  const lastHandledRef = useRef('');
 
   const dismissPopup = useCallback(() => setPopupOpen(false), []);
+
+  useEffect(() => {
+    if (licenseKey && ownerAdminId) {
+      rememberLicenseOwner(licenseKey, ownerAdminId);
+    }
+  }, [licenseKey, ownerAdminId]);
 
   useEffect(() => {
     if (!email || !licenseKey || isPaused) {
@@ -90,25 +103,38 @@ export function CopyTradeProvider({
       return;
     }
 
-    const mentorId = mentorIdForLicense(licenseKey);
-    if (!mentorId) return;
+    const mentorId = ownerAdminId || mentorIdForLicense(licenseKey);
+    if (!mentorId) {
+      setStatusLabel('License Not Linked');
+      setStatusDetail('Reconnect your license key to receive copy trades.');
+      return;
+    }
 
-    let seeded = false;
-    const handleOrders = (orders: Array<Record<string, unknown>>) => {
-      if (!seeded) {
-        seedProcessedOrders(
-          mentorId,
-          orders.map((o) => String(o.id || '')).filter(Boolean),
-        );
-        seeded = true;
-        return;
-      }
+    rememberLicenseOwner(licenseKey, mentorId);
+    let primed = false;
 
+    const handleOrders = (rawOrders: Array<Record<string, unknown>>) => {
+      const orders = sortCopyOrders(rawOrders);
       const latest = orders[0];
       if (!latest?.id) return;
 
+      const orderId = String(latest.id);
+
+      if (!primed) {
+        primed = true;
+        for (const row of orders.slice(1)) {
+          const id = String(row.id || '');
+          if (id && !isCopyOrderProcessed(mentorId, id)) {
+            markProcessed(mentorId, id);
+          }
+        }
+      }
+
+      if (orderId === lastHandledRef.current) return;
+      if (isCopyOrderProcessed(mentorId, orderId)) return;
+
       const order: CopyOrderPayload = {
-        id: String(latest.id),
+        id: orderId,
         symbol: String(latest.symbol || 'XAUUSD'),
         side: String(latest.side || 'buy') === 'sell' ? 'sell' : 'buy',
         volume: Number(latest.volume) || 0.01,
@@ -116,8 +142,10 @@ export function CopyTradeProvider({
         takeProfit: Number(latest.takeProfit) || 0,
         comment: String(latest.comment || ''),
         trades: Number(latest.trades) || 1,
+        createdAt: String(latest.createdAt || ''),
       };
 
+      lastHandledRef.current = orderId;
       const sideLabel = order.side === 'sell' ? 'SELL' : 'BUY';
       setEngineSignal('active');
       setStatusLabel('Executing Trade');
@@ -157,6 +185,7 @@ export function CopyTradeProvider({
           return;
         }
 
+        lastHandledRef.current = '';
         setPopupPhase('failed');
         setPopupMessage(result.message);
         setPopupProgress(100);
@@ -168,7 +197,7 @@ export function CopyTradeProvider({
 
     const unsub = firebaseWatchMentorOrders(mentorId, handleOrders);
     return () => unsub();
-  }, [email, licenseKey, eaName, isPaused, mt5Linked]);
+  }, [email, licenseKey, eaName, isPaused, ownerAdminId]);
 
   const value = useMemo<CopyTradeEngineState>(
     () => ({

@@ -225,6 +225,7 @@ export type CopyOrder = {
   comment: string;
   trades: number;
   copiedTo: number;
+  createdAt?: string;
 };
 
 export type AdminWorkspace = {
@@ -2258,6 +2259,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ) as LicenseRecord;
           try {
             persistAssignment(branded, branded.ownerAdminId || null);
+            if (branded.ownerAdminId) {
+              void import('../lib/copyTrade').then(({ rememberLicenseOwner }) =>
+                rememberLicenseOwner(branded.key, branded.ownerAdminId),
+              );
+            }
           } catch (err) {
             licenseWarn('claim', 'local cache skipped', {
               error: err instanceof Error ? err.message : String(err),
@@ -2524,12 +2530,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             ...order,
             id: `ord-${Date.now()}`,
             copiedTo: 0,
+            createdAt: new Date().toISOString(),
           };
         }
+        const licensedClients = workspace.licenses.filter(
+          (l) => l.status === 'active' || l.status === 'assigned',
+        ).length;
         const created: CopyOrder = {
           ...order,
           id: `ord-${Date.now()}`,
-          copiedTo: workspace.licenses.filter((l) => l.status === 'assigned').length,
+          copiedTo: licensedClients,
+          createdAt: new Date().toISOString(),
         };
         patchWorkspace(adminId, (ws) => ({
           ...ws,
