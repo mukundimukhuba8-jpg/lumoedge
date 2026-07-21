@@ -435,6 +435,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const displayName =
           sync?.displayName ?? sync?.name ?? session.bot.displayName;
         const normalizedKey = normalizeLicenseKey(key);
+        void import('../lib/copyTrade').then(({ rememberLicenseOwner, mentorIdForLicense }) => {
+          const owner = mentorIdForLicense(normalizedKey);
+          if (owner) rememberLicenseOwner(normalizedKey, owner);
+        });
         persist({
           ...session,
           accessStatus: 'licensed',

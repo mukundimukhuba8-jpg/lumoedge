@@ -50,7 +50,7 @@ type Tab = 'allowed' | 'selected';
 
 export function SymbolsPage() {
   const navigate = useNavigate();
-  const { bot, setSymbols } = useApp();
+  const { bot, setSymbols, isPaused } = useApp();
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
   const [tab, setTab] = useState<Tab>('allowed');
   const [localSymbols, setLocalSymbols] = useState(bot.symbols);
@@ -96,7 +96,7 @@ export function SymbolsPage() {
           <span className="symbols-header-spacer" aria-hidden />
         </header>
 
-        <CopyTradeEnginePanel eaTitle={eaTitle} />
+        <CopyTradeEnginePanel eaTitle={eaTitle} isPaused={isPaused} />
 
         <div className="symbols-tabs" role="tablist" aria-label="Symbol views">
           <button

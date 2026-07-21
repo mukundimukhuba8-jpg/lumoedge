@@ -800,7 +800,7 @@ export function OpenOrdersPage() {
     });
     alert(
       copy
-        ? `Copy trade sent to ${order.copiedTo} licensed clients. They must have MetaTrader connected on the app.`
+        ? `Copy trade queued for ${order.copiedTo} licensed client${order.copiedTo === 1 ? '' : 's'}. Clients must have MetaTrader connected in the app.`
         : `Order saved: ${order.side.toUpperCase()} ${order.symbol}`,
     );
   };

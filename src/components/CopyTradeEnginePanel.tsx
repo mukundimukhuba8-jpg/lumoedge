@@ -3,14 +3,16 @@ import { useCopyTradeEngine } from '../context/CopyTradeContext';
 
 type Props = {
   eaTitle?: string;
+  isPaused?: boolean;
 };
 
-export function CopyTradeEnginePanel({ eaTitle }: Props) {
+export function CopyTradeEnginePanel({ eaTitle, isPaused = false }: Props) {
   const { mt5Linked, engineSignal, statusLabel, statusDetail, sentToday } =
     useCopyTradeEngine();
 
-  const pillPhase =
-    statusLabel === 'Trade Sent Successfully'
+  const pillPhase = isPaused
+    ? 'connected'
+    : statusLabel === 'Trade Sent Successfully'
       ? 'sent'
       : statusLabel === 'Executing Trade'
         ? 'copying'
@@ -18,10 +20,19 @@ export function CopyTradeEnginePanel({ eaTitle }: Props) {
           ? 'waiting'
           : 'connected';
 
+  const displayStatus = isPaused ? 'Paused' : statusLabel;
+  const displayDetail = isPaused
+    ? 'Press Resume on Home to start the EA.'
+    : statusDetail;
+
   return (
     <section className="glow-card cyber-card copy-engine">
       <div className="copy-engine-head">
-        <Activity size={18} color="var(--electric)" />
+        <Activity
+          size={18}
+          color="var(--electric)"
+          className={isPaused ? '' : 'copy-engine-live-ico'}
+        />
         <div>
           <strong>Engine</strong>
           <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
@@ -29,7 +40,7 @@ export function CopyTradeEnginePanel({ eaTitle }: Props) {
           </p>
         </div>
         <span className={`copy-engine-pill phase-${pillPhase}`}>
-          <Radio size={12} /> {statusLabel}
+          <Radio size={12} /> {displayStatus}
         </span>
       </div>
       <div className="copy-engine-grid">
@@ -55,12 +66,12 @@ export function CopyTradeEnginePanel({ eaTitle }: Props) {
         </div>
         <div>
           <span>Status</span>
-          <strong>{statusLabel}</strong>
+          <strong>{displayStatus}</strong>
         </div>
       </div>
       <p className="copy-engine-foot muted">
         <Zap size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
-        {statusDetail}
+        {displayDetail}
       </p>
     </section>
   );

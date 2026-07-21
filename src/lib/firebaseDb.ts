@@ -262,6 +262,15 @@ function mergeWorkspace(
         ...((Array.isArray(b.revokedKeys) ? b.revokedKeys : []) as string[]),
       ]),
     ),
+    orders: mergeById(
+      (Array.isArray(a.orders) ? a.orders : []) as Record<string, unknown>[],
+      (Array.isArray(b.orders) ? b.orders : []) as Record<string, unknown>[],
+      (o) => String(o.id || ''),
+    ).sort((x, y) => {
+      const xi = Number(String(x.id || '').replace(/^ord-/, '')) || 0;
+      const yi = Number(String(y.id || '').replace(/^ord-/, '')) || 0;
+      return yi - xi;
+    }),
   };
 }
 

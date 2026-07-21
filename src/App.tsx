@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { EaBackdrop } from './components/EaBackdrop';
 import { ThemeEngine } from './components/ThemeEngine';
+import { mentorIdForLicense } from './lib/copyTrade';
 import { CopyTradeProvider } from './context/CopyTradeContext';
 import { useAdmin } from './context/AdminContext';
 import { useApp } from './context/AppContext';
@@ -73,12 +74,15 @@ function ClientAppGate({ children }: { children: React.ReactNode }) {
   // Broker page stays clean dark (admin portal theme) — no photo backdrop
   const hideBackdrop = location.pathname.includes('metatrader');
 
+  const ownerAdminId = bot.licenseKey ? mentorIdForLicense(bot.licenseKey) : '';
+
   return (
     <CopyTradeProvider
       email={user?.email}
       licenseKey={bot.licenseKey}
       eaName={bot.displayName || bot.name || 'Lumo Edge'}
       isPaused={isPaused}
+      ownerAdminId={ownerAdminId}
     >
       {hideBackdrop ? null : backdropSrc ? <EaBackdrop src={backdropSrc} kind={backdropKind} /> : null}
       <div className="page-enter page-slide" key={location.pathname}>

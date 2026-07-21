@@ -2667,10 +2667,16 @@ a {
   padding: 6px;
 }
 
-.ea-status-avatar-ring {
+.ea-status-avatar-wrap {
+  position: relative;
   width: 92px;
   height: 92px;
   margin: 0 auto 14px;
+}
+
+.ea-status-avatar-ring {
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   border: 2.5px solid #34d399;
   box-shadow: 0 0 22px rgba(52, 211, 153, 0.5);
@@ -2678,6 +2684,44 @@ a {
   display: grid;
   place-items: center;
   background: #0a0f0c;
+}
+
+.ea-status-live-ring {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid rgba(52, 211, 153, 0.55);
+  animation: ea-float-pulse 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.ea-float-avatar {
+  position: relative;
+}
+
+.ea-float-live::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 2px solid rgba(34, 211, 238, 0.55);
+  animation: ea-float-pulse 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes ea-float-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0;
+  }
+}
+
+.copy-engine-live-ico {
+  animation: copy-pulse 1.2s ease-in-out infinite;
 }
 
 .ea-status-avatar-ring img {

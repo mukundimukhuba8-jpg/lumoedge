@@ -2,6 +2,7 @@
 
 import { firebaseUploadDataUrl, firebaseUploadFile, firebaseSaveImage } from './firebaseDb';
 import { isFirebaseConfigured } from './firebase';
+import { saveEaImage } from './storage';
 
 export type MentorMediaSlotId =
   | 'profile-1'
@@ -113,61 +114,83 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-/** Upload data URL — Firebase Storage / RTDB first, then /api fallbacks. */
+/** Upload data URL — local save first, then cloud with short timeouts. */
 export async function uploadMentorMedia(
   key: string,
   dataUrl: string,
 ): Promise<{ url: string }> {
-  if (isFirebaseConfigured()) {
-    const hosted = await firebaseUploadDataUrl(`media/${key}`, dataUrl);
-    if (hosted) return { url: hosted };
-    const saved = await firebaseSaveImage(key, dataUrl);
-    if (saved) return { url: dataUrl };
-  }
+  saveEaImage(key, dataUrl);
 
-  const health = await fetch('/api/health')
-    .then((r) => r.json())
-    .catch(() => null as { durable?: boolean } | null);
-
-  // Shared images store (works on Vercel + local)
-  try {
-    const res = await fetch(`/api/images/${encodeURIComponent(key)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataUrl }),
-    });
-    if (res.ok) {
-      if (health?.durable) {
-        const data = (await res.json()) as { url?: string };
-        return { url: data.url || `/api/images/${encodeURIComponent(key)}` };
+  const tryCloud = async (): Promise<string | null> => {
+    if (isFirebaseConfigured()) {
+      try {
+        const hosted = await Promise.race([
+          firebaseUploadDataUrl(`media/${key}`, dataUrl),
+          new Promise<string | null>((resolve) =>
+            window.setTimeout(() => resolve(null), 25_000),
+          ),
+        ]);
+        if (hosted) return hosted;
+        const saved = await Promise.race([
+          firebaseSaveImage(key, dataUrl),
+          new Promise<string | null>((resolve) =>
+            window.setTimeout(() => resolve(null), 20_000),
+          ),
+        ]);
+        if (saved) return dataUrl;
+      } catch {
+        // fall through
       }
-      return { url: dataUrl };
     }
-  } catch {
-    // try media endpoint next
+
+    try {
+      const res = await Promise.race([
+        fetch(`/api/images/${encodeURIComponent(key)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl }),
+        }),
+        new Promise<Response>((_, reject) =>
+          window.setTimeout(() => reject(new Error('timeout')), 25_000),
+        ),
+      ]);
+      if (res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { url?: string };
+        return data.url || `/api/images/${encodeURIComponent(key)}`;
+      }
+    } catch {
+      // try media endpoint next
+    }
+
+    try {
+      const res = await Promise.race([
+        fetch('/api/media', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, dataUrl }),
+        }),
+        new Promise<Response>((_, reject) =>
+          window.setTimeout(() => reject(new Error('timeout')), 25_000),
+        ),
+      ]);
+      if (res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { url?: string };
+        return data.url || `/api/images/${encodeURIComponent(key)}`;
+      }
+    } catch {
+      // ignore
+    }
+
+    return null;
+  };
+
+  const cloud = await tryCloud();
+  if (cloud) {
+    saveEaImage(key, cloud.startsWith('data:') ? dataUrl : cloud);
+    return { url: cloud };
   }
 
-  try {
-    const res = await fetch('/api/media', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, dataUrl }),
-    });
-    if (res.ok) {
-      if (health?.durable) {
-        const data = (await res.json()) as { url: string };
-        if (data.url) return data;
-      }
-      return { url: dataUrl };
-    }
-    const err = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(err?.error || 'Upload failed');
-  } catch (e) {
-    if (e instanceof Error && e.message !== 'Upload failed') {
-      return { url: dataUrl };
-    }
-    throw e instanceof Error ? e : new Error('Upload failed');
-  }
+  return { url: dataUrl };
 }
 
 /** Upload original File (videos prefer Firebase / binary; images fall back to data URL). */
@@ -200,9 +223,9 @@ export async function uploadMentorMediaFile(
     // fall through to data-URL path
   }
 
-  if (file.size > 2_500_000) {
+  if (file.size > 6_000_000) {
     throw new Error(
-      'File too large for cloud upload (max ~2.5 MB). Use a shorter MP4 or compress the image.',
+      'File too large for cloud upload (max ~6 MB). Use a shorter MP4 or compress the image.',
     );
   }
   const dataUrl = await fileToDataUrl(file);
