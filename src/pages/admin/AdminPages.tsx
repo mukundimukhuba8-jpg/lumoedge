@@ -1262,6 +1262,8 @@ export function SubscriptionsPage() {
   const [manualSaving, setManualSaving] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [approveMsg, setApproveMsg] = useState('');
   const query = q.trim().toLowerCase();
   const match = (c: { firstName: string; lastName: string; email: string }) => {
     if (!query) return true;
@@ -1287,7 +1289,7 @@ export function SubscriptionsPage() {
       if (result.ok) {
         setManualTone('ok');
         setManualMsg(
-          `${result.client.firstName} ${result.client.lastName} (${result.client.email}) added as approved — ready for license key.`,
+          `${result.client.firstName} ${result.client.lastName} (${result.client.email}) saved as approved — ready for license key.`,
         );
         setManualEmail('');
         setManualFirst('');
@@ -1307,6 +1309,20 @@ export function SubscriptionsPage() {
   const onDelete = (id: string, email: string) => {
     if (!confirm(`Delete ${email}? This removes them from the queue.`)) return;
     deleteClient(id);
+  };
+
+  const onApprove = async (id: string, label: string) => {
+    if (approvingId) return;
+    setApproveMsg('');
+    setApprovingId(id);
+    try {
+      await approveClient(id);
+      setApproveMsg(`${label} approved — saved instantly. Cloud sync continues in background.`);
+    } catch {
+      setApproveMsg('Could not approve — try again.');
+    } finally {
+      setApprovingId(null);
+    }
   };
 
   const onRefreshQueue = async () => {
@@ -1380,7 +1396,7 @@ export function SubscriptionsPage() {
           disabled={manualSaving || !manualEmail.trim()}
           onClick={() => void onAddManual()}
         >
-          {manualSaving ? 'Adding…' : 'Add as approved'}
+          {manualSaving ? 'Saving…' : 'Save as approved'}
         </button>
         {manualMsg ? (
           <p
@@ -1395,6 +1411,19 @@ export function SubscriptionsPage() {
           </p>
         ) : null}
       </div>
+
+      {approveMsg ? (
+        <p
+          style={{
+            margin: 0,
+            color: approveMsg.startsWith('Could') ? '#f87171' : 'var(--green)',
+            fontWeight: 700,
+            fontSize: 13,
+          }}
+        >
+          {approveMsg}
+        </p>
+      ) : null}
 
       <div className="field" style={{ marginBottom: 0 }}>
         <label>Search</label>
@@ -1494,9 +1523,12 @@ export function SubscriptionsPage() {
                   className="btn btn-blue"
                   type="button"
                   style={{ flex: 1 }}
-                  onClick={() => approveClient(c.id)}
+                  disabled={approvingId === c.id}
+                  onClick={() =>
+                    void onApprove(c.id, `${c.firstName} ${c.lastName}`.trim() || c.email)
+                  }
                 >
-                  Approve
+                  {approvingId === c.id ? 'Saving…' : 'Approve'}
                 </button>
                 <button
                   className="btn btn-ghost"
