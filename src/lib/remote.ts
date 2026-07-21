@@ -41,8 +41,6 @@ const FETCH_CLIENTS_TIMEOUT_MS = 15_000;
 const FETCH_ADMINS_TIMEOUT_MS = 12_000;
 const MENTOR_REGISTER_TIMEOUT_MS = 20_000;
 const MENTOR_APPROVE_TIMEOUT_MS = 20_000;
-const MENTOR_LOGIN_TIMEOUT_MS = 12_000;
-export { MENTOR_LOGIN_TIMEOUT_MS };
 
 function fetchWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([
