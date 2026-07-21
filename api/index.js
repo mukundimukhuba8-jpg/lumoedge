@@ -1069,7 +1069,6 @@ export default async function handler(req, res) {
 
     if (pathname === '/api/clients' && req.method === 'POST') {
       const body = await readBody(req);
-      const { db, sha } = await loadDb();
       const email = String(body.email || '')
         .trim()
         .toLowerCase();
@@ -1077,25 +1076,38 @@ export default async function handler(req, res) {
         send(res, 400, { error: 'email, firstName, lastName required' });
         return;
       }
-      const existing = (db.clients || []).find((c) => c.email === email);
-      if (existing) {
-        send(res, 200, existing);
-        return;
-      }
-      const entry = {
-        id: `cli-${Date.now()}`,
+      const {
+        firebasePostClientEntry,
+        firebasePatchClientById,
+      } = await import('./_lib/clientMerge.mjs');
+      let created = await firebasePostClientEntry({
         email,
         firstName: String(body.firstName).trim(),
         lastName: String(body.lastName).trim(),
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        notifiedAt: new Date().toISOString(),
-        paymentClaimed: false,
-      };
-      db.clients = [entry, ...(db.clients || [])];
-      mirrorClientToSuper(db, entry);
-      const saved = await saveDb(db, sha);
-      const created = (saved.db.clients || []).find((c) => c.email === email) || entry;
+        status: body.status || 'pending',
+        paymentClaimed: body.paymentClaimed,
+        paymentClaimedAt: body.paymentClaimedAt,
+      });
+      if (body.status === 'approved' || body.paymentClaimed) {
+        created =
+          (await firebasePatchClientById(email, {
+            status: 'approved',
+            paymentClaimed: true,
+            paymentClaimedAt: body.paymentClaimedAt || new Date().toISOString(),
+          })) || created;
+      }
+      if (!created) {
+        send(res, 503, { error: 'Could not save client to Firebase' });
+        return;
+      }
+      const { db, sha } = await loadDb();
+      db.clients = mergeClients(toArray(db.clients), [created]);
+      mirrorClientToSuper(db, created);
+      try {
+        await saveDb(db, sha);
+      } catch {
+        // Firebase is the live source of truth
+      }
       send(res, 201, created);
       return;
     }
@@ -1103,39 +1115,26 @@ export default async function handler(req, res) {
     if (pathname.startsWith('/api/clients/') && req.method === 'PATCH') {
       const id = decodeURIComponent(pathname.replace('/api/clients/', ''));
       const body = await readBody(req);
+      const { firebasePatchClientById } = await import('./_lib/clientMerge.mjs');
+      // Live registrations often exist only in Firebase — patch Firebase first.
+      const fbUpdated = await firebasePatchClientById(id, body);
+      if (!fbUpdated) {
+        send(res, 404, {
+          error: 'Client not found in Firebase',
+          id,
+          table: 'lumo/clients',
+        });
+        return;
+      }
       const { db, sha } = await loadDb();
-      db.clients = toArray(db.clients).map((c) => {
-        if (c.id !== id && String(c.email || '').toLowerCase() !== id.toLowerCase()) {
-          return c;
-        }
-        return {
-          ...c,
-          ...body,
-          id: c.id,
-          email: c.email,
-          status: pickClientStatus(c.status, body.status ?? c.status),
-          paymentClaimed:
-            body.paymentClaimed === true || c.paymentClaimed === true
-              ? true
-              : Boolean(body.paymentClaimed ?? c.paymentClaimed),
-          paymentClaimedAt:
-            body.paymentClaimed === true
-              ? body.paymentClaimedAt || new Date().toISOString()
-              : c.paymentClaimedAt,
-        };
-      });
-      const updated =
-        db.clients.find((c) => c.id === id) ||
-        db.clients.find((c) => String(c.email || '').toLowerCase() === id.toLowerCase());
-      if (updated) mirrorClientToSuper(db, updated);
+      db.clients = mergeClients(toArray(db.clients), [fbUpdated]);
+      mirrorClientToSuper(db, fbUpdated);
       try {
         await saveDb(db, sha);
       } catch {
-        // Firebase still holds the live queue even if GitHub write fails
+        // Firebase write already succeeded
       }
-      const { firebasePatchClientById } = await import('./_lib/clientMerge.mjs');
-      const fbUpdated = await firebasePatchClientById(id, body);
-      send(res, 200, fbUpdated || updated || null);
+      send(res, 200, fbUpdated);
       return;
     }
 

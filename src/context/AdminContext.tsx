@@ -75,7 +75,7 @@ import {
   validateLicenseEmailAccess,
 } from '../lib/licenseClaim';
 import { approvalError, approvalLog, approvalWarn } from '../lib/approvalLog';
-import { countClientQueue, pickClientStatus } from '../lib/clientQueue';
+import { countClientQueue, normalizeClientStatus, pickClientStatus } from '../lib/clientQueue';
 import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
 
 /** Blocks destructive vault sync while a publish is in flight. */
@@ -933,6 +933,7 @@ type Ctx = {
     deletedLicenses: number;
     totalClients: number;
     pendingClients: number;
+    approvedClients: number;
   };
 };
 
@@ -1699,6 +1700,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             lastName: upgraded.lastName,
           })
             .then(async (serverEntry) => {
+              if (!serverEntry) return;
               if (asPaid) {
                 await patchClient(serverEntry.id || upgraded.id, {
                   status: 'approved',
@@ -1765,6 +1767,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           lastName: entry.lastName,
         })
           .then(async (serverEntry) => {
+            if (!serverEntry) return;
             if (asPaid) {
               await patchClient(serverEntry.id || entry.id, {
                 status: 'approved',
@@ -1798,7 +1801,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           clients.find((c) => c.email.toLowerCase() === id.toLowerCase());
         if (!hit) {
           approvalWarn('client', 'approve_target_missing', { id });
-          return;
+          throw new Error('Client not found in queue.');
         }
         const email = hit.email.toLowerCase();
         approvalLog('client', 'approve_clicked', {
@@ -1813,95 +1816,63 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           paymentClaimed: true,
           paymentClaimedAt: claimedAt,
         };
-        setClients((prev) => {
-          const merged = mergeClientLists(prev, [approved]);
-          approvalLog('client', 'local_state_updated', {
-            email,
-            after: 'approved',
-            ...countClientQueue(merged),
-          });
-          void pushDb({ clients: merged })
-            .then(() => {
-              approvalLog('client', 'database_update_success', { email, after: 'approved' });
-            })
-            .catch((err) => {
-              approvalError('client', 'database_update_failure', {
-                email,
-                error: err instanceof Error ? err.message : String(err),
-              });
-            });
-          return merged;
-        });
+        setClients((prev) => mergeClientLists(prev, [approved]));
         const sid = SUPER_ADMIN.user.id;
         patchWorkspace(sid, (ws) => ({
           ...ws,
           clientRequests: mergeClientLists(ws.clientRequests, [approved]),
         }));
 
-        void (async () => {
-          const persistApproval = async (server: ClientRequest | null) => {
-            const merged = server
-              ? ({
-                  ...(server as ClientRequest),
-                  status: 'approved',
-                  paymentClaimed: true,
-                  paymentClaimedAt: claimedAt,
-                } as ClientRequest)
-              : approved;
-            setClients((prev) => mergeClientLists(prev, [merged]));
-            patchWorkspace(sid, (ws) => ({
-              ...ws,
-              clientRequests: mergeClientLists(ws.clientRequests, [merged]),
-            }));
-            try {
-              await Promise.race([
-                pushSession(email, { accessStatus: 'approved' }),
-                new Promise((resolve) => window.setTimeout(resolve, 8000)),
-              ]);
-              approvalLog('client', 'session_sync_success', { email, accessStatus: 'approved' });
-            } catch (err) {
-              approvalWarn('client', 'session_sync_failure', {
-                email,
-                error: err instanceof Error ? err.message : String(err),
-              });
-            }
-          };
-          try {
-            let server = await Promise.race([
-              patchClient(hit.id, {
-                status: 'approved',
-                paymentClaimed: true,
-                paymentClaimedAt: claimedAt,
-              }),
-              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
-            ]);
-            if (!server) {
-              server = await Promise.race([
-                patchClient(email, {
-                  status: 'approved',
-                  paymentClaimed: true,
-                  paymentClaimedAt: claimedAt,
-                }),
-                new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
-              ]);
-            }
-            if (server) {
-              approvalLog('client', 'cloud_patch_success', {
-                email,
-                after: (server as ClientRequest).status,
-              });
-            } else {
-              approvalWarn('client', 'cloud_patch_timeout', { email });
-            }
-            await persistApproval(server as ClientRequest | null);
-          } catch (err) {
-            approvalError('client', 'cloud_patch_failure', {
-              email,
-              error: err instanceof Error ? err.message : String(err),
-            });
-            await persistApproval(approved);
-          }
-        })();
+        let server = await patchClient(hit.id, {
+          status: 'approved',
+          paymentClaimed: true,
+          paymentClaimedAt: claimedAt,
+        });
+        if (!server) {
+          server = await patchClient(email, {
+            status: 'approved',
+            paymentClaimed: true,
+            paymentClaimedAt: claimedAt,
+          });
+        }
+        if (!server || normalizeClientStatus(server.status) !== 'approved') {
+          approvalError('client', 'database_update_failure', {
+            id: hit.id,
+            email,
+            response: server,
+          });
+          throw new Error(
+            'Could not save approval to Firebase. Check connection and try again.',
+          );
+        }
+
+        const merged: ClientRequest = {
+          ...(server as ClientRequest),
+          status: 'approved',
+          paymentClaimed: true,
+          paymentClaimedAt: claimedAt,
+        };
+        setClients((prev) => mergeClientLists(prev, [merged]));
+        patchWorkspace(sid, (ws) => ({
+          ...ws,
+          clientRequests: mergeClientLists(ws.clientRequests, [merged]),
+        }));
+        approvalLog('client', 'database_update_success', {
+          id: merged.id,
+          email,
+          before: hit.status,
+          after: merged.status,
+        });
+
+        try {
+          await pushSession(email, { accessStatus: 'approved' });
+          approvalLog('client', 'session_sync_success', { email, accessStatus: 'approved' });
+        } catch (err) {
+          approvalWarn('client', 'session_sync_failure', {
+            email,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       },
       addApprovedSubscriber: async (input) => {
         const email = input.email.trim().toLowerCase();
@@ -1912,90 +1883,89 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const firstName = input.firstName.trim() || email.split('@')[0] || 'Client';
         const lastName = input.lastName.trim();
         const claimedAt = new Date().toISOString();
-        const existing =
-          clients.find((c) => c.email.toLowerCase() === email) ||
-          Object.values(store.workspaces)
-            .flatMap((ws) => ws.clientRequests)
-            .find((c) => c.email.toLowerCase() === email);
+        approvalLog('client', 'manual_create_clicked', { email, firstName, lastName });
 
-        const approved: ClientRequest = {
-          id: existing?.id || `cli-${Date.now()}`,
-          email,
-          firstName: firstName || existing?.firstName || 'Client',
-          lastName: lastName || existing?.lastName || '',
+        let posted: ClientRequest | null = null;
+        try {
+          posted = (await postClient({
+            email,
+            firstName,
+            lastName,
+            status: 'approved',
+            paymentClaimed: true,
+            paymentClaimedAt: claimedAt,
+          })) as ClientRequest | null;
+        } catch (err) {
+          approvalError('client', 'manual_create_failure', {
+            email,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return {
+            ok: false,
+            error: 'Could not save subscriber to Firebase. Check connection and try again.',
+          };
+        }
+
+        if (!posted) {
+          return {
+            ok: false,
+            error: 'Could not save subscriber to Firebase. Check connection and try again.',
+          };
+        }
+
+        let patched = await patchClient(posted.id || email, {
           status: 'approved',
-          createdAt: existing?.createdAt || claimedAt,
-          notifiedAt: claimedAt,
           paymentClaimed: true,
-          paymentClaimedAt: existing?.paymentClaimedAt || claimedAt,
-        };
-
-        const sid = SUPER_ADMIN.user.id;
-        setClients((prev) => {
-          const merged = mergeClientLists(prev, [approved]);
-          void pushDb({ clients: merged }).catch(() => undefined);
-          return merged;
+          paymentClaimedAt: claimedAt,
         });
+        if (!patched) {
+          patched = await patchClient(email, {
+            status: 'approved',
+            paymentClaimed: true,
+            paymentClaimedAt: claimedAt,
+          });
+        }
+        if (!patched || normalizeClientStatus(patched.status) !== 'approved') {
+          approvalError('client', 'manual_create_failure', {
+            email,
+            id: posted.id,
+            response: patched,
+          });
+          return {
+            ok: false,
+            error: 'Subscriber was created but approval did not persist. Try Approve on the list.',
+          };
+        }
+
+        const merged: ClientRequest = {
+          ...(patched as ClientRequest),
+          email,
+          firstName: firstName || patched.firstName,
+          lastName: lastName || patched.lastName,
+          status: 'approved',
+          paymentClaimed: true,
+          paymentClaimedAt: claimedAt,
+        };
+        const sid = SUPER_ADMIN.user.id;
+        setClients((prev) => mergeClientLists(prev, [merged]));
         patchWorkspace(sid, (ws) => ({
           ...ws,
-          clientRequests: mergeClientLists(ws.clientRequests, [approved]),
+          clientRequests: mergeClientLists(ws.clientRequests, [merged]),
         }));
-
-        void (async () => {
-          try {
-            const posted = await Promise.race([
-              postClient({
-                email,
-                firstName: approved.firstName,
-                lastName: approved.lastName,
-              }),
-              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
-            ]);
-            const serverId = (posted as ClientRequest | null)?.id || approved.id;
-            let patched = await Promise.race([
-              patchClient(serverId, {
-                status: 'approved',
-                paymentClaimed: true,
-                paymentClaimedAt: approved.paymentClaimedAt,
-              }),
-              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
-            ]);
-            if (!patched) {
-              patched = await Promise.race([
-                patchClient(email, {
-                  status: 'approved',
-                  paymentClaimed: true,
-                  paymentClaimedAt: approved.paymentClaimedAt,
-                }),
-                new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
-              ]);
-            }
-            const merged: ClientRequest = patched
-              ? {
-                  ...(patched as ClientRequest),
-                  email,
-                  firstName: approved.firstName,
-                  lastName: approved.lastName,
-                  status: 'approved',
-                  paymentClaimed: true,
-                  paymentClaimedAt: approved.paymentClaimedAt,
-                }
-              : approved;
-            setClients((prev) => mergeClientLists(prev, [merged]));
-            patchWorkspace(sid, (ws) => ({
-              ...ws,
-              clientRequests: mergeClientLists(ws.clientRequests, [merged]),
-            }));
-            await Promise.race([
-              pushSession(email, { accessStatus: 'approved' }),
-              new Promise((resolve) => window.setTimeout(resolve, 8000)),
-            ]).catch(() => undefined);
-          } catch {
-            // local record already saved
-          }
-        })();
-
-        return { ok: true, client: approved };
+        try {
+          await pushSession(email, { accessStatus: 'approved' });
+        } catch (err) {
+          approvalWarn('client', 'session_sync_failure', {
+            email,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        approvalLog('client', 'manual_create_success', {
+          id: merged.id,
+          email,
+          after: merged.status,
+        });
+        return { ok: true, client: merged };
       },
       markClientPaid: (id) => {
         const hit = clients.find((c) => c.id === id);
@@ -2152,7 +2122,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             window.setTimeout(() => resolve(null), 10_000),
           ),
         ]);
-        const remoteDeleted = await fetchRemoteDeletedClients();
+        const remoteDeleted = await Promise.race([
+          fetchRemoteDeletedClients(),
+          new Promise<string[]>((resolve) => window.setTimeout(() => resolve([]), 5000)),
+        ]);
         const merged = mergeSubscriberQueue(
           clients,
           (list as ClientRequest[]) || [],
@@ -2832,6 +2805,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         pendingClients: isSuper
           ? countClientQueue(clients).pending
           : workspace.licenses.filter((l) => l.status === 'assigned').length,
+        approvedClients: isSuper ? countClientQueue(clients).approved : 0,
       },
     };
   }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, queueApproveAdmins, resyncLicenses, warmLicenseCache]);

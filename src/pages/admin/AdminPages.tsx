@@ -1320,9 +1320,11 @@ export function SubscriptionsPage() {
     setApprovingId(id);
     try {
       await approveClient(id);
-      setApproveMsg(`${label} approved — saved instantly. Cloud sync continues in background.`);
-    } catch {
-      setApproveMsg('Could not approve — try again.');
+      setApproveMsg(`${label} approved and saved to Firebase.`);
+    } catch (err) {
+      setApproveMsg(
+        err instanceof Error ? err.message : 'Could not approve — check console logs and try again.',
+      );
     } finally {
       setApprovingId(null);
     }
@@ -1440,7 +1442,7 @@ export function SubscriptionsPage() {
       <div className="stat-grid admin-stat-grid">
         <Stat value={String(stats.pendingClients)} label="Awaiting approval" tone="orange" />
         <Stat value={String(paidPending)} label="Marked I've Paid" tone="blue" />
-        <Stat value={String(approved.length)} label="Approved clients" tone="green" />
+        <Stat value={String(stats.approvedClients)} label="Approved clients" tone="green" />
       </div>
 
       <div className="glow-card" style={{ display: 'grid', gap: 10 }}>

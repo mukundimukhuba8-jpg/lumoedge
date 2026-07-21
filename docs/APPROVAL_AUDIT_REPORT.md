@@ -1,184 +1,146 @@
-# Registration Approval System — Audit Report
+# Registration Approval System — Root Cause Report (URGENT)
 
 **Date:** 2026-07-21  
 **Branch:** `cursor/approval-system-audit-8f6d`  
-**Scope:** Client + mentor registration approval (DB → API → UI)
+**PR:** #56
 
 ---
 
-## Executive summary
+## Exact root cause
 
-The approval system had **multiple sources of truth** (Firebase RTDB, GitHub `cloud-data/db.json`, local prepaid seed, local tombstones) with **inconsistent counting** and **server writes that did not always reach Firebase**. Approvals could appear locally but not persist on other devices when the client SDK write failed and the API fallback only updated GitHub backup.
+**Live client registrations are stored in Firebase (`lumo/clients`), but production approval and manual creation were writing only to the GitHub backup (`cloud-data/db.json`).**
 
-This audit standardizes status handling, fixes dashboard count mismatches, adds server-side Firebase mirrors for PATCH operations, fixes mentor approval for Firebase-only registrations, and adds structured logging across the flow.
+### Evidence (verified against production)
 
----
+| Check | Result |
+|-------|--------|
+| Firebase `lumo/clients` | 302 clients, **61 pending**, 241 approved |
+| Pending user `couthasello@gmail.com` | Exists in Firebase with `status: pending` |
+| `PATCH https://lumoedge.com/api/clients/cli-1784551297282` (production, pre-fix) | Returns **`null`** — client not in GitHub backup |
+| Server `firebasePatchClientById()` (same ID) | **Succeeds** — status becomes `approved` in Firebase |
 
-## Root causes
+### Why Approve appeared to work locally but not persist
 
-### Issue 1 — Client approval not persisting
+1. Admin taps **Approve** → React state updated optimistically (user disappears from Pending).
+2. `patchClient()` tried Firebase client SDK first, then `/api/clients/:id` PATCH.
+3. **Production PATCH only searched GitHub `db.clients`** → returned `null` for Firebase-only registrations.
+4. Errors were swallowed (`.catch(() => undefined)`), so UI showed success.
+5. **2.5s poll** re-fetched Firebase → still `pending` → after refresh, approval gone.
+6. Client waiting page polls `getClientByEmail()` → still blocked.
 
-| # | Root cause | Impact |
-|---|------------|--------|
-| 1 | `PATCH /api/clients/:id` updated GitHub backup only — **not Firebase** | Other devices polling Firebase still saw `pending` |
-| 2 | `patchClient()` returned after first Firebase attempt; API fallback skipped when Firebase returned null slowly | Approval never reached durable backup |
-| 3 | Local 2.5s poll merged remote `pending` with local `approved` — merge logic was correct (`pickClientStatus`), but **without Firebase write other devices never saw approval** | Cross-device inconsistency |
-| 4 | License release previously reset payment flags (fixed in PR #52); session `accessStatus` now preserves `approved` when client status is approved | Kick-out no longer demotes approved clients |
+### Why manual user creation failed
 
-### Issue 2 — Mentor registration missing from admin panel
+1. **Save as approved** called `postClient()` + background `patchClient()`.
+2. `POST /api/clients` on production wrote **GitHub only**, not Firebase.
+3. Background patch returned `null` for the same reason as above.
+4. Function returned `{ ok: true }` based on local state only.
 
-| # | Root cause | Impact |
-|---|------------|--------|
-| 1 | `flushApproveQueue` only mapped **`prev.admins`** — mentors registered on another device existed only in Firebase until sync | Approve button could no-op for IDs not yet in local state |
-| 2 | Super Admin `auth.admins` depends on `fetchAdmins()` poll + Firebase watch; if local list was stale, pending mentors were invisible until sync | "No registrations pending" while users saw login block message |
-| 3 | Mentor approval had **no dedicated server PATCH** to Firebase `lumo/auth/admins` | Role change relied solely on client `pushDb` |
+### Secondary bugs
 
-Users stuck on **"Your admin account is waiting for Super Admin approval"** (`AdminContext.login`) because `role === 'pending'` in Firebase — correct behavior when not yet approved, but admin couldn't see them when local registry was incomplete.
-
-### Issue 3 — Database audit / single source of truth
-
-| Store | Approval field | Role |
-|-------|----------------|------|
-| Firebase `lumo/clients` | `status: 'pending' \| 'approved' \| 'rejected'` | **Live client queue (source of truth)** |
-| GitHub `cloud-data/db.json` clients | same `status` field | Durable backup |
-| Prepaid seed (`PREPAID_CLIENTS`) | injected as `approved` | Legacy bootstrap only |
-| Client session | `accessStatus: 'none' \| 'pending' \| 'approved' \| 'paid' \| 'licensed'` | Per-device UX state |
-| Firebase `lumo/auth/admins` | `role: 'pending' \| 'admin' \| 'super'` | **Mentor approval source of truth** |
-
-**Conflicting flags eliminated:** all client merges now use `pickClientStatus()` with normalization; mentor merges use role rank (`admin` beats `pending`).
-
-### Issue 4 — Status consistency
-
-Previously some paths compared raw `c.status === 'approved'` while merges could produce mixed casing. Now:
-
-- **`ClientRequest.status`** — canonical client field (`src/lib/clientQueue.ts`)
-- **`AdminUser.role`** — canonical mentor field
-- **`Session.accessStatus`** — client app session only (synced via `pushSession` on approval)
-
-### Issue 5 — Admin dashboard count mismatch (screenshot)
-
-Observed: **61 awaiting**, **0 approved**, refresh message **"0 awaiting, 236 approved"**.
-
-| Widget | Old source | Problem |
-|--------|------------|---------|
-| Awaiting stat | `clients.filter(pending)` | Live Firebase pending (61) |
-| Approved list | `clientRequests.filter(approved)` | Prepaid seed tombstoned locally → 0 approved |
-| Refresh message | Raw `fetchClients()` counts **before** prepaid/deleted merge | Showed stale GitHub-only numbers (236 approved, 0 pending) |
-
-**Fix:** `refreshClientQueue()` now returns counts from **`mergeSubscriberQueue()`** — same function used for stats and lists.
+| Bug | Effect |
+|-----|--------|
+| Refresh counts from raw API list | Misleading "0 awaiting, 236 approved" message |
+| Approved stat used search-filtered list | Showed **0 approved** while search active |
+| `fetchRemoteDeletedClients()` without timeout | **Refresh button stuck on "Refreshing…"** |
+| Full `pushDb({ clients: merged })` on approve | Large, unreliable write; masked real failure |
 
 ---
 
-## Fixes applied
+## Fix (backend-first, not UI)
 
-### New files
+### Single source of truth
 
-| File | Purpose |
-|------|---------|
-| `src/lib/approvalLog.ts` | Structured `[approval:client\|mentor]` logging |
-| `src/lib/clientQueue.ts` | `normalizeClientStatus`, `pickClientStatus`, `countClientQueue` |
-| `api/_lib/clientMerge.mjs` | Shared server merge + `firebasePatchClientById` + `firebasePatchAdminRole` |
+| Entity | Field | Store |
+|--------|-------|-------|
+| Client subscription | `status: pending \| approved \| rejected` | **Firebase `lumo/clients`** |
+| Mentor account | `role: pending \| admin` | **Firebase `lumo/auth/admins`** |
+| GitHub `db.json` | Same fields | Backup mirror only |
+| Client session | `accessStatus` | Firebase `lumo/sessions/{email}` |
 
-### Modified files
+### Server API changes (`api/index.js`, `api/_lib/handlers.mjs`, `api/_lib/clientMerge.mjs`)
 
-| File | Changes |
-|------|---------|
-| `src/context/AdminContext.tsx` | Central `mergeSubscriberQueue`; fixed refresh counts; mentor approve merges remote admins first; client/mentor approval logging |
-| `src/lib/remote.ts` | `patchClient` always tries API after Firebase; new `patchAdminRole` |
-| `api/index.js` | `PATCH /api/clients/:id` writes Firebase; new `PATCH /api/auth/admins/:id` |
-| `api/_lib/handlers.mjs` | Parity: merged GET clients/db; PATCH writes Firebase; admin role PATCH |
-| `src/pages/admin/AdminPages.tsx` | Normalized status filters on Subscriptions page |
-| `src/pages/client/WaitingApprovalPage.tsx` | Normalized status checks for client waiting flow |
+- **`PATCH /api/clients/:id`** — patches **Firebase first** via `firebasePatchClientById()`; returns 404 if not in Firebase; mirrors to GitHub after.
+- **`POST /api/clients`** — creates in **Firebase first** via `firebasePostClientEntry()`; supports approved + payment flags for manual add.
+- **`PATCH /api/auth/admins/:id`** — patches mentor role in Firebase.
 
----
+### Client changes
 
-## Logging added (Issue 6)
-
-Console tags: `[approval:client]` and `[approval:mentor]`
-
-| Event | Tag |
-|-------|-----|
-| Registration created | `registration_created` |
-| Approve clicked | `approve_clicked` |
-| Status before/after | `status_before_update`, `local_state_updated` |
-| DB write success/failure | `database_update_success`, `database_update_failure` |
-| Cloud patch | `cloud_patch_success`, `cloud_patch_timeout`, `cloud_patch_failure` |
-| Session sync | `session_sync_success`, `session_sync_failure` |
-| Queue refresh | `queue_refreshed` |
-| Mentor sync | `registration_synced` |
+- **`patchClient()`** — **API first** (server REST → Firebase), SDK fallback; full structured logging, no silent failures.
+- **`postClient()`** — API first for manual creation; logs request/response.
+- **`approveClient()`** — **awaits** `patchClient()`; throws if Firebase not updated; no fake success.
+- **`addApprovedSubscriber()`** — awaits create + approve; returns error if DB write fails.
+- **`refreshClientQueue()`** — 5s timeout on deleted-client fetch; counts from merged queue.
+- **Stats** — `stats.approvedClients` uses unfiltered queue counts.
 
 ---
 
-## End-to-end test plan (Issue 7)
+## Files modified
 
-Run on **production** (`lumoedge.com`) after deploy:
+| File | Change |
+|------|--------|
+| `api/_lib/clientMerge.mjs` | `firebasePostClientEntry`, `firebasePatchClientById` |
+| `api/index.js` | Firebase-first POST/PATCH clients |
+| `api/_lib/handlers.mjs` | Local dev parity |
+| `src/lib/remote.ts` | API-first patch/post + logging |
+| `src/context/AdminContext.tsx` | Blocking approve/manual create; stats; refresh timeout |
+| `src/pages/admin/AdminPages.tsx` | Unfiltered approved stat; real error messages |
+| `src/lib/approvalLog.ts` | Structured logs |
+| `src/lib/clientQueue.ts` | Status normalization + counts |
+| `src/pages/client/WaitingApprovalPage.tsx` | Normalized status checks |
 
-### Client flow
+---
 
-1. Register new client (non-prepaid email)
-2. Super Admin → Subscriptions: verify pending count + list match
-3. Tap **Approve** → verify instant move to Approved section
-4. Refresh browser → still approved
-5. Client device: waiting page auto-advances to license activation
-6. Log out / back in on client → still approved
-7. Second admin device: refresh queue → same approved state
+## Logging (console)
 
-### Mentor flow
+All steps log with `[approval:client]` or `[approval:mentor]`:
 
-1. Register new mentor on Admin Portal
-2. Super Admin → Approve Admins: pending appears within ~2.5s
-3. Tap **Approve**
-4. Mentor logs in → reaches dashboard (not waiting message)
-5. Refresh Super Admin → mentor in Approved list
-6. Second device → same state after sync
+- `approve_clicked`, `manual_create_clicked`
+- `database_patch_request`, `database_patch_success`, `database_patch_failure`
+- `database_post_request`, `database_post_success`, `database_post_failure`
+- `database_update_success`, `database_update_failure`
+- `session_sync_success`, `session_sync_failure`
+- `queue_refreshed`
 
-### Automated verification (local)
+Each log includes **id, email, table (`lumo/clients`), before/after status, source (api/firebase_sdk), and full error text**.
+
+---
+
+## Security / permissions
+
+- Firebase RTDB rules: `lumo` read/write **open** (not blocking writes).
+- Issue was **wrong target database** (GitHub-only), not RLS/rules.
+
+---
+
+## Verification
+
+### Automated
 
 ```bash
-cd unlimited-bull-web && npm run build
+npm run build  # PASS
 ```
 
-Build: **PASS** (tsc + vite)
+### Production API (after deploy)
 
----
-
-## Architecture (after fix)
-
-```mermaid
-flowchart TD
-  subgraph clientFlow [Client approval]
-    A[Super Admin Approve] --> B[Local mergeSubscriberQueue]
-    B --> C[pushDb Firebase clients]
-    A --> D[patchClient SDK + API PATCH]
-    D --> E[Firebase lumo/clients]
-    D --> F[GitHub db.json backup]
-    A --> G[pushSession accessStatus approved]
-  end
-
-  subgraph mentorFlow [Mentor approval]
-    H[Super Admin Approve] --> I[Merge remote admins from Firebase]
-    I --> J[Local role admin]
-    J --> K[pushDb auth.admins]
-    H --> L[patchAdminRole API]
-    L --> M[Firebase lumo/auth/admins]
-  end
-
-  subgraph ui [Admin dashboard]
-    N[stats + lists] --> O[countClientQueue on merged clients]
-    P[Refresh from cloud] --> O
-  end
+```bash
+# Must return approved client object, not null
+curl -X PATCH "https://lumoedge.com/api/clients/cli-1784551297282" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"approved","paymentClaimed":true}'
 ```
 
+### Manual (post-deploy)
+
+1. Approve pending client → moves to Approved, count updates.
+2. Refresh page → still approved in Firebase and UI.
+3. Client waiting page → advances to license activation.
+4. Manual add subscriber → appears in Approved immediately.
+5. Refresh button completes (not stuck).
+
 ---
 
-## Residual risks
+## Deploy requirement
 
-1. **Prepaid tombstones** — locally deleted emails won't appear in Approved list even if in GitHub backup; intentional.
-2. **Firebase rules** — if client SDK writes are blocked, server PATCH now provides a second path (requires server egress to Firebase REST).
-3. **Large queue** — 60+ pending clients is expected live volume; prepaid seed no longer inflates pending counts when tombstoned.
+**Production is on main @ PR #55.** This fix is in **PR #56** — must be **merged and deployed** for lumoedge.com to use Firebase-first PATCH/POST.
 
----
-
-## Recommendation
-
-Deploy this branch and verify on production with one real client + one mentor test account. Monitor browser console for `[approval:*]` logs during approve actions.
+Until deploy, approvals will continue to fail on production even though the fix is correct in the branch.

@@ -103,6 +103,60 @@ export function mirrorClientToSuperWorkspace(workspaces, entry) {
   return next;
 }
 
+/** Create or return existing client in Firebase — source of truth for live registrations. */
+export async function firebasePostClientEntry(input) {
+  const email = String(input.email || '')
+    .trim()
+    .toLowerCase();
+  const firstName = String(input.firstName || '').trim();
+  const lastName = String(input.lastName || '').trim();
+  if (!email || !firstName || !lastName) return null;
+
+  const freshClients = toArray(await firebaseRead('lumo/clients'));
+  const existing = freshClients.find((c) => String(c.email || '').toLowerCase() === email);
+  if (existing) {
+    const remoteWs = (await firebaseRead('lumo/store/workspaces')) || {};
+    const nextWs = mirrorClientToSuperWorkspace(remoteWs, existing);
+    const sid = 'LM-004821';
+    if (nextWs[sid]) {
+      await firebaseWrite(`lumo/store/workspaces/${sid}`, nextWs[sid]);
+    }
+    return existing;
+  }
+
+  const entry = {
+    id: `cli-${Date.now()}`,
+    email,
+    firstName,
+    lastName,
+    status: normalizeClientStatus(input.status || 'pending'),
+    createdAt: new Date().toISOString(),
+    notifiedAt: new Date().toISOString(),
+    paymentClaimed: Boolean(input.paymentClaimed),
+    paymentClaimedAt: input.paymentClaimedAt || undefined,
+  };
+  freshClients.unshift(entry);
+
+  const deleted = new Set(
+    toArray(await firebaseRead('lumo/deletedClients')).map((e) => String(e).toLowerCase()),
+  );
+  deleted.delete(email);
+
+  const remoteWs = (await firebaseRead('lumo/store/workspaces')) || {};
+  const nextWs = mirrorClientToSuperWorkspace(remoteWs, entry);
+  const sid = 'LM-004821';
+
+  await Promise.all([
+    firebaseWrite('lumo/clients', freshClients),
+    firebaseWrite('lumo/deletedClients', [...deleted]),
+    nextWs[sid]
+      ? firebaseWrite(`lumo/store/workspaces/${sid}`, nextWs[sid])
+      : Promise.resolve(true),
+    firebaseWrite('lumo/updatedAt', new Date().toISOString()),
+  ]);
+  return entry;
+}
+
 export async function firebasePatchClientById(id, patch) {
   const freshClients = toArray(await firebaseRead('lumo/clients'));
   const key = String(id || '').trim();
