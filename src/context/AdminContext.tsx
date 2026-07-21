@@ -18,6 +18,7 @@ import {
   postClient,
   postMentorRegistration,
   publishLicensesRemote,
+  patchAdminRole,
   pushDb,
   pushSession,
   repairClientQueueRemote,
@@ -73,6 +74,8 @@ import {
   resolveLicenseBrandingSync,
   validateLicenseEmailAccess,
 } from '../lib/licenseClaim';
+import { approvalError, approvalLog, approvalWarn } from '../lib/approvalLog';
+import { countClientQueue, pickClientStatus } from '../lib/clientQueue';
 import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
 
 /** Blocks destructive vault sync while a publish is in flight. */
@@ -980,15 +983,6 @@ function withoutDeleted(
   return list.filter((c) => !deleted.has(c.email.toLowerCase()));
 }
 
-function pickClientStatus(
-  a: ClientRequest['status'],
-  b: ClientRequest['status'],
-): ClientRequest['status'] {
-  if (a === 'approved' || b === 'approved') return 'approved';
-  if (a === 'pending' || b === 'pending') return 'pending';
-  return 'rejected';
-}
-
 function mergeClientRecord(prev: ClientRequest, incoming: ClientRequest): ClientRequest {
   const email = incoming.email.toLowerCase();
   return {
@@ -1049,6 +1043,26 @@ function mergeClientLists(...lists: ClientRequest[][]): ClientRequest[] {
   }
   return [...byEmail.values()].sort((a, b) =>
     (b.paymentClaimedAt || b.createdAt).localeCompare(a.paymentClaimedAt || a.createdAt),
+  );
+}
+
+async function fetchRemoteDeletedClients(): Promise<string[]> {
+  try {
+    const { firebaseFetchDeletedClients } = await import('../lib/firebaseDb');
+    return await firebaseFetchDeletedClients();
+  } catch {
+    return [];
+  }
+}
+
+function mergeSubscriberQueue(
+  prev: ClientRequest[],
+  remoteList: ClientRequest[] | null | undefined,
+  remoteDeleted?: Iterable<string>,
+): ClientRequest[] {
+  return withoutDeleted(
+    mergeClientLists(prepaidAsClientRequests(), prev, remoteList || []),
+    remoteDeleted,
   );
 }
 
@@ -1137,12 +1151,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       }
       if (Array.isArray(db.clients)) {
         setClients((prev) =>
-          withoutDeleted(
-            mergeClientLists(
-              prepaidAsClientRequests(),
-              prev,
-              db.clients as ClientRequest[],
-            ),
+          mergeSubscriberQueue(
+            prev,
+            db.clients as ClientRequest[],
             (db as { deletedClients?: string[] }).deletedClients,
           ),
         );
@@ -1172,19 +1183,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const tick = async () => {
       const list = await fetchClients();
       if (list) {
-        let remoteDeleted: string[] = [];
-        try {
-          const { firebaseFetchDeletedClients } = await import('../lib/firebaseDb');
-          remoteDeleted = await firebaseFetchDeletedClients();
-        } catch {
-          remoteDeleted = [];
-        }
-        setClients((prev) =>
-          withoutDeleted(
-            mergeClientLists(prepaidAsClientRequests(), prev, list as ClientRequest[]),
-            remoteDeleted,
-          ),
-        );
+        const remoteDeleted = await fetchRemoteDeletedClients();
+        setClients((prev) => {
+          const merged = mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted);
+          return merged;
+        });
       }
     };
     void tick();
@@ -1201,6 +1204,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       setAuth((prev) => {
         const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
         if (adminsMatch(prev.admins, nextAuth.admins)) return prev;
+        const addedPending = nextAuth.admins.filter(
+          (a) =>
+            a.role === 'pending' &&
+            !prev.admins.some((p) => p.id === a.id || p.email.toLowerCase() === a.email.toLowerCase()),
+        );
+        if (addedPending.length) {
+          approvalLog('mentor', 'registration_synced', {
+            count: addedPending.length,
+            emails: addedPending.map((a) => a.email),
+          });
+        }
         saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
         return nextAuth;
       });
@@ -1307,48 +1321,97 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const approveQueueRef = useRef(new Set<string>());
   const approveFlushScheduledRef = useRef(false);
 
-  const flushApproveQueue = useCallback(() => {
+  const flushApproveQueue = useCallback(async () => {
     approveFlushScheduledRef.current = false;
     const ids = [...approveQueueRef.current];
     approveQueueRef.current.clear();
     if (!ids.length) return;
     const idSet = new Set(ids);
 
+    approvalLog('mentor', 'approve_clicked', { ids });
+
+    let remoteAdmins: AdminUser[] = [];
+    try {
+      remoteAdmins = ((await fetchAdmins()) || []) as AdminUser[];
+    } catch (err) {
+      approvalWarn('mentor', 'fetch_admins_before_approve_failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    let mentorsToSeed: AdminUser[] = [];
+    let nextAdmins: AdminUser[] = auth.admins;
+
     setAuth((prev) => {
-      const mentorsToSeed: AdminUser[] = [];
-      const nextAdmins = prev.admins.map((a) => {
-        if (idSet.has(a.id) && a.role !== 'admin') {
+      const merged = mergeAdmins(prev.admins, remoteAdmins) as AdminUser[];
+      mentorsToSeed = [];
+      nextAdmins = merged.map((a) => {
+        if (idSet.has(a.id) && a.role === 'pending') {
+          approvalLog('mentor', 'status_before_update', {
+            id: a.id,
+            email: a.email,
+            before: a.role,
+            after: 'admin',
+          });
           mentorsToSeed.push(a);
           return { ...a, role: 'admin' as const };
         }
         return a;
       });
+      for (const id of ids) {
+        if (!nextAdmins.some((a) => a.id === id)) {
+          approvalWarn('mentor', 'approve_id_not_found', { id });
+        }
+      }
       const next = { ...prev, admins: nextAdmins };
       saveJSON(AUTH_KEY, { ...next, portalOpen: false });
-      void pushDb({ auth: { admins: nextAdmins, admin: null } }).catch(() => undefined);
-
-      if (mentorsToSeed.length) {
-        setStore((storePrev) => {
-          const workspaces = { ...storePrev.workspaces };
-          const patch: Record<string, AdminWorkspace> = {};
-          let changed = false;
-          for (const m of mentorsToSeed) {
-            if (!workspaces[m.id]) {
-              workspaces[m.id] = createEmptyWorkspace(m);
-              patch[m.id] = workspaces[m.id];
-              changed = true;
-            }
-          }
-          if (!changed) return storePrev;
-          const nextStore = { ...storePrev, workspaces };
-          saveJSON(STORE_KEY, nextStore);
-          void pushDb({ store: { workspaces: patch } }).catch(() => undefined);
-          return nextStore;
-        });
-      }
-
       return next;
     });
+
+    void pushDb({ auth: { admins: nextAdmins, admin: null } })
+      .then(() => {
+        approvalLog('mentor', 'database_update_success', {
+          ids,
+          approved: mentorsToSeed.map((m) => m.email),
+        });
+      })
+      .catch((err) => {
+        approvalError('mentor', 'database_update_failure', {
+          ids,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+
+    if (mentorsToSeed.length) {
+      setStore((storePrev) => {
+        const workspaces = { ...storePrev.workspaces };
+        const patch: Record<string, AdminWorkspace> = {};
+        let changed = false;
+        for (const m of mentorsToSeed) {
+          if (!workspaces[m.id]) {
+            workspaces[m.id] = createEmptyWorkspace(m);
+            patch[m.id] = workspaces[m.id];
+            changed = true;
+          }
+        }
+        if (!changed) return storePrev;
+        const nextStore = { ...storePrev, workspaces };
+        saveJSON(STORE_KEY, nextStore);
+        void pushDb({ store: { workspaces: patch } }).catch(() => undefined);
+        return nextStore;
+      });
+    }
+
+    void Promise.all(
+      ids.map((id) =>
+        patchAdminRole(id, 'admin').catch((err) => {
+          approvalError('mentor', 'cloud_role_sync_failed', {
+            id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }),
+      ),
+    );
   }, []);
 
   const queueApproveAdmins = useCallback(
@@ -1579,6 +1642,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           auth: { admins: nextAdmins, admin: null },
           store: { workspaces: { [entry.id]: workspace } },
         }).catch(() => undefined);
+        approvalLog('mentor', 'registration_created', {
+          email,
+          id: entry.id,
+          status: entry.role,
+        });
         return null;
       },
       logout: () => saveAuth({ ...auth, admin: null, portalOpen: false }),
@@ -1667,6 +1735,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           paymentClaimed: asPaid,
           paymentClaimedAt: asPaid ? new Date().toISOString() : undefined,
         };
+        approvalLog('client', 'registration_created', {
+          email,
+          status: entry.status,
+          prepaid: asPaid,
+        });
         setClients((prev) => [entry, ...prev.filter((c) => c.email !== email)]);
         const sid = SUPER_ADMIN.user.id;
         const superWs =
@@ -1723,8 +1796,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const hit =
           clients.find((c) => c.id === id) ||
           clients.find((c) => c.email.toLowerCase() === id.toLowerCase());
-        if (!hit) return;
+        if (!hit) {
+          approvalWarn('client', 'approve_target_missing', { id });
+          return;
+        }
         const email = hit.email.toLowerCase();
+        approvalLog('client', 'approve_clicked', {
+          id: hit.id,
+          email,
+          before: hit.status,
+        });
         const claimedAt = hit.paymentClaimedAt || new Date().toISOString();
         const approved: ClientRequest = {
           ...hit,
@@ -1734,7 +1815,21 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         };
         setClients((prev) => {
           const merged = mergeClientLists(prev, [approved]);
-          void pushDb({ clients: merged }).catch(() => undefined);
+          approvalLog('client', 'local_state_updated', {
+            email,
+            after: 'approved',
+            ...countClientQueue(merged),
+          });
+          void pushDb({ clients: merged })
+            .then(() => {
+              approvalLog('client', 'database_update_success', { email, after: 'approved' });
+            })
+            .catch((err) => {
+              approvalError('client', 'database_update_failure', {
+                email,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
           return merged;
         });
         const sid = SUPER_ADMIN.user.id;
@@ -1763,8 +1858,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                 pushSession(email, { accessStatus: 'approved' }),
                 new Promise((resolve) => window.setTimeout(resolve, 8000)),
               ]);
-            } catch {
-              // local approval already saved
+              approvalLog('client', 'session_sync_success', { email, accessStatus: 'approved' });
+            } catch (err) {
+              approvalWarn('client', 'session_sync_failure', {
+                email,
+                error: err instanceof Error ? err.message : String(err),
+              });
             }
           };
           try {
@@ -1786,8 +1885,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                 new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
               ]);
             }
+            if (server) {
+              approvalLog('client', 'cloud_patch_success', {
+                email,
+                after: (server as ClientRequest).status,
+              });
+            } else {
+              approvalWarn('client', 'cloud_patch_timeout', { email });
+            }
             await persistApproval(server as ClientRequest | null);
-          } catch {
+          } catch (err) {
+            approvalError('client', 'cloud_patch_failure', {
+              email,
+              error: err instanceof Error ? err.message : String(err),
+            });
             await persistApproval(approved);
           }
         })();
@@ -2041,33 +2152,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             window.setTimeout(() => resolve(null), 10_000),
           ),
         ]);
+        const remoteDeleted = await fetchRemoteDeletedClients();
+        const merged = mergeSubscriberQueue(
+          clients,
+          (list as ClientRequest[]) || [],
+          remoteDeleted,
+        );
         if (list?.length) {
-          let remoteDeleted: string[] = [];
-          try {
-            const { firebaseFetchDeletedClients } = await import('../lib/firebaseDb');
-            remoteDeleted = await firebaseFetchDeletedClients();
-          } catch {
-            remoteDeleted = [];
-          }
-          setClients((prev) =>
-            withoutDeleted(
-              mergeClientLists(prepaidAsClientRequests(), prev, list as ClientRequest[]),
-              remoteDeleted,
-            ),
-          );
-          return {
-            ok: true,
-            total: list.length,
-            pending: list.filter((c) => c.status === 'pending').length,
-            approved: list.filter((c) => c.status === 'approved').length,
-          };
+          setClients(merged);
         }
-        return {
-          ok: true,
-          total: clients.length,
-          pending: clients.filter((c) => c.status === 'pending').length,
-          approved: clients.filter((c) => c.status === 'approved').length,
-        };
+        const counts = countClientQueue(merged);
+        approvalLog('client', 'queue_refreshed', counts);
+        return { ok: true, ...counts };
       },
       // Strict per-mentor isolation: even if data ever gets cross-merged,
       // an EA stamped with another mentor's id never renders in this portal
@@ -2734,7 +2830,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ? clients.length
           : ownClientEmails.size,
         pendingClients: isSuper
-          ? clients.filter((c) => c.status === 'pending').length
+          ? countClientQueue(clients).pending
           : workspace.licenses.filter((l) => l.status === 'assigned').length,
       },
     };

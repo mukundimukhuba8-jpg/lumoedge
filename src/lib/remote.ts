@@ -319,14 +319,29 @@ export async function patchClient(
   if (isFirebaseConfigured()) {
     fb = await firebasePatchClient(id, patch);
   }
-  if (fb) return fb;
+  let api: RemoteDb['clients'][number] | null = null;
   try {
-    return await req<RemoteDb['clients'][number] | null>(`/api/clients/${encodeURIComponent(id)}`, {
+    api = await req<RemoteDb['clients'][number] | null>(
+      `/api/clients/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      },
+    );
+  } catch {
+    api = null;
+  }
+  return (fb || api) as RemoteDb['clients'][number] | null;
+}
+
+export async function patchAdminRole(id: string, role: 'pending' | 'admin') {
+  try {
+    return await req<{ ok: boolean }>(`/api/auth/admins/${encodeURIComponent(id)}`, {
       method: 'PATCH',
-      body: JSON.stringify(patch),
+      body: JSON.stringify({ role }),
     });
   } catch {
-    return fb;
+    return null;
   }
 }
 

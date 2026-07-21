@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Loader2, MoreVertical, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck } from 'lucide-react';
 import { BackgroundManager } from '../../components/BackgroundManager';
+import { normalizeClientStatus } from '../../lib/clientQueue';
 import { useAdmin, type ClientRequest } from '../../context/AdminContext';
 import { resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
 import { compressImageFile, getEaImage, blobUrlToDataUrl } from '../../lib/storage';
@@ -1270,10 +1271,12 @@ export function SubscriptionsPage() {
     return `${c.firstName} ${c.lastName} ${c.email}`.toLowerCase().includes(query);
   };
   const pending = clientRequests
-    .filter((c) => c.status === 'pending')
+    .filter((c) => normalizeClientStatus(c.status) === 'pending')
     .filter(match)
     .sort((a, b) => Number(Boolean(b.paymentClaimed)) - Number(Boolean(a.paymentClaimed)));
-  const approved = clientRequests.filter((c) => c.status === 'approved').filter(match);
+  const approved = clientRequests
+    .filter((c) => normalizeClientStatus(c.status) === 'approved')
+    .filter(match);
   const paidPending = pending.filter((c) => c.paymentClaimed).length;
 
   const onAddManual = async () => {

@@ -933,6 +933,34 @@ export default async function handler(req, res) {
       return;
     }
 
+    if (pathname.startsWith('/api/auth/admins/') && req.method === 'PATCH') {
+      const id = decodeURIComponent(pathname.replace('/api/auth/admins/', ''));
+      const body = await readBody(req);
+      const role = body.role === 'admin' ? 'admin' : body.role === 'pending' ? 'pending' : null;
+      if (!role || !id) {
+        send(res, 400, { error: 'id and role (admin|pending) required' });
+        return;
+      }
+      const { db, sha } = await loadDb();
+      db.auth = db.auth || { admins: [], admin: null };
+      db.auth.admins = toArray(db.auth.admins).map((a) => {
+        if (a.id !== id) return a;
+        return { ...a, role: adminRoleRank(a.role) >= adminRoleRank(role) ? a.role : role };
+      });
+      const updated = toArray(db.auth.admins).find((a) => a.id === id) || null;
+      try {
+        await saveDb(db, sha);
+      } catch {
+        // Firebase remains source of truth for live mentor approvals
+      }
+      const {
+        firebasePatchAdminRole,
+      } = await import('./_lib/clientMerge.mjs');
+      const fbUpdated = await firebasePatchAdminRole(id, role);
+      send(res, 200, { ok: true, admin: fbUpdated || updated });
+      return;
+    }
+
     if (pathname === '/api/auth/register' && req.method === 'POST') {
       const body = await readBody(req);
       const email = String(body.email || '')
@@ -1100,8 +1128,14 @@ export default async function handler(req, res) {
         db.clients.find((c) => c.id === id) ||
         db.clients.find((c) => String(c.email || '').toLowerCase() === id.toLowerCase());
       if (updated) mirrorClientToSuper(db, updated);
-      await saveDb(db, sha);
-      send(res, 200, updated || null);
+      try {
+        await saveDb(db, sha);
+      } catch {
+        // Firebase still holds the live queue even if GitHub write fails
+      }
+      const { firebasePatchClientById } = await import('./_lib/clientMerge.mjs');
+      const fbUpdated = await firebasePatchClientById(id, body);
+      send(res, 200, fbUpdated || updated || null);
       return;
     }
 

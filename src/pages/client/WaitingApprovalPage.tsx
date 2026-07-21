@@ -5,6 +5,7 @@ import { SubscriptionPaymentInfo } from '../../components/SubscriptionPaymentInf
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
 import { isPrepaidEmail } from '../../lib/prepaidClients';
+import { normalizeClientStatus } from '../../lib/clientQueue';
 
 export function WaitingApprovalPage() {
   const navigate = useNavigate();
@@ -38,7 +39,7 @@ export function WaitingApprovalPage() {
       // Only auto-advance after Super Admin approval for non-prepaid users.
       if (
         !isPrepaidEmail(user.email) &&
-        client?.status === 'approved'
+        normalizeClientStatus(client?.status) === 'approved'
       ) {
         if (accessStatus === 'pending') setAccessStatus('approved');
         navigate('/activate', { replace: true, state: { fromPayment: true } });
@@ -64,7 +65,7 @@ export function WaitingApprovalPage() {
       }
 
       // Pre-approved clients should not wait on a slow cloud write.
-      if (prepaid || client?.status === 'approved') {
+      if (prepaid || normalizeClientStatus(client?.status) === 'approved') {
         goToLicense();
         void claimClientPayment(user.email).catch(() => undefined);
         return;
@@ -77,7 +78,7 @@ export function WaitingApprovalPage() {
         ),
       ]);
 
-      if (claimed?.status === 'approved') {
+      if (normalizeClientStatus(claimed?.status) === 'approved') {
         goToLicense();
         return;
       }
@@ -97,7 +98,7 @@ export function WaitingApprovalPage() {
   const prepaid = user ? isPrepaidEmail(user.email) : false;
   const status = prepaid
     ? 'PAID'
-    : (client?.status ?? 'pending').toUpperCase();
+    : normalizeClientStatus(client?.status).toUpperCase();
   const paidPending = Boolean(client?.paymentClaimed) && status === 'PENDING';
 
   return (

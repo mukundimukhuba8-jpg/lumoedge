@@ -1,4 +1,11 @@
 import { emptyDb, hasDurableBackend, loadDb, saveDb } from './store.mjs';
+import {
+  adminRoleRank,
+  firebasePatchAdminRole,
+  firebasePatchClientById,
+  loadMergedClients,
+  mergeClientRecord,
+} from './clientMerge.mjs';
 
 function json(res, status, data) {
   res.statusCode = status;
@@ -91,7 +98,8 @@ export async function handleApi(req, res, pathname) {
 
     if (pathname === '/api/db' && req.method === 'GET') {
       const { db } = await loadDb();
-      json(res, 200, db);
+      const mergedClients = await loadMergedClients(loadDb);
+      json(res, 200, { ...db, clients: mergedClients });
       return true;
     }
 
@@ -122,8 +130,8 @@ export async function handleApi(req, res, pathname) {
     }
 
     if (pathname === '/api/clients' && req.method === 'GET') {
-      const { db } = await loadDb();
-      json(res, 200, db.clients || []);
+      const merged = await loadMergedClients(loadDb);
+      json(res, 200, merged);
       return true;
     }
 
@@ -165,8 +173,8 @@ export async function handleApi(req, res, pathname) {
       const body = await readBody(req);
       const { db, sha } = await loadDb();
       db.clients = (db.clients || []).map((c) => {
-        if (c.id !== id && c.email !== id) return c;
-        return {
+        if (c.id !== id && String(c.email || '').toLowerCase() !== id.toLowerCase()) return c;
+        return mergeClientRecord(c, {
           ...c,
           ...body,
           id: c.id,
@@ -179,14 +187,39 @@ export async function handleApi(req, res, pathname) {
             body.paymentClaimed === true
               ? body.paymentClaimedAt || new Date().toISOString()
               : c.paymentClaimedAt,
-        };
+        });
       });
       const updated =
         db.clients.find((c) => c.id === id) ||
-        db.clients.find((c) => c.email === id);
+        db.clients.find((c) => String(c.email || '').toLowerCase() === id.toLowerCase());
       if (updated) mirrorClientToSuper(db, updated);
       await saveDb(db, sha);
+      await firebasePatchClientById(id, body).catch(() => null);
       json(res, 200, updated || null);
+      return true;
+    }
+
+    if (pathname.startsWith('/api/auth/admins/') && req.method === 'PATCH') {
+      const id = decodeURIComponent(pathname.replace('/api/auth/admins/', ''));
+      const body = await readBody(req);
+      const role = body.role === 'admin' ? 'admin' : body.role === 'pending' ? 'pending' : null;
+      if (!role || !id) {
+        json(res, 400, { error: 'id and role (admin|pending) required' });
+        return true;
+      }
+      const { db, sha } = await loadDb();
+      db.auth = db.auth || { admins: [], admin: null };
+      db.auth.admins = (db.auth.admins || []).map((a) => {
+        if (a.id !== id) return a;
+        return {
+          ...a,
+          role: adminRoleRank(a.role) >= adminRoleRank(role) ? a.role : role,
+        };
+      });
+      const updated = (db.auth.admins || []).find((a) => a.id === id) || null;
+      await saveDb(db, sha);
+      const fbUpdated = await firebasePatchAdminRole(id, role).catch(() => null);
+      json(res, 200, { ok: true, admin: fbUpdated || updated });
       return true;
     }
 
