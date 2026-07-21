@@ -39,17 +39,20 @@ async function resolveMentorImage(
   dbImages?: Record<string, string>,
 ): Promise<string> {
   if (!mentorId) return '';
+  const profileKey = `profile-${mentorId}`;
   const fromFb =
-    (await firebaseFetchImage(`profile-${mentorId}`)) ||
-    (await firebaseFetchImage(`img:profile-${mentorId}`));
+    (await firebaseFetchImage(profileKey)) ||
+    (await firebaseFetchImage(`img:${profileKey}`));
   if (fromFb) return fromFb;
   const fromMap =
-    dbImages?.[`profile-${mentorId}`] ||
-    dbImages?.[`img:profile-${mentorId}`] ||
+    dbImages?.[profileKey] ||
+    dbImages?.[`img:${profileKey}`] ||
     dbImages?.[mentorId] ||
     '';
   if (fromMap) return fromMap;
-  return `/api/images/profile-${encodeURIComponent(mentorId)}`;
+  const { resolveDisplayImage } = await import('./storage');
+  const resolved = await resolveDisplayImage(`/api/images/${profileKey}`);
+  return resolved || `/api/images/${encodeURIComponent(profileKey)}`;
 }
 
 /** Read mentor branding for an activated client — never mutates license keys. */

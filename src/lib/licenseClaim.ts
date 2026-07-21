@@ -213,6 +213,64 @@ export function resolveLicenseBrandingSync(
   };
 }
 
+/** Resolve mentor profile bytes from Firebase / API when local cache only has img: refs. */
+export async function resolveLicenseImageAsync(
+  license: ClaimLicenseRecord,
+  workspaces: Record<string, WorkspaceLike>,
+  remoteImages: Record<string, string> = {},
+): Promise<string> {
+  const synced = resolveLicenseBrandingSync(license, workspaces, remoteImages);
+  const current = String(synced.eaImage || '').trim();
+  if (
+    current &&
+    !current.startsWith('img:') &&
+    !current.startsWith('/api/images/') &&
+    !isPlaceholderMentorImage(current)
+  ) {
+    return current;
+  }
+
+  const mentorId = String(license.ownerAdminId || '').trim();
+  if (!mentorId) return current;
+
+  const profileKey = `profile-${mentorId}`;
+  const { firebaseFetchImage } = await import('./firebaseDb');
+  const { resolveDisplayImage, saveEaImage } = await import('./storage');
+
+  const tryPersist = (value: string) => {
+    const v = String(value || '').trim();
+    if (!v || isPlaceholderMentorImage(v)) return '';
+    saveEaImage(profileKey, v);
+    saveEaImage(`img:${profileKey}`, v);
+    return v;
+  };
+
+  const fromFirebase = await firebaseFetchImage(profileKey);
+  if (fromFirebase) return tryPersist(fromFirebase) || fromFirebase;
+
+  for (const candidate of [
+    current,
+    remoteImages[profileKey],
+    remoteImages[`img:${profileKey}`],
+    getEaImage(profileKey),
+    getEaImage(`img:${profileKey}`),
+    `img:${profileKey}`,
+    `/api/images/${profileKey}`,
+  ]) {
+    const raw = String(candidate || '').trim();
+    if (!raw || isPlaceholderMentorImage(raw)) continue;
+    if (raw.startsWith('data:') || raw.startsWith('http')) {
+      return tryPersist(raw) || raw;
+    }
+    const resolved = await resolveDisplayImage(raw);
+    if (resolved && !isPlaceholderMentorImage(resolved)) {
+      return tryPersist(resolved) || resolved;
+    }
+  }
+
+  return current;
+}
+
 export function prepareAssignedLicense(
   license: ClaimLicenseRecord,
   email: string,

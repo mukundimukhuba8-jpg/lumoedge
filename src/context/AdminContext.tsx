@@ -72,6 +72,7 @@ import {
   isClaimableKey,
   prepareAssignedLicense,
   resolveLicenseBrandingSync,
+  resolveLicenseImageAsync,
   validateLicenseEmailAccess,
 } from '../lib/licenseClaim';
 import { isFirebaseConfigured } from '../lib/firebase';
@@ -2613,9 +2614,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
         const persistAssignment = (license: LicenseRecord, ownerId: string | null) => {
           const img = String(license.eaImage || '').trim();
-          if (img && img.startsWith('data:') && img.length < 8000) {
-            saveEaImage(license.id, img);
-            saveEaImage(`key-${normalizedKey}`, img);
+          if (img && !img.startsWith('blob:')) {
+            if (img.startsWith('data:')) {
+              saveEaImage(license.id, img);
+              saveEaImage(`key-${normalizedKey}`, img);
+            }
+            if (ownerId) {
+              saveEaImage(`profile-${ownerId}`, img);
+              saveEaImage(`img:profile-${ownerId}`, img);
+            }
           }
           if (isAdminPortalSession() && ownerId) {
             upsertVault(stripVaultEntryForLocal(licenseRecordToVault(license, normalizedEmail)) as VaultLicense);
@@ -2630,11 +2637,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           }
         };
 
-        const finishClaim = (license: LicenseRecord) => {
-          const branded = resolveLicenseBrandingSync(
+        const loadRemoteImages = () =>
+          loadJSON<Record<string, string>>(IMAGE_STORE, {});
+
+        const finishClaim = async (license: LicenseRecord) => {
+          const remoteImages = loadRemoteImages();
+          const eaImage = await resolveLicenseImageAsync(
             license,
             store.workspaces,
-          ) as LicenseRecord;
+            remoteImages,
+          );
+          const branded = {
+            ...resolveLicenseBrandingSync(license, store.workspaces, remoteImages),
+            eaImage,
+          } as LicenseRecord;
           try {
             persistAssignment(branded, branded.ownerAdminId || null);
             if (branded.ownerAdminId) {
@@ -2651,7 +2667,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           return { ok: true as const, license: branded };
         };
 
-        const resolveLocal = () => attemptClaim(store.workspaces);
+        const resolveLocal = () => attemptClaim(store.workspaces, loadRemoteImages());
 
         let localHit = resolveLocal();
         if (!localHit) {
