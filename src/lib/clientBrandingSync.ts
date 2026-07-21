@@ -4,7 +4,18 @@ import type { LicenseSync } from '../context/AppContext';
 import { dbList, firebaseFetchImage } from './firebaseDb';
 import { isPlaceholderMentorImage, normalizeCustomMedia } from './mentorMedia';
 import { fetchDb } from './remote';
-import { keysMatch, normalizeLicenseKey } from './storage';
+import {
+  findInVault,
+  getEaImage,
+  isStreamableMediaUrl,
+  keysMatch,
+  loadJSON,
+  normalizeLicenseKey,
+  saveEaImage,
+  type VaultLicense,
+} from './storage';
+
+const IMAGE_STORE = 'ub-web/ea-images-v1';
 
 type VaultLike = {
   key?: string;
@@ -34,31 +45,60 @@ function findLicenseEntry(db: NonNullable<Awaited<ReturnType<typeof fetchDb>>>, 
   return null;
 }
 
+function brandingFromVault(vaultHit: VaultLicense, imageUrl: string): LicenseSync {
+  return {
+    name: vaultHit.eaName || 'Lumo Edge',
+    displayName: vaultHit.eaName || 'Lumo Edge',
+    mainText: vaultHit.mainText || '',
+    symbols: vaultHit.symbols?.length ? vaultHit.symbols : ['XAUUSD'],
+    customMedia: normalizeCustomMedia(vaultHit.customMedia),
+    imageUrl,
+  };
+}
+
+/** Fast path — local vault + cached/API URL, no full fetchDb wait. */
 async function resolveMentorImage(
   mentorId: string,
   dbImages?: Record<string, string>,
 ): Promise<string> {
   if (!mentorId) return '';
   const profileKey = `profile-${mentorId}`;
-  const fromFb =
-    (await firebaseFetchImage(profileKey)) ||
-    (await firebaseFetchImage(`img:${profileKey}`));
-  if (fromFb) return fromFb;
+  const cached = getEaImage(profileKey) || getEaImage(`img:${profileKey}`);
+  if (cached && !isPlaceholderMentorImage(cached)) {
+    if (isStreamableMediaUrl(cached) || cached.startsWith('data:')) return cached;
+  }
+
   const fromMap =
     dbImages?.[profileKey] ||
     dbImages?.[`img:${profileKey}`] ||
     dbImages?.[mentorId] ||
     '';
-  if (fromMap) return fromMap;
-  const { resolveDisplayImage } = await import('./storage');
-  const resolved = await resolveDisplayImage(`/api/images/${profileKey}`);
-  return resolved || `/api/images/${encodeURIComponent(profileKey)}`;
+  if (fromMap && !isPlaceholderMentorImage(fromMap)) {
+    if (isStreamableMediaUrl(fromMap) || fromMap.startsWith('data:')) return fromMap;
+  }
+
+  const apiUrl = `/api/images/${encodeURIComponent(profileKey)}`;
+
+  void firebaseFetchImage(profileKey).then((fromFb) => {
+    if (fromFb && !isPlaceholderMentorImage(fromFb)) {
+      saveEaImage(profileKey, fromFb);
+    }
+  });
+
+  return apiUrl;
 }
 
 /** Read mentor branding for an activated client — never mutates license keys. */
 export async function fetchClientBranding(licenseKey: string): Promise<LicenseSync | null> {
   const normalizedKey = normalizeLicenseKey(licenseKey);
   if (!normalizedKey) return null;
+
+  const localImages = loadJSON<Record<string, string>>(IMAGE_STORE, {});
+  const vaultHit = findInVault(normalizedKey);
+  if (vaultHit && vaultHit.ownerAdminId) {
+    const imageUrl = await resolveMentorImage(vaultHit.ownerAdminId, localImages);
+    return brandingFromVault(vaultHit, imageUrl);
+  }
 
   const db = await fetchDb();
   if (!db) return null;
@@ -71,7 +111,9 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
   const ownerEa = ws?.eas?.find((e) => e.id === raw.eaId);
   const imageUrl = await resolveMentorImage(
     mentorId,
-    db.images && typeof db.images === 'object' ? (db.images as Record<string, string>) : undefined,
+    db.images && typeof db.images === 'object'
+      ? { ...localImages, ...(db.images as Record<string, string>) }
+      : localImages,
   );
 
   const eaName = String(raw.eaName || ownerEa?.name || ws?.profile?.eaDisplayName || '');
@@ -95,10 +137,12 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
 export async function resolveBrandingImageUrl(imageUrl: string): Promise<string> {
   const raw = String(imageUrl || '').trim();
   if (!raw || isPlaceholderMentorImage(raw)) return '';
-  if (raw.startsWith('data:') || raw.startsWith('http') || raw.startsWith('blob:')) return raw;
-  if (raw.startsWith('img:') || raw.startsWith('/api/images/')) {
+  if (raw.startsWith('data:') || raw.startsWith('blob:') || isStreamableMediaUrl(raw)) {
+    return raw;
+  }
+  if (raw.startsWith('img:')) {
     const { resolveDisplayImage } = await import('./storage');
-    return (await resolveDisplayImage(raw)) || (raw.startsWith('/api/images/') ? raw : '');
+    return resolveDisplayImage(raw);
   }
   return raw;
 }

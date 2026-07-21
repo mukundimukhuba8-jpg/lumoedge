@@ -7,7 +7,7 @@ import {
   normalizeLicenseKey,
   type VaultLicense,
 } from './storage';
-import { isPlaceholderMentorImage } from './mentorMedia';
+import { isPlaceholderMentorImage, looksLikeVideoUrl } from './mentorMedia';
 
 /** Single client-facing message for any failed activation. */
 export const INVALID_KEY_MESSAGE = 'Invalid key';
@@ -234,41 +234,48 @@ export async function resolveLicenseImageAsync(
   if (!mentorId) return current;
 
   const profileKey = `profile-${mentorId}`;
+  const apiUrl = `/api/images/${encodeURIComponent(profileKey)}`;
   const { firebaseFetchImage } = await import('./firebaseDb');
-  const { resolveDisplayImage, saveEaImage } = await import('./storage');
+  const { getEaImage, isStreamableMediaUrl, saveEaImage } = await import('./storage');
 
   const tryPersist = (value: string) => {
     const v = String(value || '').trim();
     if (!v || isPlaceholderMentorImage(v)) return '';
-    saveEaImage(profileKey, v);
-    saveEaImage(`img:${profileKey}`, v);
+    if (!looksLikeVideoUrl(v) && v.startsWith('data:') && v.length < 500_000) {
+      saveEaImage(profileKey, v);
+      saveEaImage(`img:${profileKey}`, v);
+    }
     return v;
   };
 
-  const fromFirebase = await firebaseFetchImage(profileKey);
-  if (fromFirebase) return tryPersist(fromFirebase) || fromFirebase;
-
-  for (const candidate of [
-    current,
-    remoteImages[profileKey],
-    remoteImages[`img:${profileKey}`],
+  for (const hit of [
     getEaImage(profileKey),
     getEaImage(`img:${profileKey}`),
-    `img:${profileKey}`,
-    `/api/images/${profileKey}`,
+    remoteImages[profileKey],
+    remoteImages[`img:${profileKey}`],
   ]) {
-    const raw = String(candidate || '').trim();
-    if (!raw || isPlaceholderMentorImage(raw)) continue;
-    if (raw.startsWith('data:') || raw.startsWith('http')) {
-      return tryPersist(raw) || raw;
-    }
-    const resolved = await resolveDisplayImage(raw);
-    if (resolved && !isPlaceholderMentorImage(resolved)) {
-      return tryPersist(resolved) || resolved;
-    }
+    const v = String(hit || '').trim();
+    if (!v || isPlaceholderMentorImage(v)) continue;
+    if (isStreamableMediaUrl(v) || v.startsWith('data:')) return v;
   }
 
-  return current;
+  if (
+    current &&
+    (isStreamableMediaUrl(current) || current.startsWith('data:') || current.startsWith('http'))
+  ) {
+    return tryPersist(current) || current;
+  }
+
+  const fromFirebase = await Promise.race([
+    firebaseFetchImage(profileKey),
+    new Promise<string>((resolve) => window.setTimeout(() => resolve(''), 2500)),
+  ]);
+  if (fromFirebase) {
+    const saved = tryPersist(fromFirebase) || fromFirebase;
+    if (isStreamableMediaUrl(saved) || saved.startsWith('data:')) return saved;
+  }
+
+  return apiUrl;
 }
 
 export function prepareAssignedLicense(

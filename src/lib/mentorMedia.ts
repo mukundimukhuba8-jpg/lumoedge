@@ -285,10 +285,13 @@ export function resolveProfileImage(
         const all = JSON.parse(
           localStorage.getItem('ub-web/ea-images-v1') || '{}',
         ) as Record<string, string>;
-        const resolved = all[fromEa] || all[key] || all[`img:${key}`] || fromEa;
-        return resolved && !isFakeLogo(resolved) ? resolved : '';
+        const resolved = all[fromEa] || all[key] || all[`img:${key}`] || '';
+        if (resolved && !isFakeLogo(resolved) && !resolved.startsWith('img:')) {
+          return resolved;
+        }
+        return `/api/images/${encodeURIComponent(key)}`;
       } catch {
-        return fromEa;
+        return `/api/images/${encodeURIComponent(fromEa.replace(/^img:/, ''))}`;
       }
     }
     return fromEa;
