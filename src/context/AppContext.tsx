@@ -477,10 +477,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   ? sync.symbols
                   : session.bot.symbols
                 : session.bot.symbols,
-            // Mentor portal image always wins when provided (including clear)
+            // Mentor portal image wins when provided — never wipe on failed sync
             imageUrl:
               sync.imageUrl !== undefined
-                ? sync.imageUrl
+                ? sync.imageUrl || session.bot.imageUrl || ''
                 : session.bot.imageUrl || '',
             customMedia: normalizeCustomMedia(
               sync.customMedia !== undefined
