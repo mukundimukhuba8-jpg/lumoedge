@@ -4592,197 +4592,196 @@ button:active:not(:disabled),
   100% { opacity: 1; transform: scale(1); }
 }
 
-/* Chart Scanner — Trade Engine overlay */
-.te-overlay {
+/* Chart Scanner — compact Trade Engine popup (top floating card) */
+.te-popup-wrap {
   position: fixed;
-  inset: 0;
+  top: max(12px, env(safe-area-inset-top, 12px));
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 120;
-  display: grid;
-  place-items: center;
-  padding: 16px;
+  width: min(90%, 432px);
   pointer-events: none;
+  animation: te-popup-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.te-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(4, 8, 18, 0.72);
-  backdrop-filter: blur(8px);
+.te-popup-wrap.te-popup-exit {
+  animation: te-popup-out 0.42s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.te-popup {
   pointer-events: auto;
+  padding: 14px 16px 12px;
+  border-radius: 20px;
+  background: linear-gradient(
+    160deg,
+    rgba(14, 20, 36, 0.82),
+    rgba(8, 12, 24, 0.78)
+  );
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  box-shadow:
+    0 0 0 1px rgba(59, 130, 246, 0.12),
+    0 0 28px rgba(34, 211, 238, 0.18),
+    0 0 48px rgba(168, 85, 247, 0.12),
+    0 16px 40px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
 }
 
-.te-panel {
-  position: relative;
-  z-index: 1;
-  width: min(100%, 440px);
-  max-height: min(92vh, 820px);
-  overflow: auto;
-  pointer-events: auto;
-  animation: mt5-panel-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.te-header {
+.te-popup-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  margin-bottom: 12px;
+  animation: te-step-swap 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.te-titles h2 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.te-popup-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  flex-shrink: 0;
+}
+
+.te-popup-check,
+.te-popup-spin {
   color: var(--mt5-cyan, #22d3ee);
 }
 
-.te-titles p {
-  margin: 2px 0 0;
-  font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.5);
+.te-popup-check {
+  color: #34d399;
 }
 
-.te-close {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.7);
-  display: grid;
-  place-items: center;
+.te-popup-fail-ico {
+  color: #f87171;
 }
 
-.te-success-banner {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 12px;
-  margin-bottom: 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(52, 211, 153, 0.35);
-  background: rgba(52, 211, 153, 0.08);
-  color: #a7f3d0;
-}
-
-.te-success-banner strong {
-  display: block;
-  color: #fff;
-  font-size: 0.85rem;
-}
-
-.te-success-banner span {
-  font-size: 0.72rem;
-  opacity: 0.85;
-}
-
-.te-ring-success {
-  stroke: var(--mt5-green, #34d399) !important;
-  filter: drop-shadow(0 0 8px rgba(52, 211, 153, 0.65)) !important;
-}
-
-.te-ring-fail {
-  stroke: #f87171 !important;
-  filter: drop-shadow(0 0 8px rgba(248, 113, 113, 0.55)) !important;
-}
-
-.te-dash {
-  margin-bottom: 14px;
-  padding: 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.te-dash-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.45);
-  margin-bottom: 10px;
-}
-
-.te-dash-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.te-dash-item {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.te-dash-item span {
-  font-size: 0.62rem;
-  color: rgba(255, 255, 255, 0.45);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.te-dash-item strong {
-  font-size: 0.78rem;
-  color: #fff;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.te-buy { color: #34d399 !important; }
-.te-sell { color: #f87171 !important; }
-
-.te-steps {
-  max-height: 280px;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.te-step-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.te-popup-copy {
   min-width: 0;
 }
 
-.te-step-err {
-  font-size: 0.68rem;
-  color: #fecaca;
+.te-popup-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #f8fafc;
   line-height: 1.35;
 }
 
-.mt5-step.failed {
-  border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(248, 113, 113, 0.08);
-  animation: none;
+.te-popup-line.done {
+  color: #6ee7b7;
 }
 
-.mt5-step.failed .mt5-step-ico {
-  background: rgba(248, 113, 113, 0.2);
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.45);
+.te-popup-line.failed {
+  color: #fecaca;
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
-.te-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+.te-popup-emoji {
+  font-size: 1rem;
+  line-height: 1;
 }
 
-.te-retry {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.te-popup-inline-check {
+  color: #34d399;
+  flex-shrink: 0;
+}
+
+.te-popup-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.te-popup-retry {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--electric);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.te-popup-progress {
+  margin-top: 10px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.te-popup-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3b82f6, #22d3ee, #a855f7);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.55);
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.te-popup-pct {
+  margin-top: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+@keyframes te-popup-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes te-popup-out {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+}
+
+@keyframes te-step-swap {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+[data-animations='off'] .te-popup-wrap,
+[data-animations='off'] .te-popup-row {
+  animation: none !important;
+}
+
+/* Legacy trade engine classes (unused) — kept minimal for safety */
+.te-overlay,
+.te-backdrop,
+.te-panel {
+  display: none !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════

@@ -605,11 +605,6 @@ export function ChartScannerPage() {
             {status && phase !== 'idle' ? (
               <p className="muted scan-status-line">{status}</p>
             ) : null}
-            {phase === 'accuracy' && lastResult && engineOpen ? (
-              <p className="muted scan-status-line">
-                Trade engine active — see overlay for live progress.
-              </p>
-            ) : null}
           </div>
         ) : null}
 

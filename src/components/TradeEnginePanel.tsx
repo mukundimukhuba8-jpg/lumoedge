@@ -1,15 +1,5 @@
-import {
-  Activity,
-  Check,
-  CheckCircle2,
-  Cog,
-  Loader2,
-  RefreshCw,
-  TrendingDown,
-  TrendingUp,
-  X,
-  Zap,
-} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Check, Loader2, RefreshCw, X } from 'lucide-react';
 import type { TradeEngineSnapshot } from '../lib/tradeEngine';
 
 type Props = {
@@ -19,185 +9,122 @@ type Props = {
   onClose: () => void;
 };
 
-const RING_C = 2 * Math.PI * 45;
+type StepMeta = { icon: string; active: string; done: string };
 
-function formatMs(ms: number) {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+const STEP_META: StepMeta[] = [
+  { icon: '🤖', active: 'AI Analysis Complete', done: 'AI Analysis Complete' },
+  { icon: '📊', active: 'Validating Signal…', done: 'Signal Approved' },
+  { icon: '🔍', active: 'Verifying Symbol…', done: 'Symbol Verified' },
+  { icon: '📡', active: 'Checking Market Status…', done: 'Market Ready' },
+  { icon: '⚙️', active: 'Preparing Trade…', done: 'Trade Prepared' },
+  { icon: '⚙️', active: 'Preparing Trade…', done: 'Trade Prepared' },
+  { icon: '⚙️', active: 'Preparing Trade…', done: 'Trade Prepared' },
+  { icon: '🔗', active: 'Connecting to MT5…', done: 'MT5 Connected' },
+  { icon: '📤', active: 'Sending Trade…', done: 'Trade Sent' },
+  { icon: '🏦', active: 'Waiting for Broker Confirmation…', done: 'Broker Confirmed' },
+  { icon: '✅', active: 'Trade Executed Successfully', done: 'Trade Executed Successfully' },
+];
+
+function metaForIndex(index: number): StepMeta {
+  return STEP_META[Math.min(Math.max(index, 0), STEP_META.length - 1)];
+}
+
+function resolveStepIndex(snapshot: TradeEngineSnapshot): number {
+  const { steps, complete, failedStep } = snapshot;
+  if (failedStep != null) return failedStep;
+  if (complete) return steps.length - 1;
+  const active = steps.findIndex((s) => s.status === 'active');
+  if (active >= 0) return active;
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    if (steps[i].status === 'done') return i;
+  }
+  return 0;
 }
 
 export function TradeEnginePanel({ snapshot, running, onRetry, onClose }: Props) {
-  const { steps, progressPct, etaSec, dashboard, failedStep, complete, autoTrade } =
-    snapshot;
-  const ringOffset = RING_C - (progressPct / 100) * RING_C;
-  const success = complete && failedStep == null;
-  const failed = failedStep != null;
-  const dirBuy = dashboard.direction.toUpperCase() === 'BUY';
+  const [exiting, setExiting] = useState(false);
+  const stepIndex = resolveStepIndex(snapshot);
+  const step = snapshot.steps[stepIndex];
+  const meta = metaForIndex(stepIndex);
+  const failed = snapshot.failedStep != null;
+  const success = snapshot.complete && !failed;
+  const isActive = step?.status === 'active' || (running && !success && !failed);
+  const isDone = step?.status === 'done' || success;
+  const previewDone = success && !snapshot.autoTrade;
+
+  const lineText = useMemo(() => {
+    if (failed && step?.error) return step.error;
+    if (success) {
+      return previewDone ? 'Validation Complete' : meta.done;
+    }
+    if (isDone && !isActive) return meta.done;
+    return meta.active;
+  }, [failed, step?.error, success, previewDone, meta, isDone, isActive]);
+
+  useEffect(() => {
+    setExiting(false);
+  }, [snapshot.dashboard.tradeStatus, snapshot.failedStep]);
+
+  useEffect(() => {
+    if (!success || failed) return;
+    const hold = window.setTimeout(() => setExiting(true), 2000);
+    return () => window.clearTimeout(hold);
+  }, [success, failed]);
+
+  useEffect(() => {
+    if (!exiting) return;
+    const t = window.setTimeout(onClose, 420);
+    return () => window.clearTimeout(t);
+  }, [exiting, onClose]);
+
+  if (!step) return null;
 
   return (
-    <div className="te-overlay" role="dialog" aria-modal="true" aria-label="Trade Engine">
-      <div className="te-backdrop" onClick={complete ? onClose : undefined} aria-hidden />
-      <section className="te-panel mt5-glass">
-        <header className="te-header">
-          <div className="mt5-engine-badge" aria-hidden>
-            <Cog size={22} className="mt5-engine-icon" />
+    <div
+      className={`te-popup-wrap${exiting ? ' te-popup-exit' : ''}`}
+      role="status"
+      aria-live="polite"
+      aria-label="Trade engine status"
+    >
+      <div className="te-popup">
+        <div className="te-popup-row" key={`${stepIndex}-${step.status}-${lineText}`}>
+          <span className="te-popup-icon" aria-hidden>
+            {failed ? (
+              <X size={16} className="te-popup-fail-ico" />
+            ) : isDone && !isActive ? (
+              <Check size={16} className="te-popup-check" />
+            ) : isActive ? (
+              <Loader2 size={16} className="spin te-popup-spin" />
+            ) : (
+              <span>{meta.icon}</span>
+            )}
+          </span>
+          <div className="te-popup-copy">
+            <span
+              className={`te-popup-line${isDone && !failed && !isActive ? ' done' : ''}${failed ? ' failed' : ''}`}
+            >
+              {failed
+                ? lineText
+                : isDone && !isActive
+                  ? `✓ ${lineText}`
+                  : `${meta.icon} ${lineText}`}
+            </span>
+            {failed && step.error ? (
+              <span className="te-popup-sub">{meta.active}</span>
+            ) : null}
           </div>
-          <div className="te-titles">
-            <h2>Trade Engine</h2>
-            <p>{autoTrade ? 'Auto execution sequence' : 'Signal validation preview'}</p>
-          </div>
-          <button type="button" className="te-close" onClick={onClose} aria-label="Close">
-            <X size={20} />
-          </button>
-        </header>
-
-        {success ? (
-          <div className="te-success-banner mt5-success-pop" role="status">
-            <CheckCircle2 size={28} />
-            <div>
-              <strong>Trade engine complete</strong>
-              <span>{dashboard.tradeStatus}</span>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt5-progress-row">
-          <div className="mt5-ring-wrap" aria-hidden>
-            <svg viewBox="0 0 100 100" className="mt5-ring">
-              <circle className="mt5-ring-track" cx="50" cy="50" r="45" />
-              <circle
-                className={`mt5-ring-fill${success ? ' te-ring-success' : ''}${failed ? ' te-ring-fail' : ''}`}
-                cx="50"
-                cy="50"
-                r="45"
-                style={{ strokeDashoffset: ringOffset }}
-              />
-            </svg>
-            <div className="mt5-ring-label">
-              <strong>{progressPct}%</strong>
-              <small>Complete</small>
-            </div>
-          </div>
-          <div className="mt5-progress-meta">
-            <div className="mt5-est">
-              <span>Estimated remaining</span>
-              <strong>{etaSec}s</strong>
-            </div>
-            <div className="mt5-load-bar">
-              <span className="mt5-load-fill" style={{ width: `${progressPct}%` }} />
-            </div>
-            <p className="mt5-flow-line">
-              <span className="mt5-flow-pulse" />
-              {running
-                ? 'Processing trade pipeline…'
-                : failed
-                  ? 'Step failed — retry or close'
-                  : complete
-                    ? 'Sequence finished'
-                    : 'Ready'}
-            </p>
-          </div>
-        </div>
-
-        <div className="te-dash">
-          <div className="te-dash-head">
-            <Activity size={15} />
-            <span>Live engine dashboard</span>
-          </div>
-          <div className="te-dash-grid">
-            <div className="te-dash-item">
-              <span>Symbol</span>
-              <strong>{dashboard.symbol}</strong>
-            </div>
-            <div className="te-dash-item">
-              <span>Signal</span>
-              <strong className={dirBuy ? 'te-buy' : 'te-sell'}>
-                {dirBuy ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                {dashboard.direction}
-              </strong>
-            </div>
-            <div className="te-dash-item">
-              <span>Confidence</span>
-              <strong>{dashboard.confidence}%</strong>
-            </div>
-            <div className="te-dash-item">
-              <span>Entry</span>
-              <strong>{dashboard.entry}</strong>
-            </div>
-            <div className="te-dash-item">
-              <span>Stop Loss</span>
-              <strong>{dashboard.stopLoss}</strong>
-            </div>
-            <div className="te-dash-item">
-              <span>Take Profit</span>
-              <strong>{dashboard.takeProfit}</strong>
-            </div>
-            <div className="te-dash-item">
-              <span>MT5</span>
-              <strong>{dashboard.mt5Status}</strong>
-            </div>
-            <div className="te-dash-item">
-              <span>Broker</span>
-              <strong>{dashboard.broker}</strong>
-            </div>
-            <div className="te-dash-item">
-              <span>Trade status</span>
-              <strong>{dashboard.tradeStatus}</strong>
-            </div>
-            <div className="te-dash-item">
-              <span>Execution</span>
-              <strong>{formatMs(dashboard.executionMs)}</strong>
-            </div>
-          </div>
-        </div>
-
-        <ol className="mt5-steps te-steps">
-          {steps.map((step, i) => {
-            const done = step.status === 'done';
-            const active = step.status === 'active';
-            const isFailed = step.status === 'failed';
-            const dim = step.status === 'pending';
-            return (
-              <li
-                key={step.label}
-                className={`mt5-step${done ? ' done' : ''}${active ? ' active' : ''}${isFailed ? ' failed' : ''}${dim ? ' dim' : ''}`}
-              >
-                <span className="mt5-step-ico" aria-hidden>
-                  {done ? (
-                    <Check size={14} />
-                  ) : isFailed ? (
-                    <X size={14} />
-                  ) : active ? (
-                    <Loader2 size={14} className="spin" />
-                  ) : (
-                    i + 1
-                  )}
-                </span>
-                <div className="te-step-body">
-                  <span className="mt5-step-text">{step.label}</span>
-                  {step.error ? <span className="te-step-err">{step.error}</span> : null}
-                </div>
-                {active ? <span className="mt5-step-line" aria-hidden /> : null}
-              </li>
-            );
-          })}
-        </ol>
-
-        <div className="te-actions">
-          {failed && failedStep != null ? (
-            <button type="button" className="btn btn-blue te-retry" onClick={onRetry}>
-              <RefreshCw size={16} />
-              Retry step {failedStep + 1}
-            </button>
-          ) : null}
-          {complete ? (
-            <button type="button" className="btn btn-ghost" onClick={onClose}>
-              <Zap size={16} />
-              Close engine
+          {failed ? (
+            <button type="button" className="te-popup-retry" onClick={onRetry} aria-label="Retry">
+              <RefreshCw size={14} />
             </button>
           ) : null}
         </div>
-      </section>
+
+        <div className="te-popup-progress" aria-hidden>
+          <span className="te-popup-progress-fill" style={{ width: `${snapshot.progressPct}%` }} />
+        </div>
+        <div className="te-popup-pct">{snapshot.progressPct}%</div>
+      </div>
     </div>
   );
 }
