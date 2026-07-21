@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  ChevronDown,
+  ChevronUp,
   Bot,
   Camera,
   Home,
@@ -18,13 +20,18 @@ import {
 import { useApp } from '../../context/AppContext';
 import {
   DAILY_SCAN_LIMIT,
+  SCAN_RESET_EVENT,
   consumeScan,
   buildTpLadder,
   fileToScanDataUrl,
+  formatScanTime,
   getScansLeft,
   loadScanHistory,
   pushScanHistory,
   runChartScan,
+  scanResultStatus,
+  scheduleSastMidnightReset,
+  syncScanRemoteAdmin,
   type ScanHistoryItem,
   type TradeDirection,
 } from '../../lib/chartScan';
@@ -85,6 +92,8 @@ export function ChartScannerPage() {
   const [aiLive, setAiLive] = useState<boolean | null>(null);
   const [editSymbol, setEditSymbol] = useState('');
   const [scanPreview, setScanPreview] = useState('');
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
+  const [limitMsg, setLimitMsg] = useState('');
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const uploadRef = useRef<HTMLInputElement | null>(null);
   const animRef = useRef<number | null>(null);
@@ -174,9 +183,27 @@ export function ChartScannerPage() {
     };
   }, [accent, accentRgb]);
 
-  useEffect(() => {
+  const applyDailyResetAndSync = () => {
     setScansLeft(getScansLeft(user?.email));
     setHistory(loadScanHistory(user?.email));
+  };
+
+  useEffect(() => {
+    void syncScanRemoteAdmin(user?.email).then(() => applyDailyResetAndSync());
+    const onRemote = () => applyDailyResetAndSync();
+    window.addEventListener(SCAN_RESET_EVENT, onRemote);
+    const unschedule = scheduleSastMidnightReset(() => {
+      applyDailyResetAndSync();
+      setLimitMsg('');
+    });
+    const poll = window.setInterval(() => {
+      void syncScanRemoteAdmin(user?.email).then(() => applyDailyResetAndSync());
+    }, 45_000);
+    return () => {
+      window.removeEventListener(SCAN_RESET_EVENT, onRemote);
+      unschedule();
+      window.clearInterval(poll);
+    };
   }, [user?.email]);
 
   // Animate accuracy 0 → target only once accuracy phase opens
@@ -230,9 +257,12 @@ export function ChartScannerPage() {
       return;
     }
     if (scansLeft <= 0) {
-      alert('No scans left today. Come back tomorrow.');
+      setLimitMsg(
+        'Daily scan limit reached. Please wait for reset or contact your administrator.',
+      );
       return;
     }
+    setLimitMsg('');
 
     setPhase('scanning');
     setStatus('Scanning chart…');
@@ -326,6 +356,18 @@ export function ChartScannerPage() {
             {scansLeft}/{DAILY_SCAN_LIMIT}
           </strong>
         </div>
+
+        {scansLeft <= 0 ? (
+          <div className="scan-limit-banner" role="status">
+            Daily scan limit reached. Please wait for reset or contact your administrator.
+          </div>
+        ) : null}
+
+        {limitMsg && scansLeft > 0 ? (
+          <p className="muted scan-hint" style={{ marginTop: 0 }}>
+            {limitMsg}
+          </p>
+        ) : null}
 
         {aiLive === false ? (
           <div
@@ -607,22 +649,58 @@ export function ChartScannerPage() {
         {history.length > 0 ? (
           <div className="scan-history">
             <div className="scan-history-title">Scan history</div>
-            <div className="scan-history-grid">
-              {history.map((h) => (
-                <button
-                  key={h.id}
-                  type="button"
-                  className="scan-history-item"
-                  onClick={() => {
-                    void playReveal(h);
-                  }}
-                >
-                  <img src={h.imageDataUrl} alt="" />
-                  <span>
-                    {(h.direction || 'buy').toUpperCase().slice(0, 1)} · {h.accuracy}%
-                  </span>
-                </button>
-              ))}
+            <div className="scan-history-list">
+              {history.map((h) => {
+                const { time, date } = formatScanTime(h.createdAt);
+                const symbol = (h.symbol || 'XAUUSD').toUpperCase();
+                const signal = (h.direction || 'buy').toUpperCase();
+                const expanded = expandedHistoryId === h.id;
+                const status = scanResultStatus(h.accuracy);
+                return (
+                  <div key={h.id} className="scan-history-row-wrap">
+                    <button
+                      type="button"
+                      className={`scan-history-row${expanded ? ' open' : ''}`}
+                      onClick={() =>
+                        setExpandedHistoryId((id) => (id === h.id ? null : h.id))
+                      }
+                    >
+                      <img className="scan-history-thumb" src={h.imageDataUrl} alt="" />
+                      <span className="scan-h-col symbol">{symbol}</span>
+                      <span className={`scan-h-col signal ${h.direction === 'sell' ? 'sell' : 'buy'}`}>
+                        {signal}
+                      </span>
+                      <span className="scan-h-col conf">{h.accuracy}%</span>
+                      <span className="scan-h-col time">{time}</span>
+                      <span className="scan-h-col date">{date}</span>
+                      <span className={`scan-h-col status status-${status.toLowerCase()}`}>
+                        {status}
+                      </span>
+                      <span className="scan-h-expand" aria-hidden>
+                        {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </span>
+                    </button>
+                    {expanded ? (
+                      <div className="scan-history-detail">
+                        {h.summary ? <p>{h.summary}</p> : null}
+                        <div className="scan-history-detail-meta">
+                          {h.timeframe ? <span>TF {h.timeframe}</span> : null}
+                          {h.entryPrice ? <span>Entry {h.entryPrice}</span> : null}
+                          {h.stopLoss ? <span>SL {h.stopLoss}</span> : null}
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          style={{ marginTop: 8, width: '100%' }}
+                          onClick={() => void playReveal(h)}
+                        >
+                          View full analysis
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ) : null}

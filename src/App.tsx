@@ -7,7 +7,12 @@ import {
   loadInterfacePrefs,
   subscribeInterfacePrefs,
 } from './lib/interfaceStyle';
-import { resolveCustomBackdrop } from './lib/mentorMedia';
+import {
+  isPlaceholderMentorImage,
+  resolveCustomBackdrop,
+  resolveProfileImage,
+} from './lib/mentorMedia';
+import { startMt5KeepAlive } from './lib/mt5Session';
 import { AdminAuthPage } from './pages/admin/AdminAuthPage';
 import {
   ApproveAdminsPage,
@@ -37,6 +42,10 @@ function ClientAppGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => subscribeInterfacePrefs(() => setPrefs(loadInterfacePrefs())), []);
 
+  useEffect(() => {
+    if (user?.email && licensed) startMt5KeepAlive(user.email);
+  }, [user?.email, licensed]);
+
   if (!user) return <Navigate to="/" replace />;
   // License key already entered — stay in the app, never bounce to payment
   if (!licensed && accessStatus === 'pending') return <Navigate to="/waiting" replace />;
@@ -50,15 +59,20 @@ function ClientAppGate({ children }: { children: React.ReactNode }) {
     bot.imageUrl || '',
     bot.customMedia,
   );
-  const backdropSrc = custom?.src || bot.imageUrl || '';
+  const profileSrc = resolveProfileImage(bot.imageUrl, bot.customMedia);
+  const mentorBackdrop =
+    custom?.src ||
+    (profileSrc && !isPlaceholderMentorImage(profileSrc) ? profileSrc : '') ||
+    (bot.imageUrl && !isPlaceholderMentorImage(bot.imageUrl) ? bot.imageUrl : '');
+  const backdropSrc = mentorBackdrop;
   const backdropKind = custom?.kind || 'image';
   // Broker page stays clean dark (admin portal theme) — no photo backdrop
   const hideBackdrop = location.pathname.includes('metatrader');
 
   return (
     <>
-      {hideBackdrop ? null : <EaBackdrop src={backdropSrc} kind={backdropKind} />}
-      <div key={location.pathname} className="page-enter">
+      {hideBackdrop ? null : backdropSrc ? <EaBackdrop src={backdropSrc} kind={backdropKind} /> : null}
+      <div className="page-enter">
         {children}
       </div>
     </>

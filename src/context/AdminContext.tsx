@@ -417,9 +417,9 @@ type StoreState = {
 
 function emptyMt5(eaName = ''): Mt5Connection {
   return {
-    broker: 'Razor Markets',
+    broker: 'RazorMarkets',
     server: 'RazorMarkets-Live',
-    accountType: 'Standard Live',
+    accountType: '100% Bonus Standard',
     login: '',
     password: '',
     eaName,

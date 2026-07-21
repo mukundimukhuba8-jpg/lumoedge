@@ -1,19 +1,32 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  Activity,
+  BarChart3,
+  Building2,
+  Check,
   ChevronDown,
+  Cog,
   ExternalLink,
   Eye,
   EyeOff,
   Home,
+  Layers,
   Loader2,
   Monitor,
-  RotateCcw,
+  RefreshCw,
   Search,
+  Server,
+  Shield,
   Star,
+  TrendingUp,
+  Unplug,
+  User,
+  Wallet,
+  Zap,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { isPlaceholderMentorImage } from '../../lib/mentorMedia';
+import { isPlaceholderMentorImage, resolveProfileImage } from '../../lib/mentorMedia';
 import {
   accentHex,
   hexToRgb,
@@ -21,11 +34,9 @@ import {
   subscribeInterfacePrefs,
 } from '../../lib/interfaceStyle';
 import {
-  accountDetails,
-  accountSummary,
   connectEx,
   disconnectMt5,
-  openedOrders,
+  RAZOR_MARKETS,
   searchBrokers,
   type Mt5AccountDetails,
   type Mt5AccountSummary,
@@ -35,9 +46,11 @@ import {
 } from '../../lib/mt5Api';
 import {
   clearMt5Session,
+  getMt5AccountSnapshot,
+  refreshMt5AccountNow,
   saveMt5Session,
   startMt5KeepAlive,
-  stopMt5KeepAlive,
+  subscribeMt5Account,
   subscribeMt5Status,
   type Mt5SessionInfo,
 } from '../../lib/mt5Session';
@@ -57,7 +70,21 @@ type ClientMt5 = {
 
 const MT5_KEY = 'ub-web/client-mt5-v1';
 
-const ACCOUNT_TYPES = ['Standard Live', 'Raw Spread', 'Demo'];
+const ACCOUNT_TYPES = ['100% Bonus Standard', '200%'];
+
+const CONNECTION_STEPS = [
+  'Initializing Engine',
+  'Validating MT5 Credentials',
+  'Detecting Broker Server',
+  'Establishing Secure Connection',
+  'Verifying Account',
+  'Synchronizing Account Data',
+  'Loading Trading Environment',
+  'Connection Complete',
+] as const;
+
+const STEP_INTERVAL_MS = 1800;
+const ESTIMATED_CONNECT_MS = CONNECTION_STEPS.length * STEP_INTERVAL_MS;
 
 const EMPTY: ClientMt5 = {
   broker: '',
@@ -76,15 +103,15 @@ function loadMt5(email: string | undefined): ClientMt5 {
   const all = loadJSON<Record<string, ClientMt5>>(MT5_KEY, {});
   const saved = all[email.toLowerCase()] ?? {};
   const merged = { ...EMPTY, ...saved, password: '' };
-  // Not connected → clean slate: the user picks their own broker every time
+  // Not connected → RazorMarkets defaults from swagger broker list
   if (!merged.connected) {
     return {
       ...merged,
-      broker: '',
-      company: '',
-      site: '',
-      server: '',
-      accountType: '',
+      broker: RAZOR_MARKETS.broker,
+      company: RAZOR_MARKETS.company,
+      site: RAZOR_MARKETS.site,
+      server: RAZOR_MARKETS.server,
+      accountType: RAZOR_MARKETS.accountType,
     };
   }
   return merged;
@@ -105,9 +132,8 @@ export function MetaTraderPage() {
   const accent = accentHex(prefs.accent);
   const accentRgb = hexToRgb(accent);
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
-  const eaImage =
-    bot.imageUrl && !isPlaceholderMentorImage(bot.imageUrl) ? bot.imageUrl : '';
-
+  const profileRef = resolveProfileImage(bot.imageUrl, bot.customMedia);
+  const [eaImage, setEaImage] = useState('');
   const [form, setForm] = useState<ClientMt5>(() => loadMt5(user?.email));
   const [showPass, setShowPass] = useState(false);
   const [brokerOpen, setBrokerOpen] = useState(false);
@@ -118,11 +144,38 @@ export function MetaTraderPage() {
   const [connecting, setConnecting] = useState(false);
   const [status, setStatus] = useState('');
   const [notConnecting, setNotConnecting] = useState(false);
-  const [summary, setSummary] = useState<Mt5AccountSummary | null>(null);
-  const [details, setDetails] = useState<Mt5AccountDetails | null>(null);
-  const [positions, setPositions] = useState<Mt5OpenedOrder[]>([]);
+  const [summary, setSummary] = useState<Mt5AccountSummary | null>(
+    () => getMt5AccountSnapshot(user?.email).summary,
+  );
+  const [details, setDetails] = useState<Mt5AccountDetails | null>(
+    () => getMt5AccountSnapshot(user?.email).details,
+  );
+  const [positions, setPositions] = useState<Mt5OpenedOrder[]>(
+    () => getMt5AccountSnapshot(user?.email).positions,
+  );
   const [conn, setConn] = useState<Mt5SessionInfo | null>(null);
+  const [visualStep, setVisualStep] = useState(0);
+  const [connectStartedAt, setConnectStartedAt] = useState<number | null>(null);
+  const [, setUiTick] = useState(0);
   const searchTimer = useRef<number | null>(null);
+  const bootedEmail = useRef<string | undefined>(undefined);
+  const stepTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!profileRef || isPlaceholderMentorImage(profileRef)) {
+        if (!cancelled) setEaImage('');
+        return;
+      }
+      const { resolveDisplayImage } = await import('../../lib/storage');
+      const resolved = (await resolveDisplayImage(profileRef)) || profileRef;
+      if (!cancelled && !isPlaceholderMentorImage(resolved)) setEaImage(resolved);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profileRef]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -135,16 +188,26 @@ export function MetaTraderPage() {
   }, [accent, accentRgb]);
 
   useEffect(() => {
-    const saved = loadMt5(user?.email);
+    if (!user?.email) return;
+    if (bootedEmail.current === user.email) return;
+    bootedEmail.current = user.email;
+    const saved = loadMt5(user.email);
     setForm(saved);
-    setBrokerQuery('');
+    setBrokerQuery(saved.broker || RAZOR_MARKETS.broker);
+    const cached = getMt5AccountSnapshot(user.email);
+    setSummary(cached.summary);
+    setDetails(cached.details);
+    setPositions(cached.positions);
+    if (!saved.connected) {
+      void runSearch('Razor', false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
 
-  // Live connection status — keep-alive pings + auto-reconnect in mt5Session
+  // Live connection status — keep-alive runs app-wide; account data stays cached
   useEffect(() => {
     if (!user?.email) return;
-    const unsub = subscribeMt5Status(user.email, (info) => {
+    const unsubStatus = subscribeMt5Status(user.email, (info) => {
       setConn(info);
       if (info.state === 'connected' && info.token) {
         setForm((prev) =>
@@ -152,33 +215,52 @@ export function MetaTraderPage() {
             ? prev
             : { ...prev, connected: true, token: info.token },
         );
-        void refreshAccount(info.token);
       }
       if (info.state === 'disconnected') {
-        setSummary(null);
-        setPositions([]);
         setForm((prev) =>
           prev.connected ? { ...prev, connected: false, token: '' } : prev,
         );
       }
     });
+    const unsubAccount = subscribeMt5Account(user.email, (snap) => {
+      setSummary(snap.summary);
+      setDetails(snap.details);
+      setPositions(snap.positions);
+    });
     startMt5KeepAlive(user.email);
     return () => {
-      unsub();
-      stopMt5KeepAlive(user.email);
+      unsubStatus();
+      unsubAccount();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
 
-  // Refresh balance/equity/positions every 20s while connected
+  // UI-only connection engine step animation (does not affect broker logic)
   useEffect(() => {
-    if (conn?.state !== 'connected' || !conn.token) return;
-    const id = window.setInterval(() => {
-      void refreshAccount(conn.token);
-    }, 20_000);
+    if (stepTimer.current) window.clearInterval(stepTimer.current);
+    if (!connecting) return;
+    setConnectStartedAt(Date.now());
+    setVisualStep(0);
+    stepTimer.current = window.setInterval(() => {
+      setVisualStep((s) => Math.min(s + 1, CONNECTION_STEPS.length - 2));
+    }, STEP_INTERVAL_MS);
+    return () => {
+      if (stepTimer.current) window.clearInterval(stepTimer.current);
+    };
+  }, [connecting]);
+
+  useEffect(() => {
+    if (!connecting) return;
+    const id = window.setInterval(() => setUiTick((t) => t + 1), 1000);
     return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conn?.state, conn?.token]);
+  }, [connecting]);
+
+  useEffect(() => {
+    if (form.connected) {
+      setVisualStep(CONNECTION_STEPS.length - 1);
+      setConnectStartedAt(null);
+    }
+  }, [form.connected]);
 
   const persist = (next: ClientMt5) => {
     setForm(next);
@@ -200,18 +282,37 @@ export function MetaTraderPage() {
         (c.results || []).map((r) => ({ ...r, company: c.company })),
       );
       if (flat.length && !form.connected) {
+        const razor =
+          flat.find((r) => r.name === RAZOR_MARKETS.server) ||
+          flat.find((r) => /razormarkets-live/i.test(r.name));
         const match =
+          razor ||
           flat.find((r) => r.name === form.server) ||
           flat.find((r) =>
             r.name.toLowerCase().includes(form.broker.split(' ')[0]?.toLowerCase() || ''),
           ) ||
           flat[0];
         if (match) {
+          const companyName = (match as { company?: string }).company || list[0]?.company || '';
           setServers(
-            list.find((c) => c.company === (match as { company?: string }).company)?.results ||
+            list.find((c) => c.company === companyName)?.results ||
               list[0].results ||
               [],
           );
+          if (razor || !form.server) {
+            persist({
+              ...form,
+              broker: RAZOR_MARKETS.broker,
+              company: companyName,
+              server: match.name,
+              site: match.site
+                ? match.site.startsWith('http')
+                  ? match.site
+                  : `https://${match.site}`
+                : RAZOR_MARKETS.site,
+              accountType: form.accountType || RAZOR_MARKETS.accountType,
+            });
+          }
         }
       }
     } catch (e) {
@@ -247,19 +348,8 @@ export function MetaTraderPage() {
     setBrokerQuery(company);
   };
 
-  const refreshAccount = async (token: string) => {
-    try {
-      const [s, d, p] = await Promise.allSettled([
-        accountSummary(token),
-        accountDetails(token),
-        openedOrders(token),
-      ]);
-      if (s.status === 'fulfilled') setSummary(s.value);
-      if (d.status === 'fulfilled') setDetails(d.value);
-      if (p.status === 'fulfilled') setPositions(p.value);
-    } catch {
-      // keep-alive loop handles dead sessions
-    }
+  const refreshAccount = (_token: string) => {
+    if (user?.email) refreshMt5AccountNow(user.email);
   };
 
   const connect = async () => {
@@ -348,314 +438,414 @@ export function MetaTraderPage() {
         ? '#fbbf24'
         : '#f87171';
 
+  const progressPct = Math.round(((visualStep + 1) / CONNECTION_STEPS.length) * 100);
+  const ringOffset = 283 - (283 * progressPct) / 100;
+  const elapsedMs = connectStartedAt ? Date.now() - connectStartedAt : 0;
+  const remainingSec = connecting
+    ? Math.max(0, Math.ceil((ESTIMATED_CONNECT_MS - elapsedMs) / 1000))
+    : 0;
+
+  const bannerState = form.connected
+    ? 'success'
+    : notConnecting
+      ? 'failed'
+      : connecting
+        ? visualStep >= 4
+          ? 'sync'
+          : visualStep >= 1
+            ? 'auth'
+            : 'connecting'
+        : conn?.state === 'reconnecting'
+          ? 'sync'
+          : 'idle';
+
+  const bannerText =
+    bannerState === 'success'
+      ? 'Connected Successfully'
+      : bannerState === 'failed'
+        ? 'Connection Failed'
+        : bannerState === 'sync'
+          ? 'Synchronizing…'
+          : bannerState === 'auth'
+            ? 'Authenticating…'
+            : bannerState === 'connecting'
+              ? 'Connecting…'
+              : status || 'Ready to connect';
+
+  const statusItems = [
+    { icon: Building2, label: 'Broker', value: form.broker || RAZOR_MARKETS.broker },
+    { icon: Server, label: 'Server', value: form.server || '—' },
+    { icon: User, label: 'Account Number', value: String(details?.login ?? (form.login || '—')) },
+    { icon: Layers, label: 'Account Type', value: form.accountType || '—' },
+    {
+      icon: Shield,
+      label: 'Leverage',
+      value: summary?.leverage ? `1:${summary.leverage}` : '—',
+    },
+    {
+      icon: Wallet,
+      label: 'Balance',
+      value: summary
+        ? `${summary.balance?.toFixed?.(2) ?? summary.balance} ${summary.currency || ''}`
+        : '—',
+    },
+    {
+      icon: TrendingUp,
+      label: 'Equity',
+      value: summary?.equity != null ? summary.equity.toFixed(2) : '—',
+    },
+    {
+      icon: BarChart3,
+      label: 'Margin',
+      value: summary?.margin != null ? summary.margin.toFixed(2) : '—',
+    },
+    { icon: Activity, label: 'Connection Status', value: connLabel, accent: connColor },
+  ];
+
   return (
-    <div className="app-shell mt5-shell">
+    <div className="app-shell mt5-shell mt5-cyber">
+      <div className="mt5-cyber-bg" aria-hidden>
+        <div className="mt5-cyber-grid" />
+        <div className="mt5-cyber-glow mt5-cyber-glow-a" />
+        <div className="mt5-cyber-glow mt5-cyber-glow-b" />
+        <div className="mt5-cyber-particles">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <span key={i} className="mt5-particle" />
+          ))}
+        </div>
+        <div className="mt5-cyber-lines" />
+      </div>
+
       <div className="mt5-page">
-        <header className="mt5-header">
-          <div style={{ width: 44 }} />
-          <div className="mt5-titles">
-            <h1 className="mt5-brand">
-              <span>Meta</span>
-              <span className="accent">Trader</span>
-            </h1>
-            <div className="mt5-ea">{eaTitle}</div>
+        <header className="mt5-cyber-header">
+          <div className="mt5-engine-badge" aria-hidden>
+            <Cog size={22} className="mt5-engine-icon" />
           </div>
-          <button
-            type="button"
-            className="mt5-unlink"
-            aria-label="Unlink / reset broker"
-            onClick={() => void unlink()}
-            title="Unlink broker"
+          <div className="mt5-cyber-titles">
+            <h1 className="mt5-cyber-title">MT5 Engine</h1>
+            <p className="mt5-cyber-sub">Secure Broker Connection</p>
+            <span className="mt5-cyber-ea">{eaTitle}</span>
+          </div>
+          <div
+            className={`mt5-live-pill${form.connected || connecting ? ' live' : ''}`}
+            style={{ '--live-color': connColor } as CSSProperties}
           >
-            <RotateCcw size={18} color="#fff" />
-          </button>
+            <span className="mt5-live-dot" aria-hidden />
+            <span>{connLabel}</span>
+          </div>
         </header>
 
-        <div className="mt5-card">
-          <h2 className="mt5-card-title">MT5 Connection</h2>
+        <div className={`mt5-banner mt5-banner-${bannerState}`} role="status">
+          <Zap size={16} aria-hidden />
+          <span>{bannerText}</span>
+          {status && bannerState === 'idle' && status !== bannerText ? (
+            <span className="mt5-banner-sub">{status}</span>
+          ) : null}
+          {notConnecting ? <span className="mt5-banner-sub">Not connecting</span> : null}
+        </div>
 
-          {form.connected ? (
-            <div className="mt5-connected">
-              <div className="mt5-connected-box">
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    marginBottom: 6,
-                  }}
-                >
-                  <span
-                    aria-hidden
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: '50%',
-                      background: connColor,
-                      boxShadow: `0 0 8px ${connColor}`,
-                      display: 'inline-block',
-                    }}
-                  />
-                  <strong style={{ color: connColor }}>{connLabel}</strong>
-                </div>
-                <strong>MT5 account connected</strong>
-                <div className="muted" style={{ marginTop: 6, fontSize: 13 }}>
-                  Account {details?.login ?? form.login} · {form.server}
-                </div>
-                {details?.userName ? (
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    {String(details.userName)}
-                  </div>
-                ) : null}
-                {summary ? (
-                  <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.5 }}>
-                    <div>
-                      Balance:{' '}
-                      <span style={{ color: 'var(--electric)', fontWeight: 700 }}>
-                        {summary.balance?.toFixed?.(2) ?? summary.balance}{' '}
-                        {summary.currency || ''}
-                      </span>
-                    </div>
-                    <div className="muted">
-                      Equity {summary.equity?.toFixed?.(2) ?? '—'} · Profit{' '}
-                      {summary.profit?.toFixed?.(2) ?? '—'} · Free margin{' '}
-                      {summary.freeMargin?.toFixed?.(2) ?? '—'} · Leverage 1:
-                      {summary.leverage ?? '—'}
-                    </div>
-                  </div>
-                ) : null}
-                {conn?.lastError ? (
-                  <div style={{ marginTop: 6, fontSize: 12, color: '#fbbf24' }}>
-                    {conn.lastError}
-                  </div>
-                ) : null}
-                <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.4 }}>
-                  Auto-reconnect is on — use the red button above to unlink
-                </div>
-              </div>
-              {eaImage ? (
-                <img className="mt5-connected-avatar" src={eaImage} alt="" />
-              ) : (
-                <div className="mt5-connected-avatar mt5-avatar-empty" aria-hidden />
-              )}
+        {connecting ? (
+          <section className="mt5-glass mt5-engine-panel">
+            <div className="mt5-engine-head">
+              <h2>Connection Engine</h2>
+              <span className="mt5-engine-tag">Live sequence</span>
             </div>
-          ) : (
-            <>
-              <a
-                className="mt5-recommended"
-                href="https://razormarkets.co.za"
-                target="_blank"
-                rel="noreferrer"
-              >
-                <span className="mt5-star">
-                  <Star size={16} fill="currentColor" />
-                </span>
-                <span style={{ flex: 1, textAlign: 'left' }}>
-                  <div className="mt5-rec-label">RECOMMENDED BROKER</div>
-                  <div className="mt5-rec-name">Razor Markets</div>
-                </span>
-                <ExternalLink size={16} />
-              </a>
-
-              <div className="mt5-field">
-                <label>BROKER</label>
-                <div className="mt5-pass-wrap">
-                  <input
-                    className="mt5-input"
-                    style={{ paddingLeft: 40, paddingRight: 40 }}
-                    value={brokerQuery}
-                    onChange={(e) => onBrokerQuery(e.target.value)}
-                    onFocus={() => setBrokerOpen(true)}
-                    placeholder="Search Broker"
+            <div className="mt5-progress-row">
+              <div className="mt5-ring-wrap" aria-hidden>
+                <svg viewBox="0 0 100 100" className="mt5-ring">
+                  <circle className="mt5-ring-track" cx="50" cy="50" r="45" />
+                  <circle
+                    className="mt5-ring-fill"
+                    cx="50"
+                    cy="50"
+                    r="45"
+                    style={{ strokeDashoffset: ringOffset }}
                   />
-                  <span className="mt5-search-ico">
-                    {searching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
-                  </span>
-                  <span className="mt5-chevron" aria-hidden>
-                    <ChevronDown size={16} />
-                  </span>
+                </svg>
+                <div className="mt5-ring-label">
+                  <strong>{progressPct}%</strong>
+                  <small>Complete</small>
                 </div>
-                {brokerOpen && companies.length ? (
-                  <div className="mt5-dropdown mt5-broker-drop">
-                    {companies.slice(0, 12).map((co) => (
-                      <div key={co.company} className="mt5-co-block">
-                        <div className="mt5-co-name">{co.company}</div>
-                        {(co.results || []).slice(0, 8).map((r) => (
-                          <button
-                            key={`${co.company}-${r.name}`}
-                            type="button"
-                            onClick={() => pickServer(co.company, r)}
-                          >
-                            {r.name}
-                          </button>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
               </div>
-
-              <div className="mt5-field">
-                <label>SELECT SERVER</label>
-                <div className="mt5-pass-wrap">
-                  <select
-                    className="mt5-input"
-                    style={{
-                      paddingRight: 40,
-                      color: form.server ? undefined : 'var(--muted)',
-                    }}
-                    value={form.server}
-                    onChange={(e) => persist({ ...form, server: e.target.value })}
+              <div className="mt5-progress-meta">
+                <div className="mt5-est">
+                  <span>Estimated remaining</span>
+                  <strong>{remainingSec}s</strong>
+                </div>
+                <div className="mt5-load-bar">
+                  <span className="mt5-load-fill" style={{ width: `${progressPct}%` }} />
+                </div>
+                <p className="mt5-flow-line">
+                  <span className="mt5-flow-pulse" />
+                  Streaming encrypted broker handshake…
+                </p>
+              </div>
+            </div>
+            <ol className="mt5-steps">
+              {CONNECTION_STEPS.map((label, i) => {
+                const done = i < visualStep || (form.connected && i <= visualStep);
+                const active = i === visualStep && connecting;
+                const dim = i > visualStep && !form.connected;
+                return (
+                  <li
+                    key={label}
+                    className={`mt5-step${done ? ' done' : ''}${active ? ' active' : ''}${dim ? ' dim' : ''}`}
                   >
-                    <option value="" disabled hidden>
-                      Select broker server
-                    </option>
-                    {servers.map((s) => (
-                      <option key={s.name} value={s.name}>
-                        {s.name}
-                      </option>
-                    ))}
-                    {form.server && !servers.some((s) => s.name === form.server) ? (
-                      <option value={form.server}>{form.server}</option>
-                    ) : null}
-                  </select>
-                  <span className="mt5-chevron" aria-hidden>
-                    <ChevronDown size={16} />
-                  </span>
-                </div>
-              </div>
+                    <span className="mt5-step-ico" aria-hidden>
+                      {done ? <Check size={14} /> : active ? <Loader2 size={14} className="spin" /> : i + 1}
+                    </span>
+                    <span className="mt5-step-text">{label}</span>
+                    {active ? <span className="mt5-step-line" aria-hidden /> : null}
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+        ) : null}
 
-              <div className="mt5-field">
-                <label>ACCOUNT TYPE</label>
-                <div className="mt5-pass-wrap">
-                  <select
-                    className="mt5-input"
-                    style={{
-                      paddingRight: 40,
-                      color: form.accountType ? undefined : 'var(--muted)',
-                    }}
-                    value={form.accountType}
-                    onChange={(e) => persist({ ...form, accountType: e.target.value })}
-                  >
-                    <option value="" disabled hidden>
-                      Select account type
-                    </option>
-                    {ACCOUNT_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="mt5-chevron" aria-hidden>
-                    <ChevronDown size={16} />
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt5-field">
-                <label>LOGIN</label>
-                <input
-                  className="mt5-input"
-                  value={form.login}
-                  onChange={(e) => setForm({ ...form, login: e.target.value })}
-                  placeholder="Enter your MT5 login"
-                  inputMode="numeric"
-                />
-              </div>
-
-              <div className="mt5-field">
-                <label>PASSWORD</label>
-                <div className="mt5-pass-wrap">
-                  <input
-                    className="mt5-input"
-                    type={showPass ? 'text' : 'password'}
-                    value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    placeholder="Enter your password"
-                  />
+        {form.connected ? (
+          <>
+            <section className={`mt5-glass mt5-status-grid${form.connected ? ' mt5-success-pop' : ''}`}>
+              <div className="mt5-panel-head">
+                <h2>Broker Status</h2>
+                <div className="mt5-panel-actions">
                   <button
                     type="button"
-                    className="mt5-eye"
-                    onClick={() => setShowPass((v) => !v)}
-                    aria-label="Toggle password"
+                    className="mt5-btn mt5-btn-ghost"
+                    onClick={() => refreshAccount(form.token || conn?.token || '')}
                   >
-                    {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                    <RefreshCw size={16} />
+                    Refresh
+                  </button>
+                  <button type="button" className="mt5-btn mt5-btn-danger" onClick={() => void unlink()}>
+                    <Unplug size={16} />
+                    Disconnect
                   </button>
                 </div>
               </div>
-
-              {status ? (
-                <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
-                  {status}
-                </p>
+              <div className="mt5-stat-grid">
+                {statusItems.map(({ icon: Icon, label, value, accent }) => (
+                  <div key={label} className="mt5-stat-card">
+                    <span className="mt5-stat-icon" aria-hidden>
+                      <Icon size={16} />
+                    </span>
+                    <div>
+                      <span className="mt5-stat-label">{label}</span>
+                      <strong style={accent ? { color: accent } : undefined}>{value}</strong>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {details?.userName ? (
+                <p className="mt5-account-name">{String(details.userName)}</p>
               ) : null}
-              {notConnecting ? (
-                <p style={{ marginTop: status ? 4 : 0, fontSize: 12, color: '#f87171' }}>
-                  Not connecting
-                </p>
-              ) : null}
+              {conn?.lastError ? <p className="mt5-warn">{conn.lastError}</p> : null}
+              <p className="mt5-hint">Auto-reconnect is on — use Disconnect to unlink</p>
+              {eaImage ? (
+                <img className="mt5-profile-float" src={eaImage} alt="" />
+              ) : (
+                <div className="mt5-profile-float mt5-avatar-empty" aria-hidden />
+              )}
+            </section>
+          </>
+        ) : (
+          <section className="mt5-glass mt5-form-panel">
+            <a
+              className="mt5-recommended mt5-rec-cyber"
+              href="https://razormarkets.co.za"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span className="mt5-star">
+                <Star size={16} fill="currentColor" />
+              </span>
+              <span style={{ flex: 1, textAlign: 'left' }}>
+                <div className="mt5-rec-label">RECOMMENDED BROKER</div>
+                <div className="mt5-rec-name">{RAZOR_MARKETS.broker}</div>
+              </span>
+              <ExternalLink size={16} />
+            </a>
 
+            <div className="mt5-field">
+              <label>BROKER</label>
+              <div className="mt5-pass-wrap">
+                <input
+                  className="mt5-input mt5-input-cyber"
+                  style={{ paddingLeft: 40, paddingRight: 40 }}
+                  value={brokerQuery}
+                  onChange={(e) => onBrokerQuery(e.target.value)}
+                  onFocus={() => setBrokerOpen(true)}
+                  placeholder="Search Broker"
+                />
+                <span className="mt5-search-ico">
+                  {searching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
+                </span>
+                <span className="mt5-chevron" aria-hidden>
+                  <ChevronDown size={16} />
+                </span>
+              </div>
+              {brokerOpen && companies.length ? (
+                <div className="mt5-dropdown mt5-broker-drop">
+                  {companies.slice(0, 12).map((co) => (
+                    <div key={co.company} className="mt5-co-block">
+                      <div className="mt5-co-name">{co.company}</div>
+                      {(co.results || []).slice(0, 8).map((r) => (
+                        <button
+                          key={`${co.company}-${r.name}`}
+                          type="button"
+                          onClick={() => pickServer(co.company, r)}
+                        >
+                          {r.name}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt5-field">
+              <label>SELECT SERVER</label>
+              <div className="mt5-pass-wrap">
+                <select
+                  className="mt5-input mt5-input-cyber"
+                  style={{
+                    paddingRight: 40,
+                    color: form.server ? undefined : 'var(--muted)',
+                  }}
+                  value={form.server}
+                  onChange={(e) => persist({ ...form, server: e.target.value })}
+                >
+                  <option value="" disabled hidden>
+                    Select broker server
+                  </option>
+                  {servers.map((s) => (
+                    <option key={s.name} value={s.name}>
+                      {s.name}
+                    </option>
+                  ))}
+                  {form.server && !servers.some((s) => s.name === form.server) ? (
+                    <option value={form.server}>{form.server}</option>
+                  ) : null}
+                </select>
+                <span className="mt5-chevron" aria-hidden>
+                  <ChevronDown size={16} />
+                </span>
+              </div>
+            </div>
+
+            <div className="mt5-field">
+              <label>ACCOUNT TYPE</label>
+              <div className="mt5-pass-wrap">
+                <select
+                  className="mt5-input mt5-input-cyber"
+                  style={{
+                    paddingRight: 40,
+                    color: form.accountType ? undefined : 'var(--muted)',
+                  }}
+                  value={form.accountType}
+                  onChange={(e) => persist({ ...form, accountType: e.target.value })}
+                >
+                  <option value="" disabled hidden>
+                    Select account type
+                  </option>
+                  {ACCOUNT_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt5-chevron" aria-hidden>
+                  <ChevronDown size={16} />
+                </span>
+              </div>
+            </div>
+
+            <div className="mt5-field">
+              <label>LOGIN</label>
+              <input
+                className="mt5-input mt5-input-cyber"
+                value={form.login}
+                onChange={(e) => setForm({ ...form, login: e.target.value })}
+                placeholder="Enter your MT5 login"
+                inputMode="numeric"
+              />
+            </div>
+
+            <div className="mt5-field">
+              <label>PASSWORD</label>
+              <div className="mt5-pass-wrap">
+                <input
+                  className="mt5-input mt5-input-cyber"
+                  type={showPass ? 'text' : 'password'}
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  placeholder="Enter your password"
+                />
+                <button
+                  type="button"
+                  className="mt5-eye"
+                  onClick={() => setShowPass((v) => !v)}
+                  aria-label="Toggle password"
+                >
+                  {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt5-btn-row">
               <button
                 type="button"
-                className="mt5-connect"
+                className="mt5-btn mt5-btn-primary"
                 onClick={() => void connect()}
                 disabled={connecting}
               >
                 {connecting ? (
                   <>
-                    <Loader2 size={18} className="spin" style={{ marginRight: 8 }} />
+                    <Loader2 size={18} className="spin" />
                     Connecting…
                   </>
                 ) : (
-                  'Connect Account'
+                  <>
+                    <Zap size={18} />
+                    Connect Broker
+                  </>
                 )}
               </button>
-            </>
-          )}
-        </div>
+              {notConnecting ? (
+                <button
+                  type="button"
+                  className="mt5-btn mt5-btn-secondary"
+                  onClick={() => void connect()}
+                  disabled={connecting}
+                >
+                  <RefreshCw size={16} />
+                  Retry Connection
+                </button>
+              ) : null}
+            </div>
+          </section>
+        )}
 
         {form.connected && positions.length ? (
-          <div className="mt5-card" style={{ marginTop: 12 }}>
-            <h2 className="mt5-card-title">Open Positions ({positions.length})</h2>
-            <div style={{ display: 'grid', gap: 8 }}>
+          <section className="mt5-glass mt5-positions-panel">
+            <h2 className="mt5-panel-title">
+              Open Positions <span>({positions.length})</span>
+            </h2>
+            <div className="mt5-pos-list">
               {positions.slice(0, 10).map((p, i) => {
                 const profit = Number(p.profit ?? 0);
                 const side = String(p.orderType || p.type || '').toUpperCase();
                 return (
-                  <div
-                    key={String(p.ticket ?? i)}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 10,
-                      padding: '8px 10px',
-                      borderRadius: 10,
-                      background: 'rgba(10,14,24,0.55)',
-                      border: '1px solid rgba(59,130,246,0.25)',
-                      fontSize: 13,
-                    }}
-                  >
+                  <div key={String(p.ticket ?? i)} className="mt5-pos-row">
                     <div>
                       <strong>{String(p.symbol || '—')}</strong>{' '}
-                      <span
-                        style={{
-                          color: side.includes('SELL') ? '#f87171' : '#34d399',
-                          fontWeight: 700,
-                        }}
-                      >
-                        {side || '—'}
-                      </span>
-                      <div className="muted" style={{ fontSize: 11 }}>
+                      <span className={side.includes('SELL') ? 'sell' : 'buy'}>{side || '—'}</span>
+                      <div className="mt5-pos-meta">
                         #{String(p.ticket ?? '—')} · {Number(p.lots ?? p.volume ?? 0)} lots
                       </div>
                     </div>
-                    <div
-                      style={{
-                        fontWeight: 700,
-                        color: profit >= 0 ? '#34d399' : '#f87171',
-                      }}
-                    >
+                    <div className={profit >= 0 ? 'profit-up' : 'profit-down'}>
                       {profit >= 0 ? '+' : ''}
                       {profit.toFixed(2)}
                     </div>
@@ -663,9 +853,8 @@ export function MetaTraderPage() {
                 );
               })}
             </div>
-          </div>
+          </section>
         ) : null}
-
       </div>
 
       <nav className="lay-dock" aria-label="Main">
@@ -674,6 +863,12 @@ export function MetaTraderPage() {
             <Home size={20} />
           </span>
           <span>Home</span>
+        </button>
+        <button type="button" className="lay-dock-item" onClick={() => navigate('/app/scanner')}>
+          <span className="lay-dock-ico">
+            <Search size={20} />
+          </span>
+          <span>Scanner</span>
         </button>
         <button type="button" className="lay-dock-item active">
           <span className="lay-dock-ico">

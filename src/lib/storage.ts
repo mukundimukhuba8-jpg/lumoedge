@@ -390,16 +390,35 @@ async function pushDbImages(id: string, dataUrl: string) {
 }
 
 /** Resolve img: refs / API paths / data URLs to something <img> can display */
+/** Remove stock bull/logo art cached in local image store. */
+export function purgePlaceholderEaImages() {
+  try {
+    const all = loadJSON<Record<string, string>>(IMAGE_STORE, {});
+    let changed = false;
+    for (const [id, value] of Object.entries(all)) {
+      if (isPlaceholderMentorImage(id) || isPlaceholderMentorImage(value)) {
+        delete all[id];
+        changed = true;
+      }
+    }
+    if (changed) saveJSON(IMAGE_STORE, all);
+  } catch {
+    // ignore
+  }
+}
+
 export async function resolveDisplayImage(value: string): Promise<string> {
   const v = String(value || '').trim();
   if (!v || isPlaceholderMentorImage(v)) return '';
-  if (v.startsWith('data:') || v.startsWith('blob:') || v.startsWith('http')) return v;
+  if (v.startsWith('data:') || v.startsWith('blob:') || v.startsWith('http')) {
+    return isPlaceholderMentorImage(v) ? '' : v;
+  }
   if (isFirebaseImageRef(v) || v.startsWith('img:')) {
     const id = v.replace(/^img:/, '');
     const fromLocal = getEaImage(id) || getEaImage(`img:${id}`);
-    if (fromLocal) return fromLocal;
+    if (fromLocal && !isPlaceholderMentorImage(fromLocal)) return fromLocal;
     const fromFb = await firebaseFetchImage(id);
-    if (fromFb) {
+    if (fromFb && !isPlaceholderMentorImage(fromFb)) {
       saveEaImage(id, fromFb);
       return fromFb;
     }
@@ -423,7 +442,8 @@ export function getEaImage(id: string): string {
   try {
     const all = loadJSON<Record<string, string>>(IMAGE_STORE, {});
     const key = id.replace(/^img:/, '');
-    return all[id] || all[key] || all[`img:${key}`] || '';
+    const hit = all[id] || all[key] || all[`img:${key}`] || '';
+    return hit && !isPlaceholderMentorImage(hit) ? hit : '';
   } catch {
     return '';
   }
@@ -431,7 +451,7 @@ export function getEaImage(id: string): string {
 
 /** Resolve stored image refs (/api/images/...) or raw data URLs for display */
 export function resolveEaImageUrl(value: string, fallbackIds: string[] = []): string {
-  if (value) {
+  if (value && !isPlaceholderMentorImage(value)) {
     if (value.startsWith('data:') || value.startsWith('http') || value.startsWith('/')) {
       return value;
     }
@@ -441,7 +461,7 @@ export function resolveEaImageUrl(value: string, fallbackIds: string[] = []): st
     if (local) return local;
     if (id) return imagePublicUrl(id);
   }
-  return value || '';
+  return isPlaceholderMentorImage(value) ? '' : value || '';
 }
 
 /** Turn a temporary blob preview URL into a data URL for cloud upload. */
