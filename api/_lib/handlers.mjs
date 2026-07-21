@@ -7,6 +7,7 @@ import {
   loadMergedClients,
   mergeClients,
 } from './clientMerge.mjs';
+import { mergeDatabases } from './mergeDb.mjs';
 
 function json(res, status, data) {
   res.statusCode = status;
@@ -107,25 +108,7 @@ export async function handleApi(req, res, pathname) {
     if (pathname === '/api/db' && req.method === 'PUT') {
       const body = await readBody(req);
       const { db, sha } = await loadDb();
-      const next = {
-        ...db,
-        ...body,
-        auth: { ...db.auth, ...(body.auth || {}) },
-        store: {
-          workspaces: {
-            ...(db.store?.workspaces || {}),
-            ...(body.store?.workspaces || {}),
-          },
-        },
-        vault: Array.isArray(body.vault) ? body.vault : db.vault,
-        images: { ...db.images, ...(body.images || {}) },
-        clients: Array.isArray(body.clients) ? body.clients : db.clients,
-        sessions: { ...db.sessions, ...(body.sessions || {}) },
-        revokedKeys: Array.isArray(body.revokedKeys)
-          ? [...new Set([...(db.revokedKeys || []), ...body.revokedKeys])]
-          : db.revokedKeys || [],
-      };
-      const saved = await saveDb(next, sha);
+      const saved = await saveDb(mergeDatabases(db, body), sha);
       json(res, 200, saved.db);
       return true;
     }

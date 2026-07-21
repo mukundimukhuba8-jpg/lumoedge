@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { EaBackdrop } from './components/EaBackdrop';
 import { ThemeEngine } from './components/ThemeEngine';
@@ -16,28 +16,57 @@ import {
   resolveProfileImage,
 } from './lib/mentorMedia';
 import { startMt5KeepAlive } from './lib/mt5Session';
-import { EmailCenterPage } from './pages/admin/EmailCenterPage';
 import { AdminAuthPage } from './pages/admin/AdminAuthPage';
-import {
-  ApproveAdminsPage,
-  ComingSoonPage,
-  ConnectEAPage,
-  DashboardPage,
-  GenerateLicensePage,
-  ManageEAsPage,
-  OpenOrdersPage,
-  ProfilePage,
-  SubscriptionsPage,
-} from './pages/admin/AdminPages';
 import { AdminShell } from './pages/admin/AdminShell';
 import { ActivateLicensePage } from './pages/client/ActivateLicensePage';
-import { ChartScannerPage } from './pages/client/ChartScannerPage';
 import { HomePage } from './pages/client/HomePage';
-import { MetaTraderPage } from './pages/client/MetaTraderPage';
-import { SymbolsPage } from './pages/client/SymbolsPage';
 import { RegisterPage } from './pages/client/RegisterPage';
 import { SubscribePage } from './pages/client/SubscribePage';
 import { WaitingApprovalPage } from './pages/client/WaitingApprovalPage';
+
+const MetaTraderPage = lazy(() =>
+  import('./pages/client/MetaTraderPage').then((m) => ({ default: m.MetaTraderPage })),
+);
+const ChartScannerPage = lazy(() =>
+  import('./pages/client/ChartScannerPage').then((m) => ({ default: m.ChartScannerPage })),
+);
+const SymbolsPage = lazy(() =>
+  import('./pages/client/SymbolsPage').then((m) => ({ default: m.SymbolsPage })),
+);
+const EmailCenterPage = lazy(() =>
+  import('./pages/admin/EmailCenterPage').then((m) => ({ default: m.EmailCenterPage })),
+);
+const DashboardPage = lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({ default: m.DashboardPage })),
+);
+const ApproveAdminsPage = lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({ default: m.ApproveAdminsPage })),
+);
+const SubscriptionsPage = lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({ default: m.SubscriptionsPage })),
+);
+const ConnectEAPage = lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({ default: m.ConnectEAPage })),
+);
+const OpenOrdersPage = lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({ default: m.OpenOrdersPage })),
+);
+const GenerateLicensePage = lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({ default: m.GenerateLicensePage })),
+);
+const ManageEAsPage = lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({ default: m.ManageEAsPage })),
+);
+const ComingSoonPage = lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({ default: m.ComingSoonPage })),
+);
+const ProfilePage = lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({ default: m.ProfilePage })),
+);
+
+function RouteFallback() {
+  return null;
+}
 
 function ClientAppGate({ children }: { children: React.ReactNode }) {
   const { user, accessStatus, bot, isPaused } = useApp();
@@ -127,7 +156,8 @@ export default function App() {
   return (
     <div className="app-shell lumo-app">
       <ThemeEngine />
-      <Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
         <Route path="/" element={<HomeRedirect />} />
         <Route path="/waiting" element={<WaitingApprovalPage />} />
         <Route path="/subscribe" element={<SubscribePage />} />
@@ -217,7 +247,8 @@ export default function App() {
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </Suspense>
     </div>
   );
 }

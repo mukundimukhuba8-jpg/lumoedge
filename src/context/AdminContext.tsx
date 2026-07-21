@@ -74,6 +74,7 @@ import {
   resolveLicenseBrandingSync,
   validateLicenseEmailAccess,
 } from '../lib/licenseClaim';
+import { isFirebaseConfigured } from '../lib/firebase';
 import { approvalError, approvalLog, approvalWarn } from '../lib/approvalLog';
 import {
   countAdminQueue,
@@ -105,7 +106,7 @@ function hydrateLicenseRemote(remote: RemoteDb | null) {
       ),
     );
   }
-  if (adminSession && remote.images && typeof remote.images === 'object') {
+  if (remote.images && typeof remote.images === 'object') {
     saveJSON(IMAGE_STORE, {
       ...loadJSON<Record<string, string>>(IMAGE_STORE, {}),
       ...remote.images,
@@ -1105,6 +1106,13 @@ async function fetchRemoteDeletedClients(): Promise<string[]> {
   }
 }
 
+function clientQueueFingerprint(list: ClientRequest[]): string {
+  return list
+    .map((c) => `${c.id}:${normalizeClientStatus(c.status)}:${c.email}`)
+    .sort()
+    .join('|');
+}
+
 function mergeSubscriberQueue(
   prev: ClientRequest[],
   remoteList: ClientRequest[] | null | undefined,
@@ -1119,8 +1127,8 @@ function mergeSubscriberQueue(
 const AdminContext = createContext<Ctx | null>(null);
 const IMAGE_STORE = 'ub-web/ea-images-v1';
 /** Splash stays visible briefly, but never blocks the app on slow networks */
-const SPLASH_MIN_MS = 600;
-const SPLASH_MAX_MS = 1800;
+const SPLASH_MIN_MS = 0;
+const SPLASH_MAX_MS = 1200;
 
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(() => migrateAuth());
@@ -1212,8 +1220,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
     void (async () => {
       try {
-        const db = await fetchDb();
-        applyRemoteDb(db);
+        if (isAdminPortalSession()) {
+          const db = await fetchDb();
+          applyRemoteDb(db);
+        } else {
+          const list = await fetchClients();
+          if (list) {
+            const remoteDeleted = await fetchRemoteDeletedClients();
+            setClients((prev) => {
+              const merged = mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted);
+              if (clientQueueFingerprint(prev) === clientQueueFingerprint(merged)) return prev;
+              return merged;
+            });
+          }
+        }
       } catch {
         // Offline or timed out — local cache is enough to enter the app
       } finally {
@@ -1227,27 +1247,28 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Keep subscription list fresh for admin portal
+  // Keep subscription list fresh for admin portal only
   useEffect(() => {
-    if (booting) return;
+    if (booting || !isAdminPortalSession()) return;
     const tick = async () => {
       const list = await fetchClients();
       if (list) {
         const remoteDeleted = await fetchRemoteDeletedClients();
         setClients((prev) => {
           const merged = mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted);
+          if (clientQueueFingerprint(prev) === clientQueueFingerprint(merged)) return prev;
           return merged;
         });
       }
     };
     void tick();
-    const id = window.setInterval(tick, 2500);
+    const id = window.setInterval(tick, 8000);
     return () => window.clearInterval(id);
   }, [booting]);
 
   // Keep mentor registration queue fresh for Super Admin approval
   useEffect(() => {
-    if (booting) return;
+    if (booting || !isAdminPortalSession()) return;
     const syncAdmins = async () => {
       if (mentorAdminSyncInflight) return;
       mentorAdminSyncInflight = true;
@@ -1297,7 +1318,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       mentorAdminSyncTimer = window.setTimeout(() => void syncAdmins(), 350);
     };
     void syncAdmins();
-    const id = window.setInterval(scheduleSyncAdmins, 2500);
+    const id = window.setInterval(scheduleSyncAdmins, 8000);
     let unwatch: (() => void) | undefined;
     void import('../lib/firebaseDb').then(({ firebaseWatchAdmins }) => {
       unwatch = firebaseWatchAdmins(scheduleSyncAdmins);
@@ -1315,6 +1336,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const mentorId = auth.admin.id;
     const syncWorkspace = async () => {
       const db = await fetchDb();
+      if (!db) return;
+      if (db.images && typeof db.images === 'object') {
+        saveJSON(IMAGE_STORE, {
+          ...loadJSON<Record<string, string>>(IMAGE_STORE, {}),
+          ...db.images,
+        });
+      }
       if (!db?.store?.workspaces?.[mentorId]) return;
       const remoteWs = normalizeWorkspace(
         db.store.workspaces[mentorId] as AdminWorkspace,
@@ -1368,13 +1396,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       });
     };
     void syncWorkspace();
-    const poll = window.setInterval(() => void syncWorkspace(), 4000);
+    const useFirebaseWatch = isFirebaseConfigured();
+    const poll = useFirebaseWatch
+      ? undefined
+      : window.setInterval(() => void syncWorkspace(), 20000);
     let unwatch: (() => void) | undefined;
-    void import('../lib/firebaseDb').then(({ firebaseWatchUpdates }) => {
-      unwatch = firebaseWatchUpdates(() => void syncWorkspace());
-    });
+    if (useFirebaseWatch) {
+      void import('../lib/firebaseDb').then(({ firebaseWatchUpdates }) => {
+        unwatch = firebaseWatchUpdates(() => void syncWorkspace());
+      });
+    }
     return () => {
-      window.clearInterval(poll);
+      if (poll) window.clearInterval(poll);
       unwatch?.();
     };
   }, [booting, auth.admin?.id]);
@@ -1388,11 +1421,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const saveStore = useCallback((next: StoreState) => {
+  const saveStore = useCallback((next: StoreState, pushWorkspaceId?: string) => {
     setStore(next);
     saveJSON(STORE_KEY, next);
-    // Push each workspace path-scoped (merge on server) — avoids full-tree races
-    void pushDb({ store: { workspaces: next.workspaces } });
+    if (pushWorkspaceId && next.workspaces[pushWorkspaceId]) {
+      void pushDb({
+        store: { workspaces: { [pushWorkspaceId]: next.workspaces[pushWorkspaceId] } },
+      });
+    }
   }, []);
 
   /** Approve mentors — Firebase first, then local state (never block on fetchAdmins). */
@@ -1476,6 +1512,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const mentorId = auth.admin?.id ?? '';
     if (!mentorId || licensePublishInFlight > 0) return;
     void fetchDb().then((db) => {
+      if (!db) return;
+      if (db.images && typeof db.images === 'object') {
+        saveJSON(IMAGE_STORE, {
+          ...loadJSON<Record<string, string>>(IMAGE_STORE, {}),
+          ...db.images,
+        });
+      }
       if (!db?.store?.workspaces?.[mentorId]) return;
       const remoteWs = normalizeWorkspace(
         db.store.workspaces[mentorId] as AdminWorkspace,
@@ -1579,17 +1622,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         ) {
           const id = SUPER_ADMIN.user.id;
           if (!store.workspaces[id]) {
-            saveStore({
-              ...store,
-              workspaces: {
-                ...store.workspaces,
-                [id]: createEmptyWorkspace({
-                  id,
-                  email: SUPER_ADMIN.email,
-                  fullName: SUPER_ADMIN.user.fullName,
-                }),
+            saveStore(
+              {
+                ...store,
+                workspaces: {
+                  ...store.workspaces,
+                  [id]: createEmptyWorkspace({
+                    id,
+                    email: SUPER_ADMIN.email,
+                    fullName: SUPER_ADMIN.user.fullName,
+                  }),
+                },
               },
-            });
+              id,
+            );
           }
           saveAuth({ ...auth, admin: SUPER_ADMIN.user, portalOpen: true });
           return null;
@@ -1640,13 +1686,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           email: normalized,
         };
         if (!store.workspaces[mentor.id]) {
-          saveStore({
-            ...store,
-            workspaces: {
-              ...store.workspaces,
-              [mentor.id]: createEmptyWorkspace(mentor),
+          saveStore(
+            {
+              ...store,
+              workspaces: {
+                ...store.workspaces,
+                [mentor.id]: createEmptyWorkspace(mentor),
+              },
             },
-          });
+            mentor.id,
+          );
         }
         const { password: _p, ...user } = mentor;
         saveAuth({ ...auth, admin: user, portalOpen: true });
@@ -1827,16 +1876,19 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             email: SUPER_ADMIN.email,
             fullName: SUPER_ADMIN.user.fullName,
           });
-        saveStore({
-          ...store,
-          workspaces: {
-            ...store.workspaces,
-            [sid]: {
-              ...superWs,
-              clientRequests: [entry, ...superWs.clientRequests.filter((c) => c.email !== email)],
+        saveStore(
+          {
+            ...store,
+            workspaces: {
+              ...store.workspaces,
+              [sid]: {
+                ...superWs,
+                clientRequests: [entry, ...superWs.clientRequests.filter((c) => c.email !== email)],
+              },
             },
           },
-        });
+          sid,
+        );
         void postClient({
           email,
           firstName: entry.firstName,
@@ -2908,11 +2960,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     };
   }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, approveMentorByIds, resyncLicenses, warmLicenseCache]);
 
-  if (booting) {
-    return <WelcomeSplash />;
-  }
-
-  return <AdminContext.Provider value={value}>{children}</AdminContext.Provider>;
+  return (
+    <AdminContext.Provider value={value}>
+      {children}
+      {booting ? <WelcomeSplash /> : null}
+    </AdminContext.Provider>
+  );
 }
 
 export function useAdmin() {

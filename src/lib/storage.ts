@@ -91,7 +91,8 @@ export function pruneClientDeviceStorage() {
     const slim: Record<string, string> = {};
     for (const [id, url] of Object.entries(images)) {
       if (typeof url !== 'string' || !url) continue;
-      if (url.startsWith('data:') && url.length > 8000) continue;
+      const isProfile = id.includes('profile-') || id.startsWith('img:profile-');
+      if (url.startsWith('data:') && url.length > 8000 && !isProfile) continue;
       if (url.startsWith('http') || url.startsWith('/') || url.startsWith('img:')) {
         slim[id] = url;
       }
@@ -424,11 +425,16 @@ export async function resolveDisplayImage(value: string): Promise<string> {
     }
   }
   if (v.startsWith('/api/images/')) {
+    const key = v.replace(/^\/api\/images\//, '');
+    const cached = getEaImage(key);
+    if (cached && !isPlaceholderMentorImage(cached)) return cached;
     try {
       const res = await fetch(v);
       if (res.ok) {
         const blob = await res.blob();
-        return URL.createObjectURL(blob);
+        const dataUrl = await blobUrlToDataUrl(URL.createObjectURL(blob));
+        saveEaImage(key, dataUrl);
+        return dataUrl;
       }
     } catch {
       // ignore
@@ -496,6 +502,8 @@ export function compressImageFile(file: File, maxSize = 512, quality = 0.72): Pr
           resolve(String(reader.result || ''));
           return;
         }
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
         resolve(canvas.toDataURL('image/jpeg', quality));
       };
