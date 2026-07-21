@@ -4,6 +4,7 @@ import { BackgroundManager } from '../../components/BackgroundManager';
 import { normalizeAdminRole } from '../../lib/adminQueue';
 import { normalizeClientStatus } from '../../lib/clientQueue';
 import { MENTOR_AUTH_MSG } from '../../lib/mentorAuthUi';
+import { isRegistrationEmail } from '../../lib/registrationEmail';
 import { useAdmin, type ClientRequest } from '../../context/AdminContext';
 import { resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
 import { compressImageFile, getEaImage, blobUrlToDataUrl } from '../../lib/storage';
@@ -596,7 +597,7 @@ export function GenerateLicensePage() {
               });
               return;
             }
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+            if (!isRegistrationEmail(trimmedEmail)) {
               setStatus({
                 type: 'error',
                 title: 'Invalid email',
@@ -1475,7 +1476,8 @@ export function SubscriptionsPage() {
         <div className="field">
           <label>Email</label>
           <input
-            type="email"
+            type="text"
+            inputMode="email"
             value={manualEmail}
             onChange={(e) => setManualEmail(e.target.value)}
             placeholder="client@email.com"

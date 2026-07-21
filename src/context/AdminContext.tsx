@@ -86,6 +86,11 @@ import {
 } from '../lib/adminQueue';
 import { MENTOR_AUTH_MSG } from '../lib/mentorAuthUi';
 import { countClientQueue, normalizeClientStatus, pickClientStatus } from '../lib/clientQueue';
+import {
+  isRegistrationEmail,
+  normalizeRegistrationEmail,
+  splitNameFromEmail,
+} from '../lib/registrationEmail';
 import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
 
 /** Blocks destructive vault sync while a publish is in flight. */
@@ -1732,8 +1737,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
       },
       registerAdmin: async (form) => {
-        const email = form.email.trim().toLowerCase();
+        const email = normalizeRegistrationEmail(form.email);
         if (!email || !form.password || !form.fullName.trim()) {
+          return MENTOR_AUTH_MSG.registerRequired;
+        }
+        if (!isRegistrationEmail(email)) {
           return MENTOR_AUTH_MSG.registerRequired;
         }
         if (email === SUPER_ADMIN.email.toLowerCase()) {
@@ -2032,13 +2040,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
       },
       addApprovedSubscriber: async (input) => {
-        const email = input.email.trim().toLowerCase();
-        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        const email = normalizeRegistrationEmail(input.email);
+        if (!isRegistrationEmail(email)) {
           return { ok: false, error: 'Enter a valid email address.' };
         }
         forgetDeletedClient(email);
-        const firstName = input.firstName.trim() || email.split('@')[0] || 'Client';
-        const lastName = input.lastName.trim();
+        const fromEmail = splitNameFromEmail(email);
+        const firstName = input.firstName.trim() || fromEmail.firstName;
+        const lastName = input.lastName.trim() || fromEmail.lastName;
         const claimedAt = new Date().toISOString();
         approvalLog('client', 'manual_create_clicked', { email, firstName, lastName });
 

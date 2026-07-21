@@ -131,11 +131,12 @@ export async function handleApi(req, res, pathname) {
 
     if (pathname === '/api/clients' && req.method === 'POST') {
       const body = await readBody(req);
-      const email = String(body.email || '')
-        .trim()
-        .toLowerCase();
-      if (!email || !body.firstName || !body.lastName) {
-        json(res, 400, { error: 'email, firstName, lastName required' });
+      const { isRegistrationEmail, normalizeRegistrationEmail } = await import(
+        './registrationEmail.mjs'
+      );
+      const email = normalizeRegistrationEmail(body.email);
+      if (!isRegistrationEmail(email)) {
+        json(res, 400, { error: 'valid email required' });
         return true;
       }
       let created = await firebasePostClientEntry({
@@ -215,12 +216,13 @@ export async function handleApi(req, res, pathname) {
 
     if (pathname === '/api/auth/register' && req.method === 'POST') {
       const body = await readBody(req);
-      const email = String(body.email || '')
-        .trim()
-        .toLowerCase();
+      const { isRegistrationEmail, normalizeRegistrationEmail } = await import(
+        './registrationEmail.mjs'
+      );
+      const email = normalizeRegistrationEmail(body.email);
       const fullName = String(body.fullName || '').trim();
       const password = String(body.password || '');
-      if (!email || !password || !fullName) {
+      if (!isRegistrationEmail(email) || !password || !fullName) {
         json(res, 400, { error: 'email, password, fullName required' });
         return true;
       }
