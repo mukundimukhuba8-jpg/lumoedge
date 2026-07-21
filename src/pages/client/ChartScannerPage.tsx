@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
@@ -37,11 +37,6 @@ import {
   type ScanHistoryItem,
   type TradeDirection,
 } from '../../lib/chartScan';
-import {
-  accentHex,
-  hexToRgb,
-  loadInterfacePrefs,
-} from '../../lib/interfaceStyle';
 import {
   createEngineSnapshot,
   runTradeEngine,
@@ -82,9 +77,6 @@ function loadClientMt5Broker(email: string | undefined): string {
 export function ChartScannerPage() {
   const navigate = useNavigate();
   const { user, bot } = useApp();
-  const prefs = useMemo(() => loadInterfacePrefs(), []);
-  const accent = accentHex(prefs.accent);
-  const accentRgb = hexToRgb(accent);
   const eaName = bot.displayName || bot.name || 'Lumo Edge';
   const [scansLeft, setScansLeft] = useState(() => getScansLeft(user?.email));
   const [trades, setTrades] = useState(1);
@@ -175,16 +167,6 @@ export function ChartScannerPage() {
     if (item == null || step == null) return;
     void launchTradeEngine(item, step);
   };
-
-  useEffect(() => {
-    const root = document.documentElement;
-    root.style.setProperty('--electric', accent);
-    root.style.setProperty('--accent-rgb', accentRgb);
-    return () => {
-      root.style.setProperty('--electric', '#3b82f6');
-      root.style.removeProperty('--accent-rgb');
-    };
-  }, [accent, accentRgb]);
 
   const applyDailyResetAndSync = () => {
     setScansLeft(getScansLeft(user?.email));

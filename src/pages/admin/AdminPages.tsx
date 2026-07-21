@@ -2,6 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Loader2, MoreVertical, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck } from 'lucide-react';
 import { useAdmin, type ClientRequest } from '../../context/AdminContext';
 import { resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
+import {
+  ALL_MEDIA_SLOTS,
+  isAllowedMediaFile,
+  mediaKey,
+  normalizeCustomMedia,
+  removeMediaSlot,
+  upsertMediaSlot,
+  MEDIA_ACCEPT,
+  uploadMentorMediaFile,
+  type MentorMediaSlotId,
+} from '../../lib/mentorMedia';
 import { compressImageFile, getEaImage, blobUrlToDataUrl } from '../../lib/storage';
 import { pushScanAdminReset } from '../../lib/chartScan';
 import { Placeholder } from './AdminShell';
@@ -841,6 +852,8 @@ export function ProfilePage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [imageSavedMsg, setImageSavedMsg] = useState('');
   const [appLogoMsg, setAppLogoMsg] = useState('');
+  const [mediaMsg, setMediaMsg] = useState('');
+  const [mediaUploading, setMediaUploading] = useState<MentorMediaSlotId | null>(null);
   const isSuper = admin?.role === 'super';
 
   const onPickAppLogo = async (file: File | null) => {
@@ -935,6 +948,40 @@ export function ProfilePage() {
       URL.revokeObjectURL(previewUrl);
       setSavingImage(false);
     }
+  };
+
+  const onPickMediaSlot = async (slot: MentorMediaSlotId, file: File | null) => {
+    setMediaMsg('');
+    if (!file || !admin?.id) return;
+    const check = isAllowedMediaFile(file);
+    if (!check.ok) {
+      setMediaMsg(check.error);
+      return;
+    }
+    try {
+      setMediaUploading(slot);
+      const key = mediaKey(admin.id, slot);
+      const { url } = await uploadMentorMediaFile(key, file);
+      const nextMedia = upsertMediaSlot(profile.customMedia, {
+        slot,
+        kind: check.kind,
+        url,
+        updatedAt: new Date().toISOString(),
+      });
+      await updateProfile({ ...form, customMedia: nextMedia });
+      setMediaMsg(`${ALL_MEDIA_SLOTS.find((s) => s.id === slot)?.label || slot} uploaded — synced to all clients.`);
+    } catch (err) {
+      setMediaMsg(err instanceof Error ? err.message : 'Upload failed.');
+    } finally {
+      setMediaUploading(null);
+    }
+  };
+
+  const onRemoveMediaSlot = async (slot: MentorMediaSlotId) => {
+    if (!admin?.id) return;
+    const nextMedia = removeMediaSlot(profile.customMedia, slot);
+    await updateProfile({ ...form, customMedia: nextMedia });
+    setMediaMsg('Media removed — clients will see the update shortly.');
   };
 
   const saveProfile = async () => {
@@ -1045,6 +1092,67 @@ export function ProfilePage() {
           <p className="muted">No picture uploaded yet.</p>
         )}
         {imageError ? <p className="error">{imageError}</p> : null}
+      </div>
+
+      <div className="glow-card cyber-card">
+        <h3 style={{ marginTop: 0 }}>Custom Backgrounds &amp; Profiles</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Upload images or looping videos — they sync instantly to every licensed client. Clients pick
+          backgrounds in Settings → Backgrounds.
+        </p>
+        {mediaMsg ? (
+          <p
+            style={{
+              color: mediaMsg.includes('failed') || mediaMsg.includes('Only') ? '#f87171' : 'var(--green)',
+              fontWeight: 700,
+              margin: '6px 0 12px',
+            }}
+          >
+            {mediaMsg}
+          </p>
+        ) : null}
+        <div className="media-slot-grid">
+          {ALL_MEDIA_SLOTS.map((slot) => {
+            const item = normalizeCustomMedia(profile.customMedia).find((m) => m.slot === slot.id);
+            const uploading = mediaUploading === slot.id;
+            return (
+              <div key={slot.id} className="media-slot-card">
+                <div className="media-slot-preview">
+                  {item?.kind === 'video' ? (
+                    <video src={item.url} muted playsInline loop />
+                  ) : item?.url ? (
+                    <img src={item.url} alt="" />
+                  ) : (
+                    <span className="muted">{slot.label}</span>
+                  )}
+                </div>
+                <div className="media-slot-meta">
+                  <strong>{slot.label}</strong>
+                  <label className="media-slot-upload">
+                    {uploading ? 'Uploading…' : item ? 'Replace' : 'Upload'}
+                    <input
+                      type="file"
+                      accept={MEDIA_ACCEPT}
+                      hidden
+                      disabled={uploading}
+                      onChange={(e) => void onPickMediaSlot(slot.id, e.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                  {item ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ width: 'auto', padding: '6px 10px', fontSize: 12 }}
+                      onClick={() => void onRemoveMediaSlot(slot.id)}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {isSuper ? (

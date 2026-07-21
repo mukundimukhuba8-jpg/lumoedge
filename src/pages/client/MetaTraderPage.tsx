@@ -28,12 +28,6 @@ import {
 import { useApp } from '../../context/AppContext';
 import { isPlaceholderMentorImage, resolveProfileImage } from '../../lib/mentorMedia';
 import {
-  accentHex,
-  hexToRgb,
-  loadInterfacePrefs,
-  subscribeInterfacePrefs,
-} from '../../lib/interfaceStyle';
-import {
   connectEx,
   disconnectMt5,
   RAZOR_MARKETS,
@@ -127,10 +121,6 @@ function saveMt5(email: string, data: ClientMt5) {
 export function MetaTraderPage() {
   const navigate = useNavigate();
   const { bot, user } = useApp();
-  const [prefs, setPrefs] = useState(() => loadInterfacePrefs());
-  useEffect(() => subscribeInterfacePrefs(() => setPrefs(loadInterfacePrefs())), []);
-  const accent = accentHex(prefs.accent);
-  const accentRgb = hexToRgb(accent);
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
   const profileRef = resolveProfileImage(bot.imageUrl, bot.customMedia);
   const [eaImage, setEaImage] = useState('');
@@ -176,16 +166,6 @@ export function MetaTraderPage() {
       cancelled = true;
     };
   }, [profileRef]);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    root.style.setProperty('--electric', accent);
-    root.style.setProperty('--accent-rgb', accentRgb);
-    return () => {
-      root.style.setProperty('--electric', '#3b82f6');
-      root.style.removeProperty('--accent-rgb');
-    };
-  }, [accent, accentRgb]);
 
   useEffect(() => {
     if (!user?.email) return;

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Bot,
@@ -8,18 +8,21 @@ import {
   Palette,
   ScanSearch,
   Sparkles,
+  SlidersHorizontal,
   X,
 } from 'lucide-react';
 import {
   ACCENTS,
   EFFECTS,
   LAYOUTS,
+  THEMES,
   type AccentId,
   type CustomBgId,
   type EffectId,
   type InterfacePrefs,
   type LayoutId,
   type StyleTab,
+  type ThemeId,
   accentHex,
 } from '../../lib/interfaceStyle';
 import {
@@ -149,7 +152,7 @@ export function InterfaceStyleModal({
   mentorMedia = [],
   onOpenScanner,
 }: Props) {
-  const [tab, setTab] = useState<StyleTab>('layouts');
+  const [tab, setTab] = useState<StyleTab>('themes');
   const accent = accentHex(prefs.accent);
   const uploaded = ALL_MEDIA_SLOTS.map((slot) => ({
     ...slot,
@@ -159,15 +162,18 @@ export function InterfaceStyleModal({
   const tabs = useMemo(
     () =>
       [
+        { id: 'themes' as const, label: 'Themes', Icon: Palette },
         { id: 'layouts' as const, label: 'Layouts', Icon: Layers },
         { id: 'effects' as const, label: 'Effects', Icon: Sparkles },
         { id: 'colours' as const, label: 'Colours', Icon: Palette },
-        { id: 'custom' as const, label: 'Custom', Icon: ImagePlus },
+        { id: 'custom' as const, label: 'Backgrounds', Icon: ImagePlus },
+        { id: 'settings' as const, label: 'Settings', Icon: SlidersHorizontal },
       ] as const,
     [],
   );
 
   const setLayout = (layout: LayoutId) => onChange({ ...prefs, layout });
+  const setTheme = (theme: ThemeId) => onChange({ ...prefs, theme });
   const setAccent = (next: AccentId) => onChange({ ...prefs, accent: next });
   const setCustomBg = (customBg: CustomBgId) => {
     onChange({ ...prefs, customBg });
@@ -191,7 +197,7 @@ export function InterfaceStyleModal({
         <div className="iface-header">
           <div className="iface-title-row">
             <Layers size={18} color="var(--electric)" />
-            <strong>Interface Style</strong>
+            <strong>Appearance</strong>
           </div>
           <div className="iface-avatar-wrap">
             {avatarUrl && !isPlaceholderMentorImage(avatarUrl) ? (
@@ -236,6 +242,39 @@ export function InterfaceStyleModal({
         </div>
 
         <div className="iface-body">
+          {tab === 'themes' ? (
+            <>
+              <p className="muted iface-intro">
+                Premium cyberpunk themes — updates buttons, cards, navigation, and accents instantly.
+              </p>
+              <div className="iface-theme-grid">
+                {THEMES.map((theme) => {
+                  const active = prefs.theme === theme.id;
+                  return (
+                    <button
+                      key={theme.id}
+                      type="button"
+                      className={`iface-theme-card${active ? ' active' : ''}`}
+                      onClick={() => setTheme(theme.id)}
+                      style={
+                        {
+                          '--theme-preview-a': theme.tokens.electric,
+                          '--theme-preview-b': theme.tokens.cyan,
+                          '--theme-preview-c': theme.tokens.purple,
+                        } as CSSProperties
+                      }
+                    >
+                      <span className="iface-theme-preview" aria-hidden />
+                      <strong>{theme.label}</strong>
+                      <span className="muted">{theme.description}</span>
+                      {active ? <Check size={14} className="iface-theme-check" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
+
           {tab === 'layouts' ? (
             <div className="iface-layout-grid">
               {LAYOUTS.map((item) => {
@@ -406,6 +445,30 @@ export function InterfaceStyleModal({
                   No custom uploads yet — your mentor can add them in Admin → Profile.
                 </p>
               ) : null}
+            </>
+          ) : null}
+
+          {tab === 'settings' ? (
+            <>
+              <p className="muted iface-intro">
+                Control motion and polish across the app. Disabling animations improves battery on older devices.
+              </p>
+              <div className="iface-settings-list">
+                <label className="iface-setting-row">
+                  <div>
+                    <strong>Premium animations</strong>
+                    <span className="muted">Page transitions, cards, and loading effects</span>
+                  </div>
+                  <button
+                    type="button"
+                    className={`scan-toggle${prefs.animations ? ' on' : ''}`}
+                    onClick={() => onChange({ ...prefs, animations: !prefs.animations })}
+                    aria-pressed={prefs.animations}
+                  >
+                    <span />
+                  </button>
+                </label>
+              </div>
             </>
           ) : null}
         </div>
