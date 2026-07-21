@@ -879,7 +879,7 @@ type Ctx = {
     firstName: string;
     lastName: string;
   }) => ClientRequest;
-  approveClient: (id: string) => void;
+  approveClient: (id: string) => Promise<void>;
   /** Super Admin — add a subscriber who never appeared in the queue */
   addApprovedSubscriber: (input: {
     email: string;
@@ -1719,7 +1719,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           .catch(() => undefined);
         return entry;
       },
-      approveClient: (id) => {
+      approveClient: async (id) => {
         const hit =
           clients.find((c) => c.id === id) ||
           clients.find((c) => c.email.toLowerCase() === id.toLowerCase());
@@ -1742,64 +1742,55 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ...ws,
           clientRequests: mergeClientLists(ws.clientRequests, [approved]),
         }));
-        const persistApproval = async (server: ClientRequest | null) => {
-          const merged = server
-            ? ({
-                ...(server as ClientRequest),
+
+        void (async () => {
+          const persistApproval = async (server: ClientRequest | null) => {
+            const merged = server
+              ? ({
+                  ...(server as ClientRequest),
+                  status: 'approved',
+                  paymentClaimed: true,
+                  paymentClaimedAt: claimedAt,
+                } as ClientRequest)
+              : approved;
+            setClients((prev) => mergeClientLists(prev, [merged]));
+            patchWorkspace(sid, (ws) => ({
+              ...ws,
+              clientRequests: mergeClientLists(ws.clientRequests, [merged]),
+            }));
+            try {
+              await Promise.race([
+                pushSession(email, { accessStatus: 'approved' }),
+                new Promise((resolve) => window.setTimeout(resolve, 8000)),
+              ]);
+            } catch {
+              // local approval already saved
+            }
+          };
+          try {
+            let server = await Promise.race([
+              patchClient(hit.id, {
                 status: 'approved',
                 paymentClaimed: true,
                 paymentClaimedAt: claimedAt,
-              } as ClientRequest)
-            : approved;
-          setClients((prev) => mergeClientLists(prev, [merged]));
-          patchWorkspace(sid, (ws) => ({
-            ...ws,
-            clientRequests: mergeClientLists(ws.clientRequests, [merged]),
-          }));
-          try {
-            const db = await Promise.race([
-              fetchDb(),
+              }),
               new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
             ]);
-            const session =
-              (db?.sessions?.[email] as Record<string, unknown> | undefined) || {};
-            await Promise.race([
-              pushSession(email, {
-                ...session,
-                accessStatus: 'approved',
-              }),
-              new Promise((resolve) => window.setTimeout(resolve, 8000)),
-            ]);
-          } catch {
-            // local approval already saved
-          }
-        };
-        void Promise.race([
-          patchClient(hit.id, {
-            status: 'approved',
-            paymentClaimed: true,
-            paymentClaimedAt: claimedAt,
-          }),
-          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 12_000)),
-        ])
-          .then(async (server) => {
-            if (server) {
-              await persistApproval(server as ClientRequest);
-              return;
+            if (!server) {
+              server = await Promise.race([
+                patchClient(email, {
+                  status: 'approved',
+                  paymentClaimed: true,
+                  paymentClaimedAt: claimedAt,
+                }),
+                new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
+              ]);
             }
-            const byEmail = await Promise.race([
-              patchClient(email, {
-                status: 'approved',
-                paymentClaimed: true,
-                paymentClaimedAt: claimedAt,
-              }),
-              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 12_000)),
-            ]);
-            await persistApproval(byEmail as ClientRequest | null);
-          })
-          .catch(async () => {
+            await persistApproval(server as ClientRequest | null);
+          } catch {
             await persistApproval(approved);
-          });
+          }
+        })();
       },
       addApprovedSubscriber: async (input) => {
         const email = input.email.trim().toLowerCase();
@@ -1839,77 +1830,61 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           clientRequests: mergeClientLists(ws.clientRequests, [approved]),
         }));
 
-        const finalize = async (server: ClientRequest | null) => {
-          const merged: ClientRequest = server
-            ? {
-                ...(server as ClientRequest),
+        void (async () => {
+          try {
+            const posted = await Promise.race([
+              postClient({
                 email,
                 firstName: approved.firstName,
                 lastName: approved.lastName,
-                status: 'approved',
-                paymentClaimed: true,
-                paymentClaimedAt: approved.paymentClaimedAt,
-              }
-            : approved;
-          setClients((prev) => mergeClientLists(prev, [merged]));
-          patchWorkspace(sid, (ws) => ({
-            ...ws,
-            clientRequests: mergeClientLists(ws.clientRequests, [merged]),
-          }));
-          try {
-            const db = await Promise.race([
-              fetchDb(),
+              }),
               new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
             ]);
-            const session =
-              (db?.sessions?.[email] as Record<string, unknown> | undefined) || {};
-            await Promise.race([
-              pushSession(email, {
-                ...session,
-                accessStatus: 'approved',
-              }),
-              new Promise((resolve) => window.setTimeout(resolve, 8000)),
-            ]);
-          } catch {
-            // local record is enough for admin list
-          }
-          return merged;
-        };
-
-        try {
-          const posted = await Promise.race([
-            postClient({
-              email,
-              firstName: approved.firstName,
-              lastName: approved.lastName,
-            }),
-            new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 12_000)),
-          ]);
-          const serverId = (posted as ClientRequest | null)?.id || approved.id;
-          let patched = await Promise.race([
-            patchClient(serverId, {
-              status: 'approved',
-              paymentClaimed: true,
-              paymentClaimedAt: approved.paymentClaimedAt,
-            }),
-            new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 12_000)),
-          ]);
-          if (!patched) {
-            patched = await Promise.race([
-              patchClient(email, {
+            const serverId = (posted as ClientRequest | null)?.id || approved.id;
+            let patched = await Promise.race([
+              patchClient(serverId, {
                 status: 'approved',
                 paymentClaimed: true,
                 paymentClaimedAt: approved.paymentClaimedAt,
               }),
-              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 12_000)),
+              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
             ]);
+            if (!patched) {
+              patched = await Promise.race([
+                patchClient(email, {
+                  status: 'approved',
+                  paymentClaimed: true,
+                  paymentClaimedAt: approved.paymentClaimedAt,
+                }),
+                new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
+              ]);
+            }
+            const merged: ClientRequest = patched
+              ? {
+                  ...(patched as ClientRequest),
+                  email,
+                  firstName: approved.firstName,
+                  lastName: approved.lastName,
+                  status: 'approved',
+                  paymentClaimed: true,
+                  paymentClaimedAt: approved.paymentClaimedAt,
+                }
+              : approved;
+            setClients((prev) => mergeClientLists(prev, [merged]));
+            patchWorkspace(sid, (ws) => ({
+              ...ws,
+              clientRequests: mergeClientLists(ws.clientRequests, [merged]),
+            }));
+            await Promise.race([
+              pushSession(email, { accessStatus: 'approved' }),
+              new Promise((resolve) => window.setTimeout(resolve, 8000)),
+            ]).catch(() => undefined);
+          } catch {
+            // local record already saved
           }
-          const merged = await finalize(patched as ClientRequest | null);
-          return { ok: true, client: merged };
-        } catch {
-          const merged = await finalize(approved);
-          return { ok: true, client: merged };
-        }
+        })();
+
+        return { ok: true, client: approved };
       },
       markClientPaid: (id) => {
         const hit = clients.find((c) => c.id === id);
@@ -2059,9 +2034,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         return mergeClientLists([fromClients], [fromWorkspace])[0];
       },
       refreshClientQueue: async () => {
-        const repair = await repairClientQueueRemote();
-        const list = await fetchClients();
-        if (list) {
+        void repairClientQueueRemote().catch(() => undefined);
+        const list = await Promise.race([
+          fetchClients(),
+          new Promise<RemoteDb['clients'] | null>((resolve) =>
+            window.setTimeout(() => resolve(null), 10_000),
+          ),
+        ]);
+        if (list?.length) {
           let remoteDeleted: string[] = [];
           try {
             const { firebaseFetchDeletedClients } = await import('../lib/firebaseDb');
@@ -2075,8 +2055,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               remoteDeleted,
             ),
           );
-        }
-        if (repair.ok && list) {
           return {
             ok: true,
             total: list.length,
@@ -2084,14 +2062,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             approved: list.filter((c) => c.status === 'approved').length,
           };
         }
-        return repair.ok
-          ? {
-              ok: true,
-              total: repair.total,
-              pending: repair.pending,
-              approved: repair.approved,
-            }
-          : repair;
+        return {
+          ok: true,
+          total: clients.length,
+          pending: clients.filter((c) => c.status === 'pending').length,
+          approved: clients.filter((c) => c.status === 'approved').length,
+        };
       },
       // Strict per-mentor isolation: even if data ever gets cross-merged,
       // an EA stamped with another mentor's id never renders in this portal
