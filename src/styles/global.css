@@ -5414,62 +5414,6 @@ button:active:not(:disabled),
   width: min(100%, 360px);
 }
 
-/* ── Copy Trade Engine ── */
-.copy-engine-head {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.copy-engine-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 700;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  white-space: nowrap;
-}
-
-.copy-engine-pill.phase-connected { color: #34d399; border-color: rgba(52, 211, 153, 0.35); }
-.copy-engine-pill.phase-waiting { color: #fbbf24; border-color: rgba(251, 191, 36, 0.35); }
-.copy-engine-pill.phase-copying { color: var(--cyan); border-color: rgba(34, 211, 238, 0.35); animation: copy-pulse 1.2s ease-in-out infinite; }
-.copy-engine-pill.phase-sent { color: #34d399; box-shadow: 0 0 16px rgba(52, 211, 153, 0.35); }
-
-@keyframes copy-pulse {
-  0%, 100% { opacity: 0.75; }
-  50% { opacity: 1; }
-}
-
-.copy-engine-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.copy-engine-grid > div {
-  padding: 8px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.copy-engine-grid span {
-  display: block;
-  font-size: 0.6rem;
-  color: var(--muted);
-  text-transform: uppercase;
-}
-
-.copy-engine-foot {
-  margin: 10px 0 0;
-  font-size: 0.72rem;
-}
-
 /* Global cyber polish — all pages */
 .page:not(.cyber-page) {
   position: relative;

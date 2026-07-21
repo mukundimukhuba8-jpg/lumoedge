@@ -113,9 +113,14 @@ export function HomePage() {
   const customBg =
     customResolved && customResolved.kind === 'image' ? customResolved.src : '';
 
-  const [copyStatus, setCopyStatus] = useState('');
+  const [copyEngineOpen, setCopyEngineOpen] = useState(false);
+  const [copyEnginePhase, setCopyEnginePhase] = useState<'executing' | 'success' | 'failed'>(
+    'executing',
+  );
+  const [copyEngineMessage, setCopyEngineMessage] = useState('');
+  const [copyEngineProgress, setCopyEngineProgress] = useState(0);
 
-  // Listen for mentor copy trades and mirror them on this client's MT5
+  // Listen for copy trades and mirror them on this client's MT5
   useEffect(() => {
     if (!user?.email || !bot.licenseKey || isPaused) return;
     const mentorId = mentorIdForLicense(bot.licenseKey);
@@ -143,15 +148,31 @@ export function HomePage() {
         comment: String(latest.comment || ''),
         trades: Number(latest.trades) || 1,
       };
+      const sideLabel = order.side === 'sell' ? 'SELL' : 'BUY';
+      setCopyEngineOpen(true);
+      setCopyEnginePhase('executing');
+      setCopyEngineMessage(`Executing ${sideLabel} ${order.symbol}`);
+      setCopyEngineProgress(35);
+
       void executeCopyOrder({
         email: user.email,
         eaName: bot.displayName || bot.name || 'Lumo Edge',
         order,
         mentorId,
       }).then((result) => {
-        if (result.ok && result.message !== 'Already copied') {
-          setCopyStatus(result.message);
+        if (result.message === 'Already copied') {
+          setCopyEngineOpen(false);
+          return;
         }
+        if (result.ok) {
+          setCopyEnginePhase('success');
+          setCopyEngineMessage(result.message);
+          setCopyEngineProgress(100);
+          return;
+        }
+        setCopyEnginePhase('failed');
+        setCopyEngineMessage(result.message);
+        setCopyEngineProgress(100);
       });
     };
 
@@ -324,29 +345,6 @@ export function HomePage() {
   return (
     <div className={`app-shell home-layout-${stylePrefs.layout}`}>
       {fxClass ? <div className={`iface-fx ${fxClass}`} aria-hidden /> : null}
-      {copyStatus ? (
-        <div
-          role="status"
-          style={{
-            position: 'fixed',
-            top: 12,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 60,
-            padding: '8px 14px',
-            borderRadius: 999,
-            background: 'rgba(10,14,24,0.92)',
-            border: '1px solid rgba(59,130,246,0.45)',
-            color: '#93c5fd',
-            fontSize: 12,
-            fontWeight: 600,
-            maxWidth: '90vw',
-          }}
-        >
-          {copyStatus}
-        </div>
-      ) : null}
-
       {/* Floating profile avatar — only when mentor uploaded a real photo */}
       {stylePrefs.layout !== 'vortex' && displayAvatar ? (
         <button
@@ -447,12 +445,6 @@ export function HomePage() {
             </div>
 
             <p className="home-powered">powered by LUMOEDGE</p>
-
-            <CopyTradeStatus
-              email={user?.email}
-              mentorName={eaTitle}
-              copyStatus={copyStatus}
-            />
 
             <div className="neon-action home-actions">
               <button type="button" onClick={confirmDelete}>
@@ -723,6 +715,14 @@ export function HomePage() {
           setStyleOpen(false);
           navigate('/app/scanner');
         }}
+      />
+
+      <CopyTradeStatus
+        open={copyEngineOpen}
+        phase={copyEnginePhase}
+        message={copyEngineMessage}
+        progress={copyEngineProgress}
+        onClose={() => setCopyEngineOpen(false)}
       />
     </div>
   );
