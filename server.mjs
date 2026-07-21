@@ -462,40 +462,12 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const prompt =
-        'You analyze MT5 / trading chart screenshots for institutional-grade trade signals.\n' +
-        'SYMBOL (highest priority):\n' +
-        '- Read the EXACT symbol text from the chart UI (title bar, tab, market watch, or header).\n' +
-        '- Copy characters exactly including broker suffixes/prefixes (.m, .M, .pro, .PRO, .std, .STD, .r, .ecn, etc.).\n' +
-        '- Do NOT guess, substitute, or default to XAUUSD/EURUSD unless that exact text is visible.\n' +
-        '- Distinguish similar symbols (EURUSD vs GBPUSD, XAUUSD vs XAGUSD, NAS100 vs US100).\n' +
-        '- If symbol text is unreadable, set symbol to null and symbol_visible to false.\n' +
-        'TIMEFRAME: read only if visible (M1,M5,M15,M30,H1,H4,D1,W1), else null.\n' +
-        'MARKET STRUCTURE:\n' +
-        '- Identify trend: higher highs/higher lows (bullish) or lower highs/lower lows (bearish).\n' +
-        '- Mark swing highs/lows, break of structure (BOS), change of character (CHoCH), and ranging vs trending.\n' +
-        '- Note key support/resistance zones from visible horizontal levels and recent swing points.\n' +
-        'CANDLESTICK & MOMENTUM:\n' +
-        '- Recognize engulfing, pin bars, doji indecision, momentum candles, and rejection wicks at S/R.\n' +
-        '- Weigh momentum vs exhaustion near structure.\n' +
-        'DIRECTION (buy or sell):\n' +
-        '- BUY only with bullish structure + supportive price action at demand/support.\n' +
-        '- SELL only with bearish structure + rejection at supply/resistance.\n' +
-        '- If structure is mixed, ranging, or unclear → lower confidence below 65 and explain why.\n' +
-        'CONFIDENCE (accuracy_percent) integer 55-89:\n' +
-        '- 84-89 = textbook: clean trend, BOS/retest, strong momentum, clear S/R, RR ≥ 1:2.\n' +
-        '- 74-83 = decent setup with minor noise or imperfect structure.\n' +
-        '- 65-73 = marginal — only tradeable if structure still favors direction.\n' +
-        '- 55-64 = low confidence — choppy, counter-trend, or unreadable; prefer this range when unsure.\n' +
-        '- NEVER use lazy round numbers (80, 85) — pick the exact integer your analysis supports.\n' +
-        '- If confidence would be below 65, still return JSON but set accuracy_percent in 55-64 range.\n' +
-        'PRICES (from the right-hand price scale):\n' +
-        '- entry_price: last/current visible price where the chart ends.\n' +
-        '- stop_loss: logical protective level — below recent swing low for buy, above swing high for sell.\n' +
-        '- Place SL beyond structure, not inside noise. Target minimum 1:1.5 risk:reward to next S/R.\n' +
-        '- Match decimal precision on the scale. If scale unreadable, set entry_price and stop_loss to null.\n' +
-        'Reply ONLY compact JSON:\n' +
-        '{"symbol":"EXACT_OR_null","symbol_visible":true,"timeframe":"M15_or_null","direction":"buy|sell","accuracy_percent":77,"entry_price":2345.6,"stop_loss":2339.8,"summary":"one concise sentence citing structure + pattern"}';
+      const {
+        CHART_SCAN_PROMPT,
+        normalizeScanAccuracy,
+        resolveScanDirection,
+        validateScanPrices,
+      } = await import('./api/_lib/chartScanParse.mjs');
 
       const upstream = await fetch(CHART_SCAN_API_URL, {
         method: 'POST',
@@ -505,12 +477,12 @@ const server = http.createServer(async (req, res) => {
         },
         body: JSON.stringify({
           model: CHART_SCAN_MODEL,
-          temperature: 0,
+          temperature: 0.15,
           messages: [
             {
               role: 'user',
               content: [
-                { type: 'text', text: prompt },
+                { type: 'text', text: CHART_SCAN_PROMPT },
                 { type: 'image_url', image_url: { url: image, detail: 'high' } },
               ],
             },
@@ -562,11 +534,19 @@ const server = http.createServer(async (req, res) => {
       // Normalize common chart formatting but keep the same instrument
       symbol = symbol.replace(/\s+/g, '').toUpperCase();
 
-      let accuracy = Number(parsed.accuracy_percent ?? parsed.accuracy ?? 0);
-      if (!Number.isFinite(accuracy) || accuracy <= 0) {
-        accuracy = 68 + Math.floor(Math.random() * 18);
+      let accuracy = normalizeScanAccuracy(parsed, image);
+      const directionResult = resolveScanDirection(parsed, accuracy, image);
+      if (!directionResult.ok) {
+        sendJson(res, 422, {
+          ok: false,
+          accuracy: 0,
+          error: directionResult.error,
+        });
+        return;
       }
-      accuracy = Math.max(55, Math.min(89, Math.round(accuracy)));
+
+      const { direction, corrected, correctionReason } = directionResult;
+      accuracy = directionResult.accuracy;
       if (accuracy < 65) {
         sendJson(res, 422, {
           ok: false,
@@ -575,21 +555,21 @@ const server = http.createServer(async (req, res) => {
         });
         return;
       }
-      const rawDir = String(parsed.direction || parsed.side || '').toLowerCase();
-      if (!rawDir.includes('sell') && !rawDir.includes('buy')) {
-        sendJson(res, 422, {
-          ok: false,
-          accuracy: 0,
-          error: 'Could not determine BUY/SELL from this chart. Try another screenshot.',
-        });
-        return;
-      }
-      const direction = rawDir.includes('sell') ? 'sell' : 'buy';
+
       const timeframeRaw = parsed.timeframe == null ? '' : String(parsed.timeframe).trim();
       const timeframe =
         !timeframeRaw || /null|unknown|n\/a|none/i.test(timeframeRaw)
           ? undefined
           : timeframeRaw;
+
+      const entryPrice = Number(parsed.entry_price);
+      const stopLoss = Number(parsed.stop_loss);
+      const priceCheck = validateScanPrices(direction, entryPrice, stopLoss);
+
+      let summary = parsed.summary || `Scan for ${symbol}`;
+      if (corrected && correctionReason) {
+        summary = `${summary} (direction aligned to ${correctionReason})`;
+      }
 
       sendJson(res, 200, {
         ok: true,
@@ -598,7 +578,9 @@ const server = http.createServer(async (req, res) => {
         symbol,
         timeframe,
         direction,
-        summary: parsed.summary || `Scan for ${symbol}`,
+        entryPrice: priceCheck.pricesValid ? priceCheck.entryPrice : undefined,
+        stopLoss: priceCheck.pricesValid ? priceCheck.stopLoss : undefined,
+        summary,
       });
       return;
     }
