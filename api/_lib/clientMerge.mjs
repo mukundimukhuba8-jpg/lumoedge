@@ -199,13 +199,20 @@ export function pickAdminRole(a, b) {
   return adminRoleRank(a) >= adminRoleRank(b) ? a : b;
 }
 
-export async function firebasePatchAdminRole(id, role) {
+export async function firebasePatchAdminRole(idOrEmail, role) {
+  const key = String(idOrEmail || '').trim();
+  const keyLower = key.toLowerCase();
   const curAuth = (await firebaseRead('lumo/auth')) || { admins: [], admin: null };
+  let hit = null;
   const admins = toArray(curAuth.admins).map((a) => {
-    if (a.id !== id) return a;
-    return { ...a, role: pickAdminRole(a.role, role) };
+    const match =
+      a.id === key || String(a.email || '').trim().toLowerCase() === keyLower;
+    if (!match) return a;
+    hit = { ...a, role: pickAdminRole(a.role, role) };
+    return hit;
   });
+  if (!hit) return null;
   const ok = await firebaseWrite('lumo/auth', { admins, admin: null });
   await firebaseWrite('lumo/updatedAt', new Date().toISOString()).catch(() => false);
-  return ok ? admins.find((a) => a.id === id) || null : null;
+  return ok ? hit : null;
 }

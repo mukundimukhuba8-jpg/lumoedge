@@ -1140,6 +1140,8 @@ export function ProfilePage() {
 export function ApproveAdminsPage() {
   const { admins, approveAdmin, approveAdmins, deleteAdmin } = useAdmin();
   const [q, setQ] = useState('');
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [approveMsg, setApproveMsg] = useState('');
   const query = q.trim().toLowerCase();
   const match = (a: { fullName: string; email: string; id: string; eaName?: string }) => {
     if (!query) return true;
@@ -1154,6 +1156,38 @@ export function ApproveAdminsPage() {
   const onDelete = (id: string, label: string) => {
     if (!confirm(`Delete ${label}? This cannot be undone.`)) return;
     deleteAdmin(id);
+  };
+
+  const onApprove = async (id: string, label: string) => {
+    if (approvingId) return;
+    setApproveMsg('');
+    setApprovingId(id);
+    try {
+      await approveAdmin(id);
+      setApproveMsg(`${label} approved and saved to Firebase.`);
+    } catch (err) {
+      setApproveMsg(
+        err instanceof Error ? err.message : 'Could not approve mentor — try again.',
+      );
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
+  const onApproveAll = async () => {
+    if (approvingId || !pending.length) return;
+    setApproveMsg('');
+    setApprovingId('all');
+    try {
+      await approveAdmins(pending.map((a) => a.id));
+      setApproveMsg(`${pending.length} mentor(s) approved and saved to Firebase.`);
+    } catch (err) {
+      setApproveMsg(
+        err instanceof Error ? err.message : 'Could not approve all mentors — try again.',
+      );
+    } finally {
+      setApprovingId(null);
+    }
   };
 
   return (
@@ -1177,6 +1211,19 @@ export function ApproveAdminsPage() {
         <Stat value={String(approved.length)} label="Approved" tone="green" />
       </div>
 
+      {approveMsg ? (
+        <p
+          style={{
+            margin: 0,
+            color: approveMsg.startsWith('Could') ? '#f87171' : 'var(--green)',
+            fontWeight: 700,
+            fontSize: 13,
+          }}
+        >
+          {approveMsg}
+        </p>
+      ) : null}
+
       <div className="glow-card">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <h3 style={{ marginTop: 0, marginBottom: 0 }}>Pending</h3>
@@ -1184,9 +1231,10 @@ export function ApproveAdminsPage() {
             <button
               className="btn btn-blue"
               type="button"
-              onClick={() => approveAdmins(pending.map((a) => a.id))}
+              disabled={Boolean(approvingId)}
+              onClick={() => void onApproveAll()}
             >
-              Approve all ({pending.length})
+              {approvingId === 'all' ? 'Approving…' : `Approve all (${pending.length})`}
             </button>
           ) : null}
         </div>
@@ -1200,8 +1248,14 @@ export function ApproveAdminsPage() {
               <div className="muted">ID {a.id}{a.eaName ? ` · EA ${a.eaName}` : ''}</div>
               <div style={{ color: 'var(--orange)', fontWeight: 700, marginTop: 4 }}>PENDING</div>
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                <button className="btn btn-blue" type="button" style={{ flex: 1 }} onClick={() => approveAdmin(a.id)}>
-                  Approve
+                <button
+                  className="btn btn-blue"
+                  type="button"
+                  style={{ flex: 1 }}
+                  disabled={Boolean(approvingId)}
+                  onClick={() => void onApprove(a.id, a.fullName || a.email)}
+                >
+                  {approvingId === a.id ? 'Approving…' : 'Approve'}
                 </button>
                 <button
                   className="btn btn-ghost"
