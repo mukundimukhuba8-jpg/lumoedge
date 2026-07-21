@@ -306,6 +306,10 @@ const server = http.createServer(async (req, res) => {
       pathname === '/api/db' ||
       pathname === '/api/clients' ||
       pathname.startsWith('/api/clients/') ||
+      pathname === '/api/auth/admins' ||
+      pathname === '/api/auth/admins/repair-sync' ||
+      pathname.startsWith('/api/auth/admins/') ||
+      pathname === '/api/auth/register' ||
       pathname.startsWith('/api/sessions/') ||
       pathname === '/api/vault' ||
       pathname.startsWith('/api/images/')

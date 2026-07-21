@@ -269,3 +269,12 @@ export async function firebasePatchAdminRole(idOrEmail, role) {
   await firebaseWrite('lumo/updatedAt', new Date().toISOString()).catch(() => false);
   return ok ? hit : null;
 }
+
+export async function firebaseRegisterMentor(entry, workspace) {
+  const curAuth = (await firebaseRead('lumo/auth')) || { admins: [], admin: null };
+  const admins = mergeAdminsLive(toArray(curAuth.admins), [entry]);
+  const authOk = await firebaseWrite('lumo/auth', { admins, admin: null });
+  const wsOk = await firebaseWrite(`lumo/store/workspaces/${entry.id}`, workspace);
+  await firebaseWrite('lumo/updatedAt', new Date().toISOString()).catch(() => false);
+  return authOk && wsOk;
+}
