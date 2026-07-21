@@ -4,7 +4,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -873,8 +872,8 @@ type Ctx = {
     data: Omit<AdminUser, 'id' | 'role'> & { password: string },
   ) => Promise<string | null>;
   logout: () => void;
-  approveAdmin: (id: string) => void;
-  approveAdmins: (ids: string[]) => void;
+  approveAdmin: (id: string) => Promise<void>;
+  approveAdmins: (ids: string[]) => Promise<void>;
   deleteAdmin: (id: string) => void;
   clientRequests: ClientRequest[];
   submitClientRegistration: (input: {
@@ -1318,112 +1317,74 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     void pushDb({ store: { workspaces: next.workspaces } });
   }, []);
 
-  /** Batch rapid approvals into one state update + one Firebase write. */
-  const approveQueueRef = useRef(new Set<string>());
-  const approveFlushScheduledRef = useRef(false);
+  /** Approve mentors — Firebase first, then local state (never block on fetchAdmins). */
+  const approveMentorByIds = useCallback(async (ids: string[]) => {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (!unique.length) return;
 
-  const flushApproveQueue = useCallback(async () => {
-    approveFlushScheduledRef.current = false;
-    const ids = [...approveQueueRef.current];
-    approveQueueRef.current.clear();
-    if (!ids.length) return;
-    const idSet = new Set(ids);
-
-    approvalLog('mentor', 'approve_clicked', { ids });
-
-    let remoteAdmins: AdminUser[] = [];
-    try {
-      remoteAdmins = ((await fetchAdmins()) || []) as AdminUser[];
-    } catch (err) {
-      approvalWarn('mentor', 'fetch_admins_before_approve_failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-
-    let mentorsToSeed: AdminUser[] = [];
-    let nextAdmins: AdminUser[] = auth.admins;
-
-    setAuth((prev) => {
-      const merged = mergeAdmins(prev.admins, remoteAdmins) as AdminUser[];
-      mentorsToSeed = [];
-      nextAdmins = merged.map((a) => {
-        if (idSet.has(a.id) && a.role === 'pending') {
-          approvalLog('mentor', 'status_before_update', {
-            id: a.id,
-            email: a.email,
-            before: a.role,
-            after: 'admin',
-          });
-          mentorsToSeed.push(a);
-          return { ...a, role: 'admin' as const };
-        }
-        return a;
-      });
-      for (const id of ids) {
-        if (!nextAdmins.some((a) => a.id === id)) {
-          approvalWarn('mentor', 'approve_id_not_found', { id });
-        }
+    for (const id of unique) {
+      const hit = auth.admins.find((a) => a.id === id);
+      if (!hit || hit.role !== 'pending') {
+        approvalWarn('mentor', 'approve_target_missing', { id });
+        continue;
       }
-      const next = { ...prev, admins: nextAdmins };
-      saveJSON(AUTH_KEY, { ...next, portalOpen: false });
-      return next;
-    });
 
-    void pushDb({ auth: { admins: nextAdmins, admin: null } })
-      .then(() => {
-        approvalLog('mentor', 'database_update_success', {
-          ids,
-          approved: mentorsToSeed.map((m) => m.email),
-        });
-      })
-      .catch((err) => {
-        approvalError('mentor', 'database_update_failure', {
-          ids,
-          error: err instanceof Error ? err.message : String(err),
-        });
+      approvalLog('mentor', 'approve_clicked', {
+        id: hit.id,
+        email: hit.email,
+        before: hit.role,
       });
 
-    if (mentorsToSeed.length) {
+      let result = await patchAdminRole(hit.id, 'admin');
+      if (!result?.admin && !result?.ok) {
+        result = await patchAdminRole(hit.email, 'admin');
+      }
+      if (!result?.admin && !result?.ok) {
+        approvalError('mentor', 'database_update_failure', {
+          id: hit.id,
+          email: hit.email,
+        });
+        throw new Error(`Could not approve ${hit.email}. Check connection and try again.`);
+      }
+
+      const approved: AdminUser = {
+        ...hit,
+        ...(result.admin as AdminUser),
+        role: 'admin',
+      };
+
+      setAuth((prev) => {
+        const nextAdmins = prev.admins.map((a) =>
+          a.id === hit.id || a.email.toLowerCase() === hit.email.toLowerCase()
+            ? approved
+            : a,
+        );
+        const next = { ...prev, admins: nextAdmins };
+        saveJSON(AUTH_KEY, { ...next, portalOpen: false });
+        return next;
+      });
+
       setStore((storePrev) => {
-        const workspaces = { ...storePrev.workspaces };
-        const patch: Record<string, AdminWorkspace> = {};
-        let changed = false;
-        for (const m of mentorsToSeed) {
-          if (!workspaces[m.id]) {
-            workspaces[m.id] = createEmptyWorkspace(m);
-            patch[m.id] = workspaces[m.id];
-            changed = true;
-          }
-        }
-        if (!changed) return storePrev;
+        if (storePrev.workspaces[approved.id]) return storePrev;
+        const workspaces = {
+          ...storePrev.workspaces,
+          [approved.id]: createEmptyWorkspace(approved),
+        };
         const nextStore = { ...storePrev, workspaces };
         saveJSON(STORE_KEY, nextStore);
-        void pushDb({ store: { workspaces: patch } }).catch(() => undefined);
+        void pushDb({ store: { workspaces: { [approved.id]: workspaces[approved.id] } } }).catch(
+          () => undefined,
+        );
         return nextStore;
       });
+
+      approvalLog('mentor', 'database_update_success', {
+        id: approved.id,
+        email: approved.email,
+        after: approved.role,
+      });
     }
-
-    void Promise.all(
-      ids.map((id) =>
-        patchAdminRole(id, 'admin').catch((err) => {
-          approvalError('mentor', 'cloud_role_sync_failed', {
-            id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }),
-      ),
-    );
-  }, []);
-
-  const queueApproveAdmins = useCallback(
-    (ids: string[]) => {
-      for (const id of ids) approveQueueRef.current.add(id);
-      if (approveFlushScheduledRef.current) return;
-      approveFlushScheduledRef.current = true;
-      queueMicrotask(() => flushApproveQueue());
-    },
-    [flushApproveQueue],
-  );
+  }, [auth.admins]);
 
   const warmLicenseCache = useCallback(() => {
     pruneClientDeviceStorage();
@@ -1659,8 +1620,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         return null;
       },
       logout: () => saveAuth({ ...auth, admin: null, portalOpen: false }),
-      approveAdmin: (id) => queueApproveAdmins([id]),
-      approveAdmins: (ids) => queueApproveAdmins(ids),
+      approveAdmin: (id) => approveMentorByIds([id]),
+      approveAdmins: (ids) => approveMentorByIds(ids),
       deleteAdmin: (id) => {
         if (id === SUPER_ADMIN.user.id) return;
         const nextAdmins = auth.admins.filter((a) => a.id !== id);
@@ -2816,7 +2777,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         approvedClients: isSuper ? countClientQueue(clients).approved : 0,
       },
     };
-  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, queueApproveAdmins, resyncLicenses, warmLicenseCache]);
+  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, approveMentorByIds, resyncLicenses, warmLicenseCache]);
 
   if (booting) {
     return <WelcomeSplash />;

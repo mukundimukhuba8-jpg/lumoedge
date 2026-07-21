@@ -944,10 +944,16 @@ export default async function handler(req, res) {
       const { db, sha } = await loadDb();
       db.auth = db.auth || { admins: [], admin: null };
       db.auth.admins = toArray(db.auth.admins).map((a) => {
-        if (a.id !== id) return a;
+        const match =
+          a.id === id || String(a.email || '').toLowerCase() === id.toLowerCase();
+        if (!match) return a;
         return { ...a, role: adminRoleRank(a.role) >= adminRoleRank(role) ? a.role : role };
       });
-      const updated = toArray(db.auth.admins).find((a) => a.id === id) || null;
+      const updated =
+        toArray(db.auth.admins).find(
+          (a) =>
+            a.id === id || String(a.email || '').toLowerCase() === id.toLowerCase(),
+        ) || null;
       try {
         await saveDb(db, sha);
       } catch {

@@ -200,13 +200,19 @@ export async function handleApi(req, res, pathname) {
       const { db, sha } = await loadDb();
       db.auth = db.auth || { admins: [], admin: null };
       db.auth.admins = (db.auth.admins || []).map((a) => {
-        if (a.id !== id) return a;
+        const match =
+          a.id === id || String(a.email || '').toLowerCase() === id.toLowerCase();
+        if (!match) return a;
         return {
           ...a,
           role: adminRoleRank(a.role) >= adminRoleRank(role) ? a.role : role,
         };
       });
-      const updated = (db.auth.admins || []).find((a) => a.id === id) || null;
+      const updated =
+        (db.auth.admins || []).find(
+          (a) =>
+            a.id === id || String(a.email || '').toLowerCase() === id.toLowerCase(),
+        ) || null;
       await saveDb(db, sha);
       const fbUpdated = await firebasePatchAdminRole(id, role).catch(() => null);
       json(res, 200, { ok: true, admin: fbUpdated || updated });

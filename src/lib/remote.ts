@@ -39,6 +39,7 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 const FETCH_DB_TIMEOUT_MS = 15_000;
 const FETCH_CLIENTS_TIMEOUT_MS = 15_000;
 const MENTOR_REGISTER_TIMEOUT_MS = 20_000;
+const MENTOR_APPROVE_TIMEOUT_MS = 20_000;
 
 function fetchWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([
@@ -447,14 +448,45 @@ export async function patchClient(
 }
 
 export async function patchAdminRole(id: string, role: 'pending' | 'admin') {
-  try {
-    return await req<{ ok: boolean }>(`/api/auth/admins/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ role }),
+  const key = String(id || '').trim();
+  approvalLog('mentor', 'database_patch_request', {
+    id: key,
+    table: 'lumo/auth/admins',
+    role,
+  });
+  const result = await fetchWithTimeout(
+    (async () => {
+      try {
+        return await req<{ ok: boolean; admin?: Record<string, unknown> }>(
+          `/api/auth/admins/${encodeURIComponent(key)}`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ role }),
+          },
+        );
+      } catch (err) {
+        approvalError('mentor', 'database_patch_failure', {
+          id: key,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      }
+    })(),
+    MENTOR_APPROVE_TIMEOUT_MS,
+  );
+  if (result?.admin || result?.ok) {
+    approvalLog('mentor', 'database_patch_success', {
+      id: key,
+      after: role,
+      email: result.admin?.email,
     });
-  } catch {
-    return null;
+  } else {
+    approvalError('mentor', 'database_patch_failure', {
+      id: key,
+      error: 'Mentor approve API returned no result',
+    });
   }
+  return result;
 }
 
 export async function deleteClientRemote(id: string) {
