@@ -13,7 +13,7 @@ import {
 } from '../../lib/interfaceStyle';
 import { resolveCustomBackdrop, resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
 import { clearMt5Session, getMt5Token } from '../../lib/mt5Session';
-import { loadJSON, normalizeLicenseKey, saveJSON } from '../../lib/storage';
+import { getEaImage, isStreamableMediaUrl, loadJSON, normalizeLicenseKey, saveJSON } from '../../lib/storage';
 import { FocusLayout, TerminalLayout, VortexLayout } from './HomeLayouts';
 import { InterfaceStyleModal } from './InterfaceStyleModal';
 
@@ -40,24 +40,45 @@ export function HomePage() {
     if (raw && !isPlaceholderMentorImage(raw) && !raw.startsWith('blob:')) return raw;
     return profileAvatar || '';
   })();
-  const [displayCover, setDisplayCover] = useState('');
-  const [displayAvatar, setDisplayAvatar] = useState('');
-  const eaImage = coverImage;
+
+  const instantMediaUrl = (raw: string) => {
+    const v = String(raw || '').trim();
+    if (!v || isPlaceholderMentorImage(v)) return '';
+    if (v.startsWith('data:') || isStreamableMediaUrl(v)) return v;
+    const key = v.replace(/^img:/, '');
+    return getEaImage(key) || getEaImage(v) || (v.startsWith('img:') ? `/api/images/${encodeURIComponent(key)}` : '');
+  };
+
+  const [displayCover, setDisplayCover] = useState(() => instantMediaUrl(coverImage));
+  const [displayAvatar, setDisplayAvatar] = useState(() => instantMediaUrl(profileAvatar) || instantMediaUrl(coverImage));
+  const eaImage = displayCover || coverImage;
   const heroImage = displayCover;
 
   useEffect(() => {
     let cancelled = false;
+    const immediate = instantMediaUrl(coverImage);
+    const immediateAvatar = instantMediaUrl(profileAvatar) || immediate;
+    if (immediate) setDisplayCover(immediate);
+    if (immediateAvatar) setDisplayAvatar(immediateAvatar);
+
+    if (
+      (coverImage && (isStreamableMediaUrl(coverImage) || coverImage.startsWith('data:'))) &&
+      (profileAvatar && (isStreamableMediaUrl(profileAvatar) || profileAvatar.startsWith('data:')))
+    ) {
+      return;
+    }
+
     (async () => {
       const { resolveDisplayImage } = await import('../../lib/storage');
       const cover = coverImage
-        ? (await resolveDisplayImage(coverImage)) || coverImage
+        ? (await resolveDisplayImage(coverImage)) || instantMediaUrl(coverImage)
         : '';
       const avatar = profileAvatar
-        ? (await resolveDisplayImage(profileAvatar)) || profileAvatar
+        ? (await resolveDisplayImage(profileAvatar)) || instantMediaUrl(profileAvatar)
         : '';
       if (cancelled) return;
-      setDisplayCover(cover);
-      setDisplayAvatar(avatar);
+      if (cover) setDisplayCover(cover);
+      if (avatar) setDisplayAvatar(avatar);
     })();
     return () => {
       cancelled = true;
@@ -97,7 +118,7 @@ export function HomePage() {
     bot.customMedia,
   );
   /** Active platform background from Custom tab (or EA image fallback) */
-  const platformBgUrl = customResolved?.src || eaImage || '';
+  const platformBgUrl = customResolved?.src || displayCover || eaImage || '';
   const platformBgKind = customResolved?.kind || 'image';
   const customBg =
     customResolved && customResolved.kind === 'image' ? customResolved.src : '';
@@ -124,7 +145,7 @@ export function HomePage() {
     void import('../../lib/firebaseDb').then(({ firebaseWatchUpdates }) => {
       unwatch = firebaseWatchUpdates(sync);
     });
-    const id = window.setInterval(sync, 15000);
+    const id = window.setInterval(sync, 8000);
     return () => {
       window.clearInterval(id);
       unwatch();
@@ -503,14 +524,10 @@ export function HomePage() {
                 return;
               }
               const lic = result.license;
-              const branding = await import('../../lib/clientBrandingSync').then((m) =>
-                m.fetchClientBranding(lic.key),
+              const { resolveBrandingImageUrl } = await import('../../lib/clientBrandingSync');
+              const imageUrl = await resolveBrandingImageUrl(
+                lic.eaImage || resolveProfileImage(lic.eaImage, lic.customMedia) || '',
               );
-              const imageUrl = branding
-                ? await import('../../lib/clientBrandingSync').then((m) =>
-                    m.resolveBrandingImageUrl(branding.imageUrl || ''),
-                  )
-                : resolveProfileImage(lic.eaImage, lic.customMedia) || lic.eaImage || '';
               activateWithLicense(lic.key, {
                 name: lic.eaName,
                 displayName: lic.eaName,

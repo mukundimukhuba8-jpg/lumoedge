@@ -6,7 +6,7 @@ import {
   firebaseUploadDataUrl,
   isFirebaseImageRef,
 } from './firebaseDb';
-import { isPlaceholderMentorImage } from './mentorMedia';
+import { isPlaceholderMentorImage, looksLikeVideoUrl } from './mentorMedia';
 import { pushDb } from './remote';
 
 export function loadJSON<T>(key: string, fallback: T): T {
@@ -408,37 +408,39 @@ export function purgePlaceholderEaImages() {
   }
 }
 
+/** URLs the browser can load directly — never base64-convert these (videos are huge). */
+export function isStreamableMediaUrl(value: string): boolean {
+  const v = String(value || '').trim();
+  return (
+    v.startsWith('http://') ||
+    v.startsWith('https://') ||
+    v.startsWith('/api/media/') ||
+    v.startsWith('/api/images/')
+  );
+}
+
 export async function resolveDisplayImage(value: string): Promise<string> {
   const v = String(value || '').trim();
   if (!v || isPlaceholderMentorImage(v)) return '';
-  if (v.startsWith('data:') || v.startsWith('blob:') || v.startsWith('http')) {
+  if (v.startsWith('data:') || v.startsWith('blob:')) {
     return isPlaceholderMentorImage(v) ? '' : v;
+  }
+  if (isStreamableMediaUrl(v)) {
+    return v;
   }
   if (isFirebaseImageRef(v) || v.startsWith('img:')) {
     const id = v.replace(/^img:/, '');
     const fromLocal = getEaImage(id) || getEaImage(`img:${id}`);
-    if (fromLocal && !isPlaceholderMentorImage(fromLocal)) return fromLocal;
-    const fromFb = await firebaseFetchImage(id);
-    if (fromFb && !isPlaceholderMentorImage(fromFb)) {
-      saveEaImage(id, fromFb);
-      return fromFb;
+    if (fromLocal && !isPlaceholderMentorImage(fromLocal)) {
+      if (isStreamableMediaUrl(fromLocal) || fromLocal.startsWith('data:')) return fromLocal;
     }
-  }
-  if (v.startsWith('/api/images/')) {
-    const key = v.replace(/^\/api\/images\//, '');
-    const cached = getEaImage(key);
-    if (cached && !isPlaceholderMentorImage(cached)) return cached;
-    try {
-      const res = await fetch(v);
-      if (res.ok) {
-        const blob = await res.blob();
-        const dataUrl = await blobUrlToDataUrl(URL.createObjectURL(blob));
-        saveEaImage(key, dataUrl);
-        return dataUrl;
+    const apiUrl = imagePublicUrl(id);
+    void firebaseFetchImage(id).then((fromFb) => {
+      if (fromFb && !isPlaceholderMentorImage(fromFb) && !looksLikeVideoUrl(fromFb)) {
+        saveEaImage(id, fromFb);
       }
-    } catch {
-      // ignore
-    }
+    });
+    return apiUrl;
   }
   return v.startsWith('/') ? v : '';
 }
