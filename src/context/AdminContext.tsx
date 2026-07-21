@@ -20,6 +20,7 @@ import {
   publishLicensesRemote,
   pushDb,
   pushSession,
+  repairClientQueueRemote,
   type RemoteDb,
 } from '../lib/remote';
 import {
@@ -890,6 +891,14 @@ type Ctx = {
   deleteClient: (id: string) => void;
   claimClientPayment: (email: string) => Promise<ClientRequest | null>;
   getClientByEmail: (email: string) => ClientRequest | undefined;
+  /** Pull live subscriber queue from Firebase and repair durable backup */
+  refreshClientQueue: () => Promise<{
+    ok: boolean;
+    total?: number;
+    pending?: number;
+    approved?: number;
+    error?: string;
+  }>;
   eas: ManagedEA[];
   licenses: LicenseRecord[];
   mt5: Mt5Connection;
@@ -1127,23 +1136,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         });
       }
       if (Array.isArray(db.clients)) {
-        const merged = withoutDeleted(
-          mergeClientLists(
-            prepaidAsClientRequests(),
-            db.clients as ClientRequest[],
+        setClients((prev) =>
+          withoutDeleted(
+            mergeClientLists(
+              prepaidAsClientRequests(),
+              prev,
+              db.clients as ClientRequest[],
+            ),
+            (db as { deletedClients?: string[] }).deletedClients,
           ),
-          (db as { deletedClients?: string[] }).deletedClients,
         );
-        setClients(merged);
-        // Only seed Firebase when the remote list is empty — never rewrite
-        // clients on every page load (that raced with admin workspace saves).
-        if (db.clients.length === 0 && merged.length > 0) {
-          void pushDb({ clients: merged }).catch(() => undefined);
-        }
-      } else {
-        const prepaid = prepaidAsClientRequests();
-        setClients(prepaid);
-        void pushDb({ clients: prepaid }).catch(() => undefined);
       }
     };
 
@@ -2055,6 +2057,41 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         if (!fromClients) return fromWorkspace;
         if (!fromWorkspace) return fromClients;
         return mergeClientLists([fromClients], [fromWorkspace])[0];
+      },
+      refreshClientQueue: async () => {
+        const repair = await repairClientQueueRemote();
+        const list = await fetchClients();
+        if (list) {
+          let remoteDeleted: string[] = [];
+          try {
+            const { firebaseFetchDeletedClients } = await import('../lib/firebaseDb');
+            remoteDeleted = await firebaseFetchDeletedClients();
+          } catch {
+            remoteDeleted = [];
+          }
+          setClients((prev) =>
+            withoutDeleted(
+              mergeClientLists(prepaidAsClientRequests(), prev, list as ClientRequest[]),
+              remoteDeleted,
+            ),
+          );
+        }
+        if (repair.ok && list) {
+          return {
+            ok: true,
+            total: list.length,
+            pending: list.filter((c) => c.status === 'pending').length,
+            approved: list.filter((c) => c.status === 'approved').length,
+          };
+        }
+        return repair.ok
+          ? {
+              ok: true,
+              total: repair.total,
+              pending: repair.pending,
+              approved: repair.approved,
+            }
+          : repair;
       },
       // Strict per-mentor isolation: even if data ever gets cross-merged,
       // an EA stamped with another mentor's id never renders in this portal

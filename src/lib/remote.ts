@@ -34,7 +34,8 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-const FETCH_DB_TIMEOUT_MS = 6000;
+const FETCH_DB_TIMEOUT_MS = 15_000;
+const FETCH_CLIENTS_TIMEOUT_MS = 15_000;
 
 function fetchWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([
@@ -199,24 +200,50 @@ export async function pushDb(partial: Partial<RemoteDb>): Promise<RemoteDb | nul
 }
 
 export async function fetchClients() {
-  let fb: RemoteDb['clients'] | null = null;
-  let api: RemoteDb['clients'] | null = null;
+  const work = async (): Promise<RemoteDb['clients'] | null> => {
+    let fb: RemoteDb['clients'] | null = null;
+    let api: RemoteDb['clients'] | null = null;
 
-  if (isFirebaseConfigured()) {
-    fb = await firebaseFetchClients();
-  }
+    if (isFirebaseConfigured()) {
+      fb = await firebaseFetchClients();
+    }
+    try {
+      api = await req<RemoteDb['clients']>('/api/clients');
+    } catch {
+      api = null;
+    }
+
+    const merged = mergeClients(
+      (api || []) as Parameters<typeof mergeClients>[0],
+      (fb || []) as Parameters<typeof mergeClients>[1],
+    );
+    if (!merged.length && fb === null && api === null) return null;
+    return merged as RemoteDb['clients'];
+  };
+  return fetchWithTimeout(work(), FETCH_CLIENTS_TIMEOUT_MS);
+}
+
+export async function repairClientQueueRemote(): Promise<{
+  ok: boolean;
+  total?: number;
+  pending?: number;
+  approved?: number;
+  error?: string;
+}> {
   try {
-    api = await req<RemoteDb['clients']>('/api/clients');
-  } catch {
-    api = null;
+    return await req<{
+      ok: boolean;
+      total?: number;
+      pending?: number;
+      approved?: number;
+      error?: string;
+    }>('/api/clients/repair-sync', { method: 'POST' });
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Could not refresh subscriber queue',
+    };
   }
-
-  const merged = mergeClients(
-    (fb || []) as Parameters<typeof mergeClients>[0],
-    (api || []) as Parameters<typeof mergeClients>[1],
-  );
-  if (!merged.length && fb === null && api === null) return null;
-  return merged;
 }
 
 export async function fetchAdmins() {
