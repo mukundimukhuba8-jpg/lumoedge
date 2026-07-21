@@ -929,7 +929,31 @@ export default async function handler(req, res) {
       const fbAdmins = toArray(curAuth?.admins);
       const { db } = await loadDb();
       const localAdmins = toArray(db.auth?.admins);
-      send(res, 200, mergeAdmins(localAdmins, fbAdmins));
+      const { mergeAdminsLive } = await import('./_lib/clientMerge.mjs');
+      send(res, 200, mergeAdminsLive(fbAdmins, localAdmins));
+      return;
+    }
+
+    if (pathname === '/api/auth/admins/repair-sync' && req.method === 'POST') {
+      const curAuth = await firebaseRead('lumo/auth');
+      const fbAdmins = toArray(curAuth?.admins);
+      const { db, sha } = await loadDb();
+      const localAdmins = toArray(db.auth?.admins);
+      const { mergeAdminsLive, normalizeAdminRole } = await import('./_lib/clientMerge.mjs');
+      const merged = mergeAdminsLive(fbAdmins, localAdmins);
+      db.auth = db.auth || { admins: [], admin: null };
+      db.auth.admins = merged;
+      try {
+        await saveDb(db, sha);
+      } catch {
+        // Firebase still holds the live mentor queue even if GitHub write fails
+      }
+      send(res, 200, {
+        ok: true,
+        total: merged.length,
+        pending: merged.filter((a) => normalizeAdminRole(a?.role) === 'pending').length,
+        approved: merged.filter((a) => normalizeAdminRole(a?.role) === 'admin').length,
+      });
       return;
     }
 
@@ -963,7 +987,15 @@ export default async function handler(req, res) {
         firebasePatchAdminRole,
       } = await import('./_lib/clientMerge.mjs');
       const fbUpdated = await firebasePatchAdminRole(id, role);
-      send(res, 200, { ok: true, admin: fbUpdated || updated });
+      if (!fbUpdated) {
+        send(res, 404, {
+          error: 'Mentor not found in Firebase or role update failed',
+          id,
+          table: 'lumo/auth/admins',
+        });
+        return;
+      }
+      send(res, 200, { ok: true, admin: fbUpdated });
       return;
     }
 

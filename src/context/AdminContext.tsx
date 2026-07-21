@@ -20,6 +20,7 @@ import {
   patchAdminRole,
   pushDb,
   pushSession,
+  repairAdminQueueRemote,
   repairClientQueueRemote,
   type RemoteDb,
 } from '../lib/remote';
@@ -74,6 +75,12 @@ import {
   validateLicenseEmailAccess,
 } from '../lib/licenseClaim';
 import { approvalError, approvalLog, approvalWarn } from '../lib/approvalLog';
+import {
+  countAdminQueue,
+  isApprovedAdminRole,
+  mergeAdminsForApprovalSync,
+  normalizeAdminRole,
+} from '../lib/adminQueue';
 import { countClientQueue, normalizeClientStatus, pickClientStatus } from '../lib/clientQueue';
 import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
 
@@ -901,6 +908,14 @@ type Ctx = {
     approved?: number;
     error?: string;
   }>;
+  /** Pull live mentor queue from Firebase — restores pending mentors hidden by stale sync */
+  refreshAdminQueue: () => Promise<{
+    ok: boolean;
+    total?: number;
+    pending?: number;
+    approved?: number;
+    error?: string;
+  }>;
   eas: ManagedEA[];
   licenses: LicenseRecord[];
   mt5: Mt5Connection;
@@ -1002,32 +1017,67 @@ function adminsMatch(a: AdminUser[], b: AdminUser[]) {
     const y = byEmail.get(x.email.toLowerCase());
     return (
       y &&
-      y.role === x.role &&
+      normalizeAdminRole(y.role) === normalizeAdminRole(x.role) &&
       y.fullName === x.fullName
     );
   });
+}
+
+/** Prevent parallel admin syncs from creating duplicate pending queue signals. */
+let mentorAdminSyncInflight = false;
+let mentorAdminSyncTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** One in-flight registration promise per email. */
+const mentorRegistrationInflight = new Map<string, Promise<string | null>>();
+
+const MENTOR_LOGIN_TIMEOUT_MS = 12_000;
+
+async function fetchMentorRosterForLogin(): Promise<AdminUser[] | null> {
+  return Promise.race([
+    fetchAdmins(),
+    new Promise<null>((resolve) =>
+      window.setTimeout(() => resolve(null), MENTOR_LOGIN_TIMEOUT_MS),
+    ),
+  ]) as Promise<AdminUser[] | null>;
+}
+
+function mentorPendingLoginMessage(): string {
+  return 'Your admin account is waiting for Super Admin approval.';
 }
 
 function applyRemoteAdmins(
   prev: AuthState,
   remoteAdmins: AdminUser[],
 ): AuthState {
-  const admins = mergeAdmins(prev.admins, remoteAdmins) as AdminUser[];
-  const healed = admins.some((a) => {
+  const admins = mergeAdminsForApprovalSync(prev.admins, remoteAdmins).map((a) => ({
+    ...a,
+    role: normalizeAdminRole(a.role),
+  })) as AdminUser[];
+  const healedApproved = admins.some((a) => {
     const remote = remoteAdmins.find(
       (r) => r.email.toLowerCase() === a.email.toLowerCase(),
     );
-    return remote && a.role === 'admin' && remote.role === 'pending';
+    return (
+      remote &&
+      normalizeAdminRole(a.role) === 'admin' &&
+      normalizeAdminRole(remote.role) === 'pending'
+    );
   });
-  if (healed) {
+  const healedPending = admins.some((a) => {
+    if (normalizeAdminRole(a.role) !== 'pending') return false;
+    return !remoteAdmins.some(
+      (r) => r.email.toLowerCase() === a.email.toLowerCase(),
+    );
+  });
+  if (healedApproved || healedPending) {
     void pushDb({ auth: { admins, admin: null } }).catch(() => undefined);
   }
   let admin = prev.admin;
-  if (admin && admin.role !== 'super') {
+    if (admin && normalizeAdminRole(admin.role) !== 'super') {
     const remote = admins.find(
       (a) => a.email.toLowerCase() === admin!.email.toLowerCase(),
     );
-    if (!remote || remote.role !== 'admin') admin = null;
+    if (!remote || normalizeAdminRole(remote.role) !== 'admin') admin = null;
   }
   return { portalOpen: prev.portalOpen, admin, admins };
 }
@@ -1199,15 +1249,29 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (booting) return;
     const syncAdmins = async () => {
-      const remoteAdmins = (await fetchAdmins()) as AdminUser[] | null;
-      if (!remoteAdmins) return;
-      setAuth((prev) => {
-        const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
-        if (adminsMatch(prev.admins, nextAuth.admins)) return prev;
-        const addedPending = nextAuth.admins.filter(
+      if (mentorAdminSyncInflight) return;
+      mentorAdminSyncInflight = true;
+      try {
+        const remoteAdmins = (await fetchAdmins()) as AdminUser[] | null;
+        if (!remoteAdmins) return;
+        setAuth((prev) => {
+          const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
+          if (adminsMatch(prev.admins, nextAuth.admins)) return prev;
+          const addedPending = nextAuth.admins.filter(
+            (a) =>
+              normalizeAdminRole(a.role) === 'pending' &&
+              !prev.admins.some(
+                (p) => p.email.toLowerCase() === a.email.toLowerCase(),
+              ),
+          );
+        const lostPending = prev.admins.filter(
           (a) =>
-            a.role === 'pending' &&
-            !prev.admins.some((p) => p.id === a.id || p.email.toLowerCase() === a.email.toLowerCase()),
+            normalizeAdminRole(a.role) === 'pending' &&
+            !nextAuth.admins.some(
+              (n) =>
+                normalizeAdminRole(n.role) === 'pending' &&
+                n.email.toLowerCase() === a.email.toLowerCase(),
+            ),
         );
         if (addedPending.length) {
           approvalLog('mentor', 'registration_synced', {
@@ -1215,18 +1279,32 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             emails: addedPending.map((a) => a.email),
           });
         }
-        saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
-        return nextAuth;
-      });
+        if (lostPending.length) {
+          approvalWarn('mentor', 'pending_preserved_after_sync', {
+            count: lostPending.length,
+            emails: lostPending.map((a) => a.email),
+          });
+        }
+          saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+          return nextAuth;
+        });
+      } finally {
+        mentorAdminSyncInflight = false;
+      }
+    };
+    const scheduleSyncAdmins = () => {
+      window.clearTimeout(mentorAdminSyncTimer);
+      mentorAdminSyncTimer = window.setTimeout(() => void syncAdmins(), 350);
     };
     void syncAdmins();
-    const id = window.setInterval(() => void syncAdmins(), 2500);
+    const id = window.setInterval(scheduleSyncAdmins, 2500);
     let unwatch: (() => void) | undefined;
     void import('../lib/firebaseDb').then(({ firebaseWatchAdmins }) => {
-      unwatch = firebaseWatchAdmins(() => void syncAdmins());
+      unwatch = firebaseWatchAdmins(scheduleSyncAdmins);
     });
     return () => {
       window.clearInterval(id);
+      window.clearTimeout(mentorAdminSyncTimer);
       unwatch?.();
     };
   }, [booting]);
@@ -1324,7 +1402,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
     for (const id of unique) {
       const hit = auth.admins.find((a) => a.id === id);
-      if (!hit || hit.role !== 'pending') {
+      if (!hit || normalizeAdminRole(hit.role) !== 'pending') {
         approvalWarn('mentor', 'approve_target_missing', { id });
         continue;
       }
@@ -1336,10 +1414,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       });
 
       let result = await patchAdminRole(hit.id, 'admin');
-      if (!result?.admin && !result?.ok) {
+      if (!result?.admin || !isApprovedAdminRole(result.admin.role)) {
         result = await patchAdminRole(hit.email, 'admin');
       }
-      if (!result?.admin && !result?.ok) {
+      if (!result?.admin || !isApprovedAdminRole(result.admin.role)) {
         approvalError('mentor', 'database_update_failure', {
           id: hit.id,
           email: hit.email,
@@ -1357,10 +1435,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const nextAdmins = prev.admins.map((a) =>
           a.id === hit.id || a.email.toLowerCase() === hit.email.toLowerCase()
             ? approved
-            : a,
+            : { ...a, role: normalizeAdminRole(a.role) },
         );
         const next = { ...prev, admins: nextAdmins };
         saveJSON(AUTH_KEY, { ...next, portalOpen: false });
+        void pushDb({ auth: { admins: nextAdmins, admin: null } }).catch(() => undefined);
         return next;
       });
 
@@ -1515,44 +1594,64 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           saveAuth({ ...auth, admin: SUPER_ADMIN.user, portalOpen: true });
           return null;
         }
-        const remoteAdmins = ((await fetchAdmins()) || []) as AdminUser[];
-        const admins = mergeAdmins(auth.admins, remoteAdmins) as AdminUser[];
-        if (remoteAdmins.length) {
-          setAuth((prev) => {
-            const nextAdmins = mergeAdmins(prev.admins, remoteAdmins) as AdminUser[];
-            const next = { ...prev, admins: nextAdmins };
-            saveJSON(AUTH_KEY, { ...next, portalOpen: false });
-            return next;
-          });
+
+        approvalLog('mentor', 'login_attempt', { email: normalized });
+        const remoteAdmins = await fetchMentorRosterForLogin();
+        if (!remoteAdmins) {
+          approvalWarn('mentor', 'login_fetch_timeout', { email: normalized });
+          return 'Could not reach the server to verify your account. Check your connection and try again.';
         }
-        const found = admins.find(
-          (a) => a.email.toLowerCase() === normalized && a.password === password,
+
+        const roster = mergeAdminsForApprovalSync(
+          auth.admins,
+          remoteAdmins,
+        ) as AdminUser[];
+        setAuth((prev) => {
+          const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
+          saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+          return nextAuth;
+        });
+
+        const remoteHit = remoteAdmins.find(
+          (a) => a.email.toLowerCase() === normalized,
         );
-        if (found) {
-          if (found.role === 'pending') {
-            return 'Your admin account is waiting for Super Admin approval.';
-          }
-          if (!store.workspaces[found.id]) {
-            saveStore({
-              ...store,
-              workspaces: {
-                ...store.workspaces,
-                [found.id]: createEmptyWorkspace(found),
-              },
-            });
-          }
-          const { password: _p, ...user } = found;
-          saveAuth({ ...auth, admin: user, portalOpen: true });
-          return null;
+        const localHit = roster.find((a) => a.email.toLowerCase() === normalized);
+        const hit = remoteHit || localHit;
+        if (!hit) {
+          return 'No admin account found for this email. Tap Register first, then wait for Super Admin approval.';
         }
-        const byEmail = admins.find((a) => a.email.toLowerCase() === normalized);
-        if (byEmail?.role === 'pending') {
-          return 'Your admin account is waiting for Super Admin approval.';
-        }
-        if (byEmail) {
+
+        const role = normalizeAdminRole(remoteHit?.role ?? hit.role);
+        if (hit.password !== password) {
+          if (role === 'pending') return mentorPendingLoginMessage();
           return 'Invalid email or password.';
         }
-        return 'No admin account found for this email. Tap Register first, then wait for Super Admin approval.';
+        if (role === 'pending') {
+          return mentorPendingLoginMessage();
+        }
+        if (role !== 'admin') {
+          return mentorPendingLoginMessage();
+        }
+
+        const mentor: AdminUser = {
+          ...hit,
+          ...(remoteHit || {}),
+          role: 'admin',
+          email: normalized,
+        };
+        if (!store.workspaces[mentor.id]) {
+          saveStore({
+            ...store,
+            workspaces: {
+              ...store.workspaces,
+              [mentor.id]: createEmptyWorkspace(mentor),
+            },
+          });
+        }
+        const { password: _p, ...user } = mentor;
+        saveAuth({ ...auth, admin: user, portalOpen: true });
+        approvalLog('mentor', 'login_success', { email: normalized, id: user.id });
+        return null;
       },
       registerAdmin: async (form) => {
         const email = form.email.trim().toLowerCase();
@@ -1562,62 +1661,70 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         if (email === SUPER_ADMIN.email.toLowerCase()) {
           return 'This email is reserved for Super Admin.';
         }
-        // Never block registration on a slow admin sync — server rejects duplicates.
-        const remoteAdmins = ((await Promise.race([
-          fetchAdmins(),
-          new Promise<AdminUser[] | null>((resolve) =>
-            window.setTimeout(() => resolve(null), 5000),
-          ),
-        ])) || []) as AdminUser[];
-        const knownEmails = new Set(
-          [...auth.admins, ...remoteAdmins].map((a) => a.email.toLowerCase()),
-        );
-        if (knownEmails.has(email)) {
-          return 'An admin with this email already registered.';
+
+        const inflight = mentorRegistrationInflight.get(email);
+        if (inflight) return inflight;
+
+        const work = (async (): Promise<string | null> => {
+          const remoteAdmins = ((await Promise.race([
+            fetchAdmins(),
+            new Promise<AdminUser[] | null>((resolve) =>
+              window.setTimeout(() => resolve(null), 5000),
+            ),
+          ])) || []) as AdminUser[];
+          const knownEmails = new Set(
+            [...auth.admins, ...remoteAdmins].map((a) => a.email.toLowerCase()),
+          );
+          if (knownEmails.has(email)) {
+            return 'An admin with this email already registered.';
+          }
+          approvalLog('mentor', 'registration_submit', { email });
+          const serverEntry = await postMentorRegistration({
+            email,
+            password: form.password,
+            fullName: form.fullName.trim(),
+            mentorName: form.mentorName,
+            eaName: form.eaName,
+            phone: form.phone,
+            mainText: form.mainText,
+          });
+          if (!serverEntry) {
+            approvalError('mentor', 'registration_submit_failed', { email });
+            return 'Could not save registration. Check your connection and try again.';
+          }
+          const entry: AdminUser = {
+            ...(serverEntry as AdminUser),
+            email,
+            role: 'pending',
+          };
+          const workspace = createEmptyWorkspace(entry);
+          const nextAdmins = mergeAdmins(auth.admins, [entry]) as AdminUser[];
+          const nextStore = {
+            ...store,
+            workspaces: {
+              ...store.workspaces,
+              [entry.id]: store.workspaces[entry.id] || workspace,
+            },
+          };
+          const nextAuth = { ...auth, admins: nextAdmins };
+          setStore(nextStore);
+          saveJSON(STORE_KEY, nextStore);
+          setAuth(nextAuth);
+          saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+          approvalLog('mentor', 'registration_created', {
+            email,
+            id: entry.id,
+            status: entry.role,
+          });
+          return null;
+        })();
+
+        mentorRegistrationInflight.set(email, work);
+        try {
+          return await work;
+        } finally {
+          mentorRegistrationInflight.delete(email);
         }
-        approvalLog('mentor', 'registration_submit', { email });
-        const serverEntry = await postMentorRegistration({
-          email,
-          password: form.password,
-          fullName: form.fullName.trim(),
-          mentorName: form.mentorName,
-          eaName: form.eaName,
-          phone: form.phone,
-          mainText: form.mainText,
-        });
-        if (!serverEntry) {
-          approvalError('mentor', 'registration_submit_failed', { email });
-          return 'Could not save registration. Check your connection and try again.';
-        }
-        const entry: AdminUser = {
-          ...(serverEntry as AdminUser),
-          email,
-          role: 'pending',
-        };
-        const workspace = createEmptyWorkspace(entry);
-        const nextAdmins = mergeAdmins(auth.admins, [entry]) as AdminUser[];
-        const nextStore = {
-          ...store,
-          workspaces: {
-            ...store.workspaces,
-            [entry.id]: store.workspaces[entry.id] || workspace,
-          },
-        };
-        const nextAuth = { ...auth, admins: nextAdmins };
-        setStore(nextStore);
-        saveJSON(STORE_KEY, nextStore);
-        setAuth(nextAuth);
-        saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
-        void pushDb({
-          auth: { admins: nextAdmins, admin: null },
-          store: { workspaces: { [entry.id]: workspace } },
-        }).catch(() => undefined);
-        approvalLog('mentor', 'registration_created', {
-          email,
-          id: entry.id,
-          status: entry.role,
-        });
-        return null;
       },
       logout: () => saveAuth({ ...auth, admin: null, portalOpen: false }),
       approveAdmin: (id) => approveMentorByIds([id]),
@@ -2105,6 +2212,28 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
         const counts = countClientQueue(merged);
         approvalLog('client', 'queue_refreshed', counts);
+        return { ok: true, ...counts };
+      },
+      refreshAdminQueue: async () => {
+        void repairAdminQueueRemote().catch(() => undefined);
+        const remoteAdmins = (await Promise.race([
+          fetchAdmins(),
+          new Promise<AdminUser[] | null>((resolve) =>
+            window.setTimeout(() => resolve(null), 10_000),
+          ),
+        ])) as AdminUser[] | null;
+        if (!remoteAdmins) {
+          return { ok: false, error: 'Could not load mentor queue from cloud' };
+        }
+        let nextAdmins: AdminUser[] = [];
+        setAuth((prev) => {
+          const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
+          nextAdmins = nextAuth.admins;
+          saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+          return nextAuth;
+        });
+        const counts = countAdminQueue(nextAdmins);
+        approvalLog('mentor', 'queue_refreshed', counts);
         return { ok: true, ...counts };
       },
       // Strict per-mentor isolation: even if data ever gets cross-merged,

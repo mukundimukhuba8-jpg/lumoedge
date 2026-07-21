@@ -215,7 +215,15 @@ export async function handleApi(req, res, pathname) {
         ) || null;
       await saveDb(db, sha);
       const fbUpdated = await firebasePatchAdminRole(id, role).catch(() => null);
-      json(res, 200, { ok: true, admin: fbUpdated || updated });
+      if (!fbUpdated) {
+        json(res, 404, {
+          error: 'Mentor not found in Firebase or role update failed',
+          id,
+          table: 'lumo/auth/admins',
+        });
+        return true;
+      }
+      json(res, 200, { ok: true, admin: fbUpdated });
       return true;
     }
 

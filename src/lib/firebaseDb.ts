@@ -89,13 +89,11 @@ function normalizeDb(raw: unknown): RemoteDb {
   };
 }
 
-type AdminLike = { id?: string; role?: string; [key: string]: unknown };
+import { normalizeAdminRole, pickAdminRole } from './adminQueue';
 
-function adminRoleRank(role: string | undefined): number {
-  if (role === 'super') return 3;
-  if (role === 'admin') return 2;
-  return 1;
-}
+export { mergeAdminsLive } from './adminQueue';
+
+type AdminLike = { id?: string; role?: string; [key: string]: unknown };
 
 /** Merge mentor registry — approved role always beats pending (never revert approvals). */
 export function mergeAdmins<T extends AdminLike>(
@@ -106,15 +104,18 @@ export function mergeAdmins<T extends AdminLike>(
   for (const item of [...dbList<T>(current), ...dbList<T>(incoming)]) {
     const email = String(item.email || '').trim().toLowerCase();
     if (!email) continue;
+    const normalized = {
+      ...item,
+      email,
+      role: normalizeAdminRole(item.role),
+    } as T;
     const prev = byEmail.get(email);
     if (!prev) {
-      byEmail.set(email, { ...item, email } as T);
+      byEmail.set(email, normalized);
       continue;
     }
-    const merged = { ...prev, ...item } as T;
-    const prevRank = adminRoleRank(String(prev.role));
-    const itemRank = adminRoleRank(String(item.role));
-    merged.role = (prevRank >= itemRank ? prev.role : item.role) as T['role'];
+    const merged = { ...prev, ...normalized } as T;
+    merged.role = pickAdminRole(prev.role, normalized.role) as T['role'];
     for (const [k, v] of Object.entries(prev)) {
       const nextVal = (item as Record<string, unknown>)[k];
       if ((nextVal === '' || nextVal == null) && v !== '' && v != null) {

@@ -195,8 +195,61 @@ export function adminRoleRank(role) {
   return 1;
 }
 
+export function normalizeAdminRole(raw) {
+  const value = String(raw ?? 'pending')
+    .trim()
+    .toLowerCase();
+  if (value === 'super') return 'super';
+  if (value === 'admin') return 'admin';
+  return 'pending';
+}
+
 export function pickAdminRole(a, b) {
-  return adminRoleRank(a) >= adminRoleRank(b) ? a : b;
+  const left = normalizeAdminRole(a);
+  const right = normalizeAdminRole(b);
+  return adminRoleRank(left) >= adminRoleRank(right) ? left : right;
+}
+
+/** Live Firebase pending must beat stale GitHub "admin" during sync. */
+export function pickAdminRoleLive(liveRole, backupRole) {
+  const live = normalizeAdminRole(liveRole);
+  const backup = normalizeAdminRole(backupRole);
+  if (live === 'super') return 'super';
+  if (live === 'admin') return 'admin';
+  if (backup === 'admin') return 'pending';
+  return pickAdminRole(live, backup);
+}
+
+export function mergeAdminsLive(live, backup) {
+  const byEmail = new Map();
+  for (const item of toArray(live)) {
+    const email = String(item?.email || '')
+      .trim()
+      .toLowerCase();
+    if (!email) continue;
+    byEmail.set(email, { ...item, email, role: normalizeAdminRole(item.role) });
+  }
+  for (const item of toArray(backup)) {
+    const email = String(item?.email || '')
+      .trim()
+      .toLowerCase();
+    if (!email) continue;
+    const prev = byEmail.get(email);
+    if (!prev) {
+      byEmail.set(email, { ...item, email, role: normalizeAdminRole(item.role) });
+      continue;
+    }
+    const merged = { ...prev, ...item, email };
+    merged.role = pickAdminRoleLive(prev.role, item.role);
+    for (const [k, v] of Object.entries(prev)) {
+      const nextVal = item[k];
+      if ((nextVal === '' || nextVal == null) && v !== '' && v != null) {
+        merged[k] = v;
+      }
+    }
+    byEmail.set(email, merged);
+  }
+  return [...byEmail.values()];
 }
 
 export async function firebasePatchAdminRole(idOrEmail, role) {
