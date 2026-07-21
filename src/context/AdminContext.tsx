@@ -11,6 +11,7 @@ import {
   claimLicenseRemote,
   deleteClientRemote,
   fetchAdmins,
+  fetchAdminsForLogin,
   fetchClients,
   fetchDb,
   patchClient,
@@ -83,6 +84,7 @@ import {
   mergeAdminsForApprovalSync,
   normalizeAdminRole,
 } from '../lib/adminQueue';
+import { MENTOR_AUTH_MSG } from '../lib/mentorAuthUi';
 import { countClientQueue, normalizeClientStatus, pickClientStatus } from '../lib/clientQueue';
 import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
 
@@ -1032,19 +1034,35 @@ let mentorAdminSyncTimer: ReturnType<typeof setTimeout> | undefined;
 /** One in-flight registration promise per email. */
 const mentorRegistrationInflight = new Map<string, Promise<string | null>>();
 
-const MENTOR_LOGIN_TIMEOUT_MS = 12_000;
+const MENTOR_LOGIN_TIMEOUT_MS = 16_000;
 
-async function fetchMentorRosterForLogin(): Promise<AdminUser[] | null> {
-  return Promise.race([
-    fetchAdmins(),
+async function fetchMentorRosterForLogin(
+  localAdmins: AdminUser[],
+): Promise<AdminUser[] | null> {
+  const remote = (await Promise.race([
+    fetchAdminsForLogin(),
     new Promise<null>((resolve) =>
       window.setTimeout(() => resolve(null), MENTOR_LOGIN_TIMEOUT_MS),
     ),
-  ]) as Promise<AdminUser[] | null>;
+  ])) as AdminUser[] | null;
+
+  if (remote && remote.length > 0) {
+    return mergeAdminsForApprovalSync(localAdmins, remote) as AdminUser[];
+  }
+
+  if (localAdmins.length > 0) {
+    approvalWarn('mentor', 'login_roster_local_fallback', {
+      count: localAdmins.length,
+    });
+    console.warn('[mentor-auth] Using locally cached mentor roster for login');
+    return localAdmins;
+  }
+
+  return null;
 }
 
 function mentorPendingLoginMessage(): string {
-  return 'Your admin account is waiting for Super Admin approval.';
+  return MENTOR_AUTH_MSG.pending;
 }
 
 function applyRemoteAdmins(
@@ -1616,6 +1634,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }),
       closePortal: () => setAuth((a) => ({ ...a, portalOpen: false })),
       login: async (email, password) => {
+        try {
         const normalized = email.trim().toLowerCase();
         if (
           normalized === SUPER_ADMIN.email.toLowerCase() &&
@@ -1643,10 +1662,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
 
         approvalLog('mentor', 'login_attempt', { email: normalized });
-        const remoteAdmins = await fetchMentorRosterForLogin();
+        const remoteAdmins = await fetchMentorRosterForLogin(auth.admins);
         if (!remoteAdmins) {
           approvalWarn('mentor', 'login_fetch_timeout', { email: normalized });
-          return 'Could not reach the server to verify your account. Check your connection and try again.';
+          console.warn('[mentor-auth] Login roster unavailable for', normalized);
+          return MENTOR_AUTH_MSG.unavailable;
         }
 
         const roster = mergeAdminsForApprovalSync(
@@ -1665,13 +1685,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const localHit = roster.find((a) => a.email.toLowerCase() === normalized);
         const hit = remoteHit || localHit;
         if (!hit) {
-          return 'No admin account found for this email. Tap Register first, then wait for Super Admin approval.';
+          return MENTOR_AUTH_MSG.invalidCredentials;
         }
 
         const role = normalizeAdminRole(remoteHit?.role ?? hit.role);
         if (hit.password !== password) {
           if (role === 'pending') return mentorPendingLoginMessage();
-          return 'Invalid email or password.';
+          return MENTOR_AUTH_MSG.invalidCredentials;
         }
         if (role === 'pending') {
           return mentorPendingLoginMessage();
@@ -1702,14 +1722,22 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         saveAuth({ ...auth, admin: user, portalOpen: true });
         approvalLog('mentor', 'login_success', { email: normalized, id: user.id });
         return null;
+        } catch (err) {
+          approvalError('mentor', 'login_exception', {
+            email: email.trim().toLowerCase(),
+            error: err instanceof Error ? err.message : String(err),
+          });
+          console.error('[mentor-auth] Login exception', err);
+          return MENTOR_AUTH_MSG.unableToSignIn;
+        }
       },
       registerAdmin: async (form) => {
         const email = form.email.trim().toLowerCase();
         if (!email || !form.password || !form.fullName.trim()) {
-          return 'Fill all required fields.';
+          return MENTOR_AUTH_MSG.registerRequired;
         }
         if (email === SUPER_ADMIN.email.toLowerCase()) {
-          return 'This email is reserved for Super Admin.';
+          return MENTOR_AUTH_MSG.emailReserved;
         }
 
         const inflight = mentorRegistrationInflight.get(email);
@@ -1726,7 +1754,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             [...auth.admins, ...remoteAdmins].map((a) => a.email.toLowerCase()),
           );
           if (knownEmails.has(email)) {
-            return 'An admin with this email already registered.';
+            return MENTOR_AUTH_MSG.emailInUse;
           }
           approvalLog('mentor', 'registration_submit', { email });
           const serverEntry = await postMentorRegistration({
@@ -1740,7 +1768,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           });
           if (!serverEntry) {
             approvalError('mentor', 'registration_submit_failed', { email });
-            return 'Could not save registration. Check your connection and try again.';
+            return MENTOR_AUTH_MSG.registerUnavailable;
           }
           const entry: AdminUser = {
             ...(serverEntry as AdminUser),
