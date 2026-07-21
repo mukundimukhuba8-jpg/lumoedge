@@ -1712,7 +1712,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         return entry;
       },
       approveClient: (id) => {
-        const hit = clients.find((c) => c.id === id);
+        const hit =
+          clients.find((c) => c.id === id) ||
+          clients.find((c) => c.email.toLowerCase() === id.toLowerCase());
         if (!hit) return;
         const email = hit.email.toLowerCase();
         const claimedAt = hit.paymentClaimedAt || new Date().toISOString();
@@ -1722,13 +1724,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           paymentClaimed: true,
           paymentClaimedAt: claimedAt,
         };
-        setClients((prev) => mergeClientLists(prev, [approved]));
+        setClients((prev) => {
+          const merged = mergeClientLists(prev, [approved]);
+          void pushDb({ clients: merged }).catch(() => undefined);
+          return merged;
+        });
         const sid = SUPER_ADMIN.user.id;
         patchWorkspace(sid, (ws) => ({
           ...ws,
           clientRequests: mergeClientLists(ws.clientRequests, [approved]),
         }));
-        void pushDb({ clients: mergeClientLists(clients, [approved]) }).catch(() => undefined);
         const persistApproval = async (server: ClientRequest | null) => {
           const merged = server
             ? ({
@@ -1739,28 +1744,49 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               } as ClientRequest)
             : approved;
           setClients((prev) => mergeClientLists(prev, [merged]));
-          const db = await fetchDb();
-          const session = (db?.sessions?.[email] as Record<string, unknown> | undefined) || {};
-          await pushSession(email, {
-            ...session,
-            accessStatus: 'approved',
-          });
+          patchWorkspace(sid, (ws) => ({
+            ...ws,
+            clientRequests: mergeClientLists(ws.clientRequests, [merged]),
+          }));
+          try {
+            const db = await Promise.race([
+              fetchDb(),
+              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
+            ]);
+            const session =
+              (db?.sessions?.[email] as Record<string, unknown> | undefined) || {};
+            await Promise.race([
+              pushSession(email, {
+                ...session,
+                accessStatus: 'approved',
+              }),
+              new Promise((resolve) => window.setTimeout(resolve, 8000)),
+            ]);
+          } catch {
+            // local approval already saved
+          }
         };
-        void patchClient(hit.id, {
-          status: 'approved',
-          paymentClaimed: true,
-          paymentClaimedAt: claimedAt,
-        })
+        void Promise.race([
+          patchClient(hit.id, {
+            status: 'approved',
+            paymentClaimed: true,
+            paymentClaimedAt: claimedAt,
+          }),
+          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 12_000)),
+        ])
           .then(async (server) => {
             if (server) {
               await persistApproval(server as ClientRequest);
               return;
             }
-            const byEmail = await patchClient(email, {
-              status: 'approved',
-              paymentClaimed: true,
-              paymentClaimedAt: claimedAt,
-            });
+            const byEmail = await Promise.race([
+              patchClient(email, {
+                status: 'approved',
+                paymentClaimed: true,
+                paymentClaimedAt: claimedAt,
+              }),
+              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 12_000)),
+            ]);
             await persistApproval(byEmail as ClientRequest | null);
           })
           .catch(async () => {
@@ -1880,10 +1906,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const sid = SUPER_ADMIN.user.id;
         patchWorkspace(sid, (ws) => ({
           ...ws,
-          clientRequests: [
-            updated,
-            ...ws.clientRequests.filter((c) => c.email.toLowerCase() !== normalized),
-          ],
+          clientRequests: mergeClientLists(ws.clientRequests, [updated]),
         }));
         try {
           const server = await Promise.race([
