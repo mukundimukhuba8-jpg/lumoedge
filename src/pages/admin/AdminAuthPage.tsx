@@ -32,7 +32,7 @@ export function AdminAuthPage() {
   const set = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
   return (
-    <div className="page" style={{ textAlign: 'center' }}>
+    <div className="page cyber-page" style={{ textAlign: 'center' }}>
       <img
         src={appLogo}
         alt="Lumo Edge"

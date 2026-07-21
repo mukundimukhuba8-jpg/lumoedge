@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { EaBackdrop } from './components/EaBackdrop';
+import { ThemeEngine } from './components/ThemeEngine';
 import { useAdmin } from './context/AdminContext';
 import { useApp } from './context/AppContext';
 import {
@@ -72,7 +73,7 @@ function ClientAppGate({ children }: { children: React.ReactNode }) {
   return (
     <>
       {hideBackdrop ? null : backdropSrc ? <EaBackdrop src={backdropSrc} kind={backdropKind} /> : null}
-      <div className="page-enter">
+      <div className="page-enter page-slide" key={location.pathname}>
         {children}
       </div>
     </>
@@ -112,7 +113,8 @@ function HomeRedirect() {
 
 export default function App() {
   return (
-    <div className="app-shell">
+    <div className="app-shell lumo-app">
+      <ThemeEngine />
       <Routes>
         <Route path="/" element={<HomeRedirect />} />
         <Route path="/waiting" element={<WaitingApprovalPage />} />

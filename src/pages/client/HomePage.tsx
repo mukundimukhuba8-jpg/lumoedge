@@ -112,17 +112,6 @@ export function HomePage() {
   const customBg =
     customResolved && customResolved.kind === 'image' ? customResolved.src : '';
 
-  // Apply accent colour app-wide while on home
-  useEffect(() => {
-    const root = document.documentElement;
-    root.style.setProperty('--electric', accent);
-    root.style.setProperty('--accent-rgb', accentRgb);
-    return () => {
-      root.style.setProperty('--electric', '#3b82f6');
-      root.style.removeProperty('--accent-rgb');
-    };
-  }, [accent, accentRgb]);
-
   const [copyStatus, setCopyStatus] = useState('');
 
   // Listen for mentor copy trades and mirror them on this client's MT5
@@ -418,7 +407,7 @@ export function HomePage() {
       {!specialLayout ? (
         <div className="home-shell">
           <div
-            className="page home-page-fill"
+            className="page home-page-fill cyber-page"
             style={{
               backgroundImage: customBg
                 ? `linear-gradient(rgba(10,10,16,0.35), rgba(10,10,16,0.55)), url(${customBg})`

@@ -58,7 +58,7 @@ export function RegisterPage() {
   };
 
   return (
-    <div className="page" style={{ textAlign: 'center', paddingTop: 48 }}>
+    <div className="page cyber-page" style={{ textAlign: 'center', paddingTop: 48 }}>
       <button
         type="button"
         onClick={onLogoTap}

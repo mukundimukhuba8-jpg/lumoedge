@@ -34,15 +34,25 @@ export function BackdropMedia({
     el.setAttribute('playsinline', 'true');
     el.setAttribute('webkit-playsinline', 'true');
     const tryPlay = () => {
+      if (document.hidden) return;
       const p = el.play();
       if (p && typeof p.catch === 'function') p.catch(() => {});
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        el.pause();
+      } else {
+        tryPlay();
+      }
     };
     tryPlay();
     el.addEventListener('loadeddata', tryPlay);
     el.addEventListener('canplay', tryPlay);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       el.removeEventListener('loadeddata', tryPlay);
       el.removeEventListener('canplay', tryPlay);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [media, isVideo]);
 

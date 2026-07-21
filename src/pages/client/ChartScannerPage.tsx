@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ChevronDown,
@@ -18,8 +18,10 @@ import {
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { TradeEnginePanel } from '../../components/TradeEnginePanel';
 import {
   DAILY_SCAN_LIMIT,
+  MIN_SCAN_CONFIDENCE,
   SCAN_RESET_EVENT,
   consumeScan,
   buildTpLadder,
@@ -36,15 +38,11 @@ import {
   type TradeDirection,
 } from '../../lib/chartScan';
 import {
-  accentHex,
-  hexToRgb,
-  loadInterfacePrefs,
-} from '../../lib/interfaceStyle';
-import {
-  buildTradeComment,
-  checkConnect,
-  orderSend,
-} from '../../lib/mt5Api';
+  createEngineSnapshot,
+  runTradeEngine,
+  type TradeEngineSnapshot,
+} from '../../lib/tradeEngine';
+import { RAZOR_MARKETS } from '../../lib/mt5Api';
 import { getMt5Token } from '../../lib/mt5Session';
 import { loadJSON } from '../../lib/storage';
 
@@ -56,6 +54,7 @@ const MT5_KEY = 'ub-web/client-mt5-v1';
 type ClientMt5Saved = {
   connected?: boolean;
   token?: string;
+  broker?: string;
 };
 
 function loadClientMt5Token(email: string | undefined): string {
@@ -69,12 +68,15 @@ function loadClientMt5Token(email: string | undefined): string {
   return String(saved.token || '').trim();
 }
 
+function loadClientMt5Broker(email: string | undefined): string {
+  if (!email) return RAZOR_MARKETS.broker;
+  const all = loadJSON<Record<string, ClientMt5Saved>>(MT5_KEY, {});
+  return all[email.toLowerCase()]?.broker || RAZOR_MARKETS.broker;
+}
+
 export function ChartScannerPage() {
   const navigate = useNavigate();
   const { user, bot } = useApp();
-  const prefs = useMemo(() => loadInterfacePrefs(), []);
-  const accent = accentHex(prefs.accent);
-  const accentRgb = hexToRgb(accent);
   const eaName = bot.displayName || bot.name || 'Lumo Edge';
   const [scansLeft, setScansLeft] = useState(() => getScansLeft(user?.email));
   const [trades, setTrades] = useState(1);
@@ -94,6 +96,10 @@ export function ChartScannerPage() {
   const [scanPreview, setScanPreview] = useState('');
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
   const [limitMsg, setLimitMsg] = useState('');
+  const [engineOpen, setEngineOpen] = useState(false);
+  const [engineSnap, setEngineSnap] = useState<TradeEngineSnapshot | null>(null);
+  const [engineRunning, setEngineRunning] = useState(false);
+  const engineItemRef = useRef<ScanHistoryItem | null>(null);
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const uploadRef = useRef<HTMLInputElement | null>(null);
   const animRef = useRef<number | null>(null);
@@ -114,74 +120,53 @@ export function ChartScannerPage() {
     };
   }, []);
 
-  const executeMt5Trades = async (item: ScanHistoryItem) => {
+  const launchTradeEngine = async (
+    item: ScanHistoryItem,
+    startFromStep?: number,
+  ) => {
     const token = loadClientMt5Token(user?.email);
-    if (!token) {
-      setTradeStatus('Connect MetaTrader first to auto-execute trades.');
-      return;
-    }
-    const volume = Math.max(0.01, Number(lotSize) || 0.01);
-    const count = Math.max(1, Math.min(20, Math.round(trades) || 1));
-    const direction: TradeDirection = item.direction === 'sell' ? 'sell' : 'buy';
-    const operation = direction === 'sell' ? 'Sell' : 'Buy';
-    const symbol = (item.symbol || 'XAUUSD').trim();
-    const comment = buildTradeComment(eaName);
-    // Same protective stop for all trades; TP laddered by risk:reward
-    const stopLoss = Number(item.stopLoss) || 0;
-    const entry = Number(item.entryPrice) || 0;
-    const tps = buildTpLadder(entry, stopLoss, direction, count);
-    setTradeStatus(`Sending ${count}× ${operation} ${symbol} via MT5…`);
+    const broker = loadClientMt5Broker(user?.email);
+    const payload = {
+      ...item,
+      symbol: (editSymbol || item.symbol || '').trim(),
+    };
+    engineItemRef.current = payload;
+    setEngineOpen(true);
+    setEngineRunning(true);
+    setEngineSnap(createEngineSnapshot(payload, broker, autoOpen));
+    setTradeStatus(
+      autoOpen
+        ? 'Trade engine running — auto execute when validations pass…'
+        : 'Trade engine preview — enable Auto Trade to execute',
+    );
 
-    const alive = await checkConnect(token).catch(() => false);
-    if (!alive) {
-      setTradeStatus('MT5 session expired — reconnect MetaTrader, then scan again.');
-      return;
-    }
-
-    let ok = 0;
-    let lastErr = '';
-    for (let i = 0; i < count; i += 1) {
-      try {
-        await orderSend({
-          id: token,
-          symbol,
-          operation,
-          volume,
-          comment,
-          slippage: 10000,
-          stopLoss: stopLoss || undefined,
-          takeProfit: tps[i] || undefined,
-        });
-        ok += 1;
-      } catch (e) {
-        lastErr = e instanceof Error ? e.message : 'OrderSend failed';
-        break;
-      }
-      if (i < count - 1) await wait(250);
-    }
-
-    if (ok > 0) {
-      setTradeStatus(
-        tps.length
-          ? `Executed ${ok}/${count} ${operation} ${symbol} · SL ${stopLoss} · TP ${tps
-              .slice(0, ok)
-              .join(' / ')}`
-          : `Executed ${ok}/${count} ${operation} ${symbol} · no SL/TP (chart scale unreadable)`,
-      );
-    } else {
-      setTradeStatus(lastErr || 'Trade failed on MT5 bridge');
-    }
+    await runTradeEngine(
+      {
+        item: payload,
+        token,
+        broker,
+        eaName,
+        trades,
+        lotSize,
+        autoTrade: autoOpen,
+        startFromStep,
+      },
+      (snap) => {
+        setEngineSnap(snap);
+        if (snap.complete || snap.failedStep != null) {
+          setTradeStatus(snap.dashboard.tradeStatus);
+        }
+      },
+    );
+    setEngineRunning(false);
   };
 
-  useEffect(() => {
-    const root = document.documentElement;
-    root.style.setProperty('--electric', accent);
-    root.style.setProperty('--accent-rgb', accentRgb);
-    return () => {
-      root.style.setProperty('--electric', '#3b82f6');
-      root.style.removeProperty('--accent-rgb');
-    };
-  }, [accent, accentRgb]);
+  const retryFailedEngineStep = () => {
+    const item = engineItemRef.current;
+    const step = engineSnap?.failedStep;
+    if (item == null || step == null) return;
+    void launchTradeEngine(item, step);
+  };
 
   const applyDailyResetAndSync = () => {
     setScansLeft(getScansLeft(user?.email));
@@ -306,13 +291,9 @@ export function ChartScannerPage() {
       setStatus(
         result.demo
           ? 'Demo scan complete'
-          : 'Scan complete',
+          : 'Scan complete — launching trade engine…',
       );
-      if (autoOpen) {
-        await executeMt5Trades(item);
-      } else {
-        setTradeStatus('Auto Open Off — enable toggle to send trades to MT5.');
-      }
+      await launchTradeEngine(item);
     } catch (e) {
       setPhase('idle');
       setStatus(e instanceof Error ? e.message : 'Scan failed');
@@ -434,9 +415,10 @@ export function ChartScannerPage() {
 
         <div className="scan-card scan-auto">
           <div>
-            <strong>Auto-Open Trades</strong>
+            <strong>Auto Trade</strong>
             <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-              After scan, send BUY/SELL on connected MT5. Comment:{' '}
+              After scan, trade engine validates and sends to MT5 when confidence ≥
+              {MIN_SCAN_CONFIDENCE}%. Comment:{' '}
               <span style={{ color: 'var(--text)' }}>{eaName} Lumo~edge</span>
             </div>
           </div>
@@ -574,7 +556,7 @@ export function ChartScannerPage() {
                 </div>
                 <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
                   {trades} trade{trades === 1 ? '' : 's'} · lot {lotSize}
-                  {autoOpen ? ' · auto-open on' : ''}
+                  {autoOpen ? ' · auto trade on' : ' · preview only'}
                 </div>
                 {lastResult.entryPrice && lastResult.stopLoss ? (
                   <div className="scan-sltp">
@@ -622,26 +604,6 @@ export function ChartScannerPage() {
 
             {status && phase !== 'idle' ? (
               <p className="muted scan-status-line">{status}</p>
-            ) : null}
-            {phase === 'accuracy' && lastResult ? (
-              <button
-                type="button"
-                className="btn btn-blue"
-                style={{ marginTop: 8 }}
-                onClick={() => {
-                  const symbol = (editSymbol || lastResult.symbol || '').trim();
-                  if (!symbol) {
-                    setTradeStatus('Enter the symbol first.');
-                    return;
-                  }
-                  void executeMt5Trades({ ...lastResult, symbol });
-                }}
-              >
-                Send to MetaTrader{editSymbol ? ` — ${editSymbol}` : ''}
-              </button>
-            ) : null}
-            {tradeStatus && phase === 'accuracy' ? (
-              <p className="muted scan-status-line">{tradeStatus}</p>
             ) : null}
           </div>
         ) : null}
@@ -692,7 +654,9 @@ export function ChartScannerPage() {
                           type="button"
                           className="btn btn-ghost"
                           style={{ marginTop: 8, width: '100%' }}
-                          onClick={() => void playReveal(h)}
+                          onClick={() => {
+                            void playReveal(h).then(() => launchTradeEngine(h));
+                          }}
                         >
                           View full analysis
                         </button>
@@ -742,6 +706,14 @@ export function ChartScannerPage() {
         </button>
       </nav>
 
+      {engineOpen && engineSnap ? (
+        <TradeEnginePanel
+          snapshot={engineSnap}
+          running={engineRunning}
+          onRetry={retryFailedEngineStep}
+          onClose={() => setEngineOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

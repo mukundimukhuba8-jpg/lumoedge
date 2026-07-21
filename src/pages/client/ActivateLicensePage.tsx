@@ -85,7 +85,7 @@ export function ActivateLicensePage() {
   };
 
   return (
-    <div className="page" style={{ textAlign: 'center', paddingTop: 56 }}>
+    <div className="page cyber-page" style={{ textAlign: 'center', paddingTop: 56 }}>
       <div
         style={{
           width: 72,

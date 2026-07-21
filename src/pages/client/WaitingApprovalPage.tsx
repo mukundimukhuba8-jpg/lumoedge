@@ -101,7 +101,7 @@ export function WaitingApprovalPage() {
   const paidPending = Boolean(client?.paymentClaimed) && status === 'PENDING';
 
   return (
-    <div className="page" style={{ paddingTop: 36, paddingBottom: 28 }}>
+    <div className="page cyber-page" style={{ paddingTop: 36, paddingBottom: 28 }}>
       <div style={{ textAlign: 'center' }}>
         <div
           style={{

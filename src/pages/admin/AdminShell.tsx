@@ -151,7 +151,7 @@ export function AdminShell() {
         <strong className="admin-top-title admin-top-title-cyber">{pageTitle}</strong>
         <span className="admin-top-spacer" aria-hidden />
       </div>
-      <div className="page-enter admin-page-body admin-page-body-cyber">
+      <div className="page-enter page-slide admin-page-body admin-page-body-cyber" key={location.pathname}>
         <Outlet />
       </div>
       {drawer}
