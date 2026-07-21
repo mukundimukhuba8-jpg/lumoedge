@@ -188,6 +188,14 @@ function mergeVault(existing = [], incoming = []) {
   return [...out.values()].filter((v) => v.status !== 'deleted');
 }
 
+/** Live Firebase registrations merged with durable GitHub backup — never drop pending. */
+async function loadMergedClients() {
+  const { db } = await loadDb();
+  const githubClients = toArray(db.clients);
+  const fbClients = toArray(await firebaseRead('lumo/clients'));
+  return mergeClients(githubClients, fbClients);
+}
+
 async function firebaseRead(path) {
   try {
     const res = await fetch(`${FIREBASE_DB_URL}/${path}.json`, { cache: 'no-store' });
@@ -902,7 +910,8 @@ export default async function handler(req, res) {
 
     if (pathname === '/api/db' && req.method === 'GET') {
       const { db } = await loadDb();
-      send(res, 200, db);
+      const mergedClients = await loadMergedClients();
+      send(res, 200, { ...db, clients: mergedClients });
       return;
     }
 
@@ -1003,9 +1012,30 @@ export default async function handler(req, res) {
       return;
     }
 
+    if (pathname === '/api/clients/repair-sync' && req.method === 'POST') {
+      const merged = await loadMergedClients();
+      const { db, sha } = await loadDb();
+      db.clients = merged;
+      for (const entry of merged) {
+        if (entry?.email) mirrorClientToSuper(db, entry);
+      }
+      try {
+        await saveDb(db, sha);
+      } catch {
+        // Firebase still holds the live queue even if GitHub write fails
+      }
+      send(res, 200, {
+        ok: true,
+        total: merged.length,
+        pending: merged.filter((c) => c?.status === 'pending').length,
+        approved: merged.filter((c) => c?.status === 'approved').length,
+      });
+      return;
+    }
+
     if (pathname === '/api/clients' && req.method === 'GET') {
-      const { db } = await loadDb();
-      send(res, 200, db.clients || []);
+      const merged = await loadMergedClients();
+      send(res, 200, merged);
       return;
     }
 

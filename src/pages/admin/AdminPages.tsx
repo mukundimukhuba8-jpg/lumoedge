@@ -1244,8 +1244,15 @@ export function ApproveAdminsPage() {
 }
 
 export function SubscriptionsPage() {
-  const { clientRequests, approveClient, addApprovedSubscriber, markClientPaid, deleteClient, stats } =
-    useAdmin();
+  const {
+    clientRequests,
+    approveClient,
+    addApprovedSubscriber,
+    refreshClientQueue,
+    markClientPaid,
+    deleteClient,
+    stats,
+  } = useAdmin();
   const [q, setQ] = useState('');
   const [manualEmail, setManualEmail] = useState('');
   const [manualFirst, setManualFirst] = useState('');
@@ -1253,6 +1260,8 @@ export function SubscriptionsPage() {
   const [manualMsg, setManualMsg] = useState('');
   const [manualTone, setManualTone] = useState<'ok' | 'err'>('ok');
   const [manualSaving, setManualSaving] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   const query = q.trim().toLowerCase();
   const match = (c: { firstName: string; lastName: string; email: string }) => {
     if (!query) return true;
@@ -1264,11 +1273,6 @@ export function SubscriptionsPage() {
     .sort((a, b) => Number(Boolean(b.paymentClaimed)) - Number(Boolean(a.paymentClaimed)));
   const approved = clientRequests.filter((c) => c.status === 'approved').filter(match);
   const paidPending = pending.filter((c) => c.paymentClaimed).length;
-
-  const onDelete = (id: string, email: string) => {
-    if (!confirm(`Delete ${email}? This removes them from the queue.`)) return;
-    deleteClient(id);
-  };
 
   const onAddManual = async () => {
     if (manualSaving) return;
@@ -1297,6 +1301,31 @@ export function SubscriptionsPage() {
       setManualMsg('Could not add subscriber. Try again.');
     } finally {
       setManualSaving(false);
+    }
+  };
+
+  const onDelete = (id: string, email: string) => {
+    if (!confirm(`Delete ${email}? This removes them from the queue.`)) return;
+    deleteClient(id);
+  };
+
+  const onRefreshQueue = async () => {
+    if (refreshing) return;
+    setRefreshMsg('');
+    setRefreshing(true);
+    try {
+      const result = await refreshClientQueue();
+      if (result.ok) {
+        setRefreshMsg(
+          `Restored from cloud — ${result.pending ?? 0} awaiting approval, ${result.approved ?? 0} approved (${result.total ?? 0} total).`,
+        );
+      } else {
+        setRefreshMsg(result.error || 'Could not refresh subscriber list.');
+      }
+    } catch {
+      setRefreshMsg('Could not refresh subscriber list. Check your connection.');
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -1380,6 +1409,36 @@ export function SubscriptionsPage() {
         <Stat value={String(stats.pendingClients)} label="Awaiting approval" tone="orange" />
         <Stat value={String(paidPending)} label="Marked I've Paid" tone="blue" />
         <Stat value={String(approved.length)} label="Approved clients" tone="green" />
+      </div>
+
+      <div className="glow-card" style={{ display: 'grid', gap: 10 }}>
+        <div>
+          <h3 style={{ margin: '0 0 4px' }}>Missing subscribers?</h3>
+          <p className="muted" style={{ margin: 0 }}>
+            Pending clients are stored in the live cloud queue. If the list looks empty,
+            refresh from cloud — nothing is deleted unless you tap Delete.
+          </p>
+        </div>
+        <button
+          className="btn btn-blue"
+          type="button"
+          disabled={refreshing}
+          onClick={() => void onRefreshQueue()}
+        >
+          {refreshing ? 'Refreshing…' : 'Refresh from cloud'}
+        </button>
+        {refreshMsg ? (
+          <p
+            style={{
+              margin: 0,
+              color: refreshMsg.startsWith('Restored') ? 'var(--green)' : '#f87171',
+              fontWeight: 700,
+              fontSize: 13,
+            }}
+          >
+            {refreshMsg}
+          </p>
+        ) : null}
       </div>
 
       <div className="glow-card">
