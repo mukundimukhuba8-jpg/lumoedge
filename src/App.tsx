@@ -14,6 +14,7 @@ import {
   resolveProfileImage,
 } from './lib/mentorMedia';
 import { startMt5KeepAlive } from './lib/mt5Session';
+import { EmailCenterPage } from './pages/admin/EmailCenterPage';
 import { AdminAuthPage } from './pages/admin/AdminAuthPage';
 import {
   ApproveAdminsPage,
@@ -176,7 +177,7 @@ export default function App() {
             path="emails"
             element={
               <SuperOnly>
-                <ComingSoonPage title="Send Emails" />
+                <EmailCenterPage />
               </SuperOnly>
             }
           />

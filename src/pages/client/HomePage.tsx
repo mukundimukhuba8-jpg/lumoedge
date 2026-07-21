@@ -18,6 +18,7 @@ import { clearMt5Session, getMt5Token } from '../../lib/mt5Session';
 import { loadJSON, normalizeLicenseKey, saveJSON } from '../../lib/storage';
 import { FocusLayout, TerminalLayout, VortexLayout } from './HomeLayouts';
 import { InterfaceStyleModal } from './InterfaceStyleModal';
+import { CopyTradeStatus } from '../../components/CopyTradeStatus';
 
 const ALL_SYMBOLS = [
   'XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD',
@@ -446,6 +447,12 @@ export function HomePage() {
             </div>
 
             <p className="home-powered">powered by LUMOEDGE</p>
+
+            <CopyTradeStatus
+              email={user?.email}
+              mentorName={eaTitle}
+              copyStatus={copyStatus}
+            />
 
             <div className="neon-action home-actions">
               <button type="button" onClick={confirmDelete}>

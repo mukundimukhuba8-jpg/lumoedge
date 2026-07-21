@@ -1,18 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Loader2, MoreVertical, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck } from 'lucide-react';
+import { BackgroundManager } from '../../components/BackgroundManager';
 import { useAdmin, type ClientRequest } from '../../context/AdminContext';
 import { resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
-import {
-  ALL_MEDIA_SLOTS,
-  isAllowedMediaFile,
-  mediaKey,
-  normalizeCustomMedia,
-  removeMediaSlot,
-  upsertMediaSlot,
-  MEDIA_ACCEPT,
-  uploadMentorMediaFile,
-  type MentorMediaSlotId,
-} from '../../lib/mentorMedia';
 import { compressImageFile, getEaImage, blobUrlToDataUrl } from '../../lib/storage';
 import { pushScanAdminReset } from '../../lib/chartScan';
 import { Placeholder } from './AdminShell';
@@ -795,9 +785,10 @@ export function OpenOrdersPage() {
   const [trades, setTrades] = useState('1');
   const active = licenses.filter((l) => l.status === 'active').length;
   const symbols = [...new Set(eas.flatMap((e) => e.symbols))];
+  const connected = mt5.connected;
 
   const run = (copy: boolean) => {
-    if (!mt5.connected) return alert('Connect EA first');
+    if (!connected) return;
     const order = executeOrder({
       symbol: symbol.toUpperCase(),
       side,
@@ -816,11 +807,29 @@ export function OpenOrdersPage() {
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
-      <div className="glow-card" style={{ borderColor: mt5.connected ? 'rgba(57,255,20,0.45)' : undefined }}>
-        <strong>{mt5.connected ? `${mt5.broker} · ${mt5.accountType}` : 'No broker connected'}</strong>
-        <div className="muted">{mt5.connected ? `#${mt5.login} · ${mt5.server}` : 'Connect EA to send live trades'}</div>
+      <div className={`glow-card cyber-card orders-conn${connected ? ' live' : ''}`}>
+        <div className="orders-conn-head">
+          <strong>{connected ? 'Broker Connected' : 'Broker Not Connected'}</strong>
+          <span className={`orders-health${connected ? ' ok' : ' off'}`}>
+            {connected ? '● Healthy' : '● Offline'}
+          </span>
+        </div>
+        {connected ? (
+          <div className="orders-conn-grid">
+            <div><span>Broker</span><strong>{mt5.broker}</strong></div>
+            <div><span>Account</span><strong>#{mt5.login}</strong></div>
+            <div><span>Server</span><strong>{mt5.server}</strong></div>
+            <div><span>Status</span><strong>Connected</strong></div>
+            <div><span>Last Sync</span><strong>Just now</strong></div>
+            <div><span>Health</span><strong>Good</strong></div>
+          </div>
+        ) : (
+          <p className="orders-conn-warn">
+            Connect your broker through Connect EA before sending trades.
+          </p>
+        )}
       </div>
-      <div className="glow-card">
+      <div className="glow-card cyber-card">
         <h3 style={{ marginTop: 0 }}>Order Details</h3>
         <div className="field"><label>Symbol *</label><input value={symbol} onChange={(e) => setSymbol(e.target.value)} /></div>
         <div>{symbols.slice(0, 6).map((s) => <button key={s} type="button" className="chip" onClick={() => setSymbol(s)}>{s}</button>)}</div>
@@ -835,9 +844,18 @@ export function OpenOrdersPage() {
         </div>
         <div className="field"><label>EA Comment</label><input value={comment} onChange={(e) => setComment(e.target.value)} /></div>
         <div className="field"><label>Number of Trades (1-50)</label><input value={trades} onChange={(e) => setTrades(e.target.value)} /></div>
-        <button className="btn btn-green" type="button" onClick={() => run(false)}>EXECUTE {side.toUpperCase()}</button>
+        <button className="btn btn-green" type="button" disabled={!connected} onClick={() => run(false)}>
+          EXECUTE {side.toUpperCase()}
+        </button>
+        {!connected ? (
+          <p className="orders-conn-warn" style={{ marginTop: 10 }}>
+            Connect your broker through Connect EA before sending trades.
+          </p>
+        ) : null}
         <div style={{ textAlign: 'center', margin: '12px 0' }} className="muted">OR</div>
-        <button className="btn btn-ghost" type="button" onClick={() => run(true)}>COPY TRADE TO ALL CLIENTS ({active})</button>
+        <button className="btn btn-ghost" type="button" disabled={!connected} onClick={() => run(true)}>
+          COPY TRADE TO ALL CLIENTS ({active})
+        </button>
       </div>
       {orders[0] ? <div className="muted">Last: {orders[0].side.toUpperCase()} {orders[0].symbol} · copied {orders[0].copiedTo}</div> : null}
     </div>
@@ -852,8 +870,6 @@ export function ProfilePage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [imageSavedMsg, setImageSavedMsg] = useState('');
   const [appLogoMsg, setAppLogoMsg] = useState('');
-  const [mediaMsg, setMediaMsg] = useState('');
-  const [mediaUploading, setMediaUploading] = useState<MentorMediaSlotId | null>(null);
   const isSuper = admin?.role === 'super';
 
   const onPickAppLogo = async (file: File | null) => {
@@ -948,40 +964,6 @@ export function ProfilePage() {
       URL.revokeObjectURL(previewUrl);
       setSavingImage(false);
     }
-  };
-
-  const onPickMediaSlot = async (slot: MentorMediaSlotId, file: File | null) => {
-    setMediaMsg('');
-    if (!file || !admin?.id) return;
-    const check = isAllowedMediaFile(file);
-    if (!check.ok) {
-      setMediaMsg(check.error);
-      return;
-    }
-    try {
-      setMediaUploading(slot);
-      const key = mediaKey(admin.id, slot);
-      const { url } = await uploadMentorMediaFile(key, file);
-      const nextMedia = upsertMediaSlot(profile.customMedia, {
-        slot,
-        kind: check.kind,
-        url,
-        updatedAt: new Date().toISOString(),
-      });
-      await updateProfile({ ...form, customMedia: nextMedia });
-      setMediaMsg(`${ALL_MEDIA_SLOTS.find((s) => s.id === slot)?.label || slot} uploaded — synced to all clients.`);
-    } catch (err) {
-      setMediaMsg(err instanceof Error ? err.message : 'Upload failed.');
-    } finally {
-      setMediaUploading(null);
-    }
-  };
-
-  const onRemoveMediaSlot = async (slot: MentorMediaSlotId) => {
-    if (!admin?.id) return;
-    const nextMedia = removeMediaSlot(profile.customMedia, slot);
-    await updateProfile({ ...form, customMedia: nextMedia });
-    setMediaMsg('Media removed — clients will see the update shortly.');
   };
 
   const saveProfile = async () => {
@@ -1094,66 +1076,13 @@ export function ProfilePage() {
         {imageError ? <p className="error">{imageError}</p> : null}
       </div>
 
-      <div className="glow-card cyber-card">
-        <h3 style={{ marginTop: 0 }}>Custom Backgrounds &amp; Profiles</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Upload images or looping videos — they sync instantly to every licensed client. Clients pick
-          backgrounds in Settings → Backgrounds.
-        </p>
-        {mediaMsg ? (
-          <p
-            style={{
-              color: mediaMsg.includes('failed') || mediaMsg.includes('Only') ? '#f87171' : 'var(--green)',
-              fontWeight: 700,
-              margin: '6px 0 12px',
-            }}
-          >
-            {mediaMsg}
-          </p>
-        ) : null}
-        <div className="media-slot-grid">
-          {ALL_MEDIA_SLOTS.map((slot) => {
-            const item = normalizeCustomMedia(profile.customMedia).find((m) => m.slot === slot.id);
-            const uploading = mediaUploading === slot.id;
-            return (
-              <div key={slot.id} className="media-slot-card">
-                <div className="media-slot-preview">
-                  {item?.kind === 'video' ? (
-                    <video src={item.url} muted playsInline loop />
-                  ) : item?.url ? (
-                    <img src={item.url} alt="" />
-                  ) : (
-                    <span className="muted">{slot.label}</span>
-                  )}
-                </div>
-                <div className="media-slot-meta">
-                  <strong>{slot.label}</strong>
-                  <label className="media-slot-upload">
-                    {uploading ? 'Uploading…' : item ? 'Replace' : 'Upload'}
-                    <input
-                      type="file"
-                      accept={MEDIA_ACCEPT}
-                      hidden
-                      disabled={uploading}
-                      onChange={(e) => void onPickMediaSlot(slot.id, e.target.files?.[0] ?? null)}
-                    />
-                  </label>
-                  {item ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      style={{ width: 'auto', padding: '6px 10px', fontSize: 12 }}
-                      onClick={() => void onRemoveMediaSlot(slot.id)}
-                    >
-                      Remove
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <BackgroundManager
+        adminId={admin?.id || ''}
+        customMedia={profile.customMedia}
+        onSync={async (nextMedia) => {
+          await updateProfile({ ...form, customMedia: nextMedia });
+        }}
+      />
 
       {isSuper ? (
         <div className="glow-card">
