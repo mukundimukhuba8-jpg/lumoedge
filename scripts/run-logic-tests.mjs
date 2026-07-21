@@ -209,5 +209,12 @@ assert(
   mergedEmpty.clients.length === 2,
 );
 
+const { isRegistrationEmail, splitNameFromEmail } = await import('../api/_lib/registrationEmail.mjs');
+assert('short email accepted', isRegistrationEmail('a@b.co'));
+assert('long local part accepted', isRegistrationEmail(`${'x'.repeat(64)}@example.com`));
+assert('missing domain rejected', !isRegistrationEmail('user@'));
+assert('whitespace rejected', !isRegistrationEmail('user @example.com'));
+assert('name split from email', splitNameFromEmail('john.doe@mail.com').firstName === 'john');
+
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed > 0 ? 1 : 0);

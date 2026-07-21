@@ -1,3 +1,9 @@
+import {
+  isRegistrationEmail,
+  normalizeRegistrationEmail,
+  splitNameFromEmail,
+} from './registrationEmail.mjs';
+
 const FIREBASE_DB_URL = (
   process.env.FIREBASE_DATABASE_URL ||
   process.env.VITE_FIREBASE_DATABASE_URL ||
@@ -105,12 +111,11 @@ export function mirrorClientToSuperWorkspace(workspaces, entry) {
 
 /** Create or return existing client in Firebase — source of truth for live registrations. */
 export async function firebasePostClientEntry(input) {
-  const email = String(input.email || '')
-    .trim()
-    .toLowerCase();
-  const firstName = String(input.firstName || '').trim();
-  const lastName = String(input.lastName || '').trim();
-  if (!email || !firstName || !lastName) return null;
+  const email = normalizeRegistrationEmail(input.email);
+  if (!isRegistrationEmail(email)) return null;
+  const fromEmail = splitNameFromEmail(email);
+  const firstName = String(input.firstName || '').trim() || fromEmail.firstName;
+  const lastName = String(input.lastName || '').trim() || fromEmail.lastName;
 
   const freshClients = toArray(await firebaseRead('lumo/clients'));
   const existing = freshClients.find((c) => String(c.email || '').toLowerCase() === email);

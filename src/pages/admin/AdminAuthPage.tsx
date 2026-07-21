@@ -150,7 +150,7 @@ export function AdminAuthPage() {
             <div className="field"><label>Full Name *</label><input value={form.fullName} onChange={(e) => set('fullName', e.target.value)} placeholder="Your full name" /></div>
             <div className="field"><label>Mentor Name</label><input value={form.mentorName} onChange={(e) => set('mentorName', e.target.value)} placeholder="e.g. John Smith" /></div>
             <div className="field"><label>EA Name</label><input value={form.eaName} onChange={(e) => set('eaName', e.target.value)} placeholder="e.g. Supreme Equinox" /></div>
-            <div className="field"><label>Phone Number</label><input value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="+27 60 000 0000" /></div>
+            <div className="field"><label>Phone Number (optional)</label><input value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="+1 555 000 0000" inputMode="tel" /></div>
             <div className="field"><label>Main Text (Top of Client App)</label><input value={form.mainText} onChange={(e) => set('mainText', e.target.value)} placeholder="e.g. LUMO EDGE" /></div>
             <hr style={{ borderColor: '#2a2a33' }} />
           </>

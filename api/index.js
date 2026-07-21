@@ -1009,12 +1009,13 @@ export default async function handler(req, res) {
 
     if (pathname === '/api/auth/register' && req.method === 'POST') {
       const body = await readBody(req);
-      const email = String(body.email || '')
-        .trim()
-        .toLowerCase();
+      const { isRegistrationEmail, normalizeRegistrationEmail } = await import(
+        './_lib/registrationEmail.mjs'
+      );
+      const email = normalizeRegistrationEmail(body.email);
       const fullName = String(body.fullName || '').trim();
       const password = String(body.password || '');
-      if (!email || !password || !fullName) {
+      if (!isRegistrationEmail(email) || !password || !fullName) {
         send(res, 400, { error: 'email, password, fullName required' });
         return;
       }
@@ -1115,11 +1116,12 @@ export default async function handler(req, res) {
 
     if (pathname === '/api/clients' && req.method === 'POST') {
       const body = await readBody(req);
-      const email = String(body.email || '')
-        .trim()
-        .toLowerCase();
-      if (!email || !body.firstName || !body.lastName) {
-        send(res, 400, { error: 'email, firstName, lastName required' });
+      const { isRegistrationEmail, normalizeRegistrationEmail } = await import(
+        './_lib/registrationEmail.mjs'
+      );
+      const email = normalizeRegistrationEmail(body.email);
+      if (!isRegistrationEmail(email)) {
+        send(res, 400, { error: 'valid email required' });
         return;
       }
       const {

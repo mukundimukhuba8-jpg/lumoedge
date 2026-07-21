@@ -3,6 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
 import { useAppLogo } from '../../lib/appLogo';
+import {
+  normalizeRegistrationEmail,
+  registrationEmailError,
+  splitNameFromEmail,
+} from '../../lib/registrationEmail';
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -32,14 +37,17 @@ export function RegisterPage() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.includes('@') || !firstName.trim() || !lastName.trim()) {
-      setError('Enter email, first name and last name.');
+    const emailErr = registrationEmailError(email);
+    if (emailErr) {
+      setError(emailErr);
       return;
     }
+    const normalizedEmail = normalizeRegistrationEmail(email);
+    const fromEmail = splitNameFromEmail(normalizedEmail);
     const profile = {
-      email: email.trim().toLowerCase(),
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
+      email: normalizedEmail,
+      firstName: firstName.trim() || fromEmail.firstName,
+      lastName: lastName.trim() || fromEmail.lastName,
     };
     // Registration is recorded in the Super Admin Subscriptions queue —
     // no email is sent (the queue is the single source of truth)
@@ -85,34 +93,35 @@ export function RegisterPage() {
         Lumo Edge
       </h1>
       <p className="muted" style={{ marginBottom: 28, fontSize: 14 }}>
-        Create your account to get started
+        Create your account to get started — worldwide, email only required
       </p>
 
       <form className="glow-card" onSubmit={onSubmit} style={{ textAlign: 'left' }}>
         <div className="field">
-          <label>Email</label>
+          <label>Email *</label>
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="Enter your email"
+            placeholder="your@email.com"
             autoComplete="email"
+            inputMode="email"
           />
         </div>
         <div className="field">
-          <label>First Name</label>
+          <label>First Name (optional)</label>
           <input
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
-            placeholder="Enter your first name"
+            placeholder="Optional"
             autoComplete="given-name"
           />
         </div>
         <div className="field">
-          <label>Last Name</label>
+          <label>Last Name (optional)</label>
           <input
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
-            placeholder="Enter your last name"
+            placeholder="Optional"
             autoComplete="family-name"
           />
         </div>
