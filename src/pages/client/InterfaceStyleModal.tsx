@@ -14,13 +14,14 @@ import {
 import {
   ACCENTS,
   EFFECTS,
-  LAYOUTS,
+  LAYOUT_PRESETS,
   THEMES,
+  applyLayoutPreset,
   type AccentId,
   type CustomBgId,
   type EffectId,
   type InterfacePrefs,
-  type LayoutId,
+  type LayoutPresetId,
   type StyleTab,
   type ThemeId,
   accentHex,
@@ -41,106 +42,6 @@ type Props = {
   mentorMedia?: MentorMediaItem[];
   onOpenScanner: () => void;
 };
-
-function LayoutGlyph({ schema, active }: { schema: string; active: boolean }) {
-  const ink = active ? 'var(--electric)' : '#64748b';
-  const fill = active ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.06)';
-  return (
-    <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden>
-      {schema === 'classic' && (
-        <>
-          <rect x="8" y="6" width="24" height="10" rx="2" fill={ink} opacity={0.9} />
-          <circle cx="14" cy="22" r="2.2" fill={ink} />
-          <circle cx="20" cy="22" r="2.2" fill={ink} />
-          <circle cx="26" cy="22" r="2.2" fill={ink} />
-          <rect x="10" y="28" width="20" height="4" rx="2" fill={fill} stroke={ink} />
-        </>
-      )}
-      {schema === 'bold' && (
-        <>
-          <rect x="7" y="6" width="26" height="16" rx="3" fill={ink} opacity={0.85} />
-          <circle cx="14" cy="30" r="2" fill={ink} />
-          <circle cx="20" cy="30" r="2" fill={ink} />
-          <circle cx="26" cy="30" r="2" fill={ink} />
-        </>
-      )}
-      {schema === 'minimal' && (
-        <>
-          <circle cx="20" cy="12" r="6" fill="none" stroke={ink} strokeWidth="2" />
-          <circle cx="14" cy="28" r="2" fill={ink} />
-          <circle cx="20" cy="28" r="2" fill={ink} />
-          <circle cx="26" cy="28" r="2" fill={ink} />
-        </>
-      )}
-      {schema === 'expanded' && (
-        <>
-          <circle cx="12" cy="12" r="5" fill={ink} opacity={0.85} />
-          <rect x="20" y="8" width="12" height="2.5" rx="1" fill={ink} />
-          <rect x="20" y="13" width="9" height="2" rx="1" fill={ink} opacity={0.6} />
-          <circle cx="14" cy="28" r="2" fill={ink} />
-          <circle cx="20" cy="28" r="2" fill={ink} />
-          <circle cx="26" cy="28" r="2" fill={ink} />
-        </>
-      )}
-      {schema === 'dashboard' && (
-        <>
-          <rect x="7" y="7" width="11" height="11" rx="2" fill={ink} opacity={0.85} />
-          <rect x="22" y="7" width="11" height="11" rx="2" fill={fill} stroke={ink} />
-          <rect x="7" y="22" width="11" height="11" rx="2" fill={fill} stroke={ink} />
-          <rect x="22" y="22" width="11" height="11" rx="2" fill={ink} opacity={0.55} />
-        </>
-      )}
-      {schema === 'terminal' && (
-        <>
-          {[0, 1, 2, 3, 4].map((i) => (
-            <rect
-              key={i}
-              x="8"
-              y={8 + i * 5}
-              width={18 + (i % 3) * 3}
-              height="2.5"
-              rx="1"
-              fill={ink}
-              opacity={0.5 + i * 0.1}
-            />
-          ))}
-        </>
-      )}
-      {schema === 'focus' && (
-        <>
-          <rect x="8" y="8" width="24" height="16" rx="3" fill={ink} opacity={0.85} />
-          <circle cx="16" cy="30" r="2" fill={ink} />
-          <circle cx="24" cy="30" r="2" fill={ink} />
-        </>
-      )}
-      {schema === 'vortex' && (
-        <>
-          <circle cx="20" cy="20" r="12" fill="none" stroke={ink} strokeWidth="1.5" />
-          <circle cx="20" cy="20" r="7" fill="none" stroke={ink} strokeWidth="1.5" />
-          <circle cx="20" cy="20" r="2.5" fill={ink} />
-          <circle cx="20" cy="8" r="1.6" fill={ink} />
-          <circle cx="31" cy="20" r="1.6" fill={ink} />
-          <circle cx="20" cy="32" r="1.6" fill={ink} />
-        </>
-      )}
-      {schema === 'phantom' && (
-        <>
-          <rect x="8" y="6" width="24" height="12" rx="2" fill={ink} opacity={0.85} />
-          <rect x="8" y="22" width="11" height="10" rx="2" fill={fill} stroke={ink} />
-          <rect x="21" y="22" width="11" height="10" rx="2" fill={fill} stroke={ink} />
-        </>
-      )}
-      {schema === 'apex' && (
-        <>
-          <rect x="8" y="6" width="24" height="6" rx="2" fill={ink} opacity={0.9} />
-          <rect x="8" y="15" width="24" height="10" rx="2" fill={fill} stroke={ink} />
-          <rect x="8" y="28" width="10" height="4" rx="2" fill={ink} opacity={0.7} />
-          <rect x="22" y="28" width="10" height="4" rx="2" fill={ink} opacity={0.7} />
-        </>
-      )}
-    </svg>
-  );
-}
 
 export function InterfaceStyleModal({
   open,
@@ -172,7 +73,7 @@ export function InterfaceStyleModal({
     [],
   );
 
-  const setLayout = (layout: LayoutId) => onChange({ ...prefs, layout });
+  const setPreset = (presetId: LayoutPresetId) => onChange(applyLayoutPreset(presetId, prefs));
   const setTheme = (theme: ThemeId) => onChange({ ...prefs, theme });
   const setAccent = (next: AccentId) => onChange({ ...prefs, accent: next });
   const setCustomBg = (customBg: CustomBgId) => {
@@ -276,24 +177,43 @@ export function InterfaceStyleModal({
           ) : null}
 
           {tab === 'layouts' ? (
-            <div className="iface-layout-grid">
-              {LAYOUTS.map((item) => {
-                const active = prefs.layout === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`iface-layout${active ? ' active' : ''}`}
-                    onClick={() => setLayout(item.id)}
-                  >
-                    <span className="iface-layout-circle">
-                      <LayoutGlyph schema={item.schema} active={active} />
-                    </span>
-                    <span className="iface-layout-label">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <>
+              <p className="muted iface-intro">
+                Professional layout presets — instantly updates theme, cards, navigation, and effects.
+              </p>
+              <div className="iface-theme-grid">
+                {LAYOUT_PRESETS.map((preset) => {
+                  const active =
+                    prefs.theme === preset.theme &&
+                    prefs.layout === preset.layout &&
+                    prefs.effect === preset.effect &&
+                    prefs.accent === preset.accent;
+                  const themeTokens = THEMES.find((t) => t.id === preset.theme)?.tokens;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`iface-theme-card${active ? ' active' : ''}`}
+                      onClick={() => setPreset(preset.id)}
+                      style={
+                        themeTokens
+                          ? ({
+                              '--theme-preview-a': themeTokens.electric,
+                              '--theme-preview-b': themeTokens.cyan,
+                              '--theme-preview-c': themeTokens.purple,
+                            } as CSSProperties)
+                          : undefined
+                      }
+                    >
+                      <span className="iface-theme-preview" aria-hidden />
+                      <strong>{preset.label}</strong>
+                      <span className="muted">{preset.description}</span>
+                      {active ? <Check size={14} className="iface-theme-check" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           ) : null}
 
           {tab === 'effects' ? (

@@ -248,6 +248,52 @@ export const LAYOUTS: {
   { id: 'apex', label: 'Apex', schema: 'apex' },
 ];
 
+export type LayoutPresetId =
+  | 'cyber-neon'
+  | 'glass-elite'
+  | 'dark-titanium'
+  | 'matrix-green'
+  | 'midnight-blue'
+  | 'aurora'
+  | 'obsidian-pro'
+  | 'carbon-black'
+  | 'ocean-tech'
+  | 'neon-purple';
+
+export const LAYOUT_PRESETS: {
+  id: LayoutPresetId;
+  label: string;
+  description: string;
+  theme: ThemeId;
+  layout: LayoutId;
+  effect: EffectId;
+  accent: AccentId;
+}[] = [
+  { id: 'cyber-neon', label: 'Cyber Neon', description: 'Electric blue neon grid', theme: 'cyber-blue', layout: 'classic', effect: 'star-field', accent: 'cyan' },
+  { id: 'glass-elite', label: 'Glass Elite', description: 'Frost glass with gold accents', theme: 'arctic-white', layout: 'dashboard', effect: 'none', accent: 'gold' },
+  { id: 'dark-titanium', label: 'Dark Titanium', description: 'Industrial silver edges', theme: 'midnight-black', layout: 'terminal', effect: 'trader-night', accent: 'silver' },
+  { id: 'matrix-green', label: 'Matrix Green', description: 'Terminal matrix rain', theme: 'matrix-green', layout: 'terminal', effect: 'profit-matrix', accent: 'green' },
+  { id: 'midnight-blue', label: 'Midnight Blue', description: 'Deep ocean blues', theme: 'cyber-blue', layout: 'phantom', effect: 'trader-night', accent: 'blue' },
+  { id: 'aurora', label: 'Aurora', description: 'Cyan-purple aurora glow', theme: 'neon-purple', layout: 'vortex', effect: 'star-field', accent: 'purple' },
+  { id: 'obsidian-pro', label: 'Obsidian Pro', description: 'Pure black pro shell', theme: 'midnight-black', layout: 'apex', effect: 'none', accent: 'white' },
+  { id: 'carbon-black', label: 'Carbon Black', description: 'Matte carbon finish', theme: 'midnight-black', layout: 'minimal', effect: 'none', accent: 'silver' },
+  { id: 'ocean-tech', label: 'Ocean Tech', description: 'Teal ocean gradients', theme: 'cyber-blue', layout: 'expanded', effect: 'star-field', accent: 'teal' },
+  { id: 'neon-purple', label: 'Neon Purple', description: 'Violet neon pulse', theme: 'neon-purple', layout: 'bold', effect: 'fire-mode', accent: 'pink' },
+];
+
+export function applyLayoutPreset(presetId: LayoutPresetId, base?: InterfacePrefs): InterfacePrefs {
+  const preset = LAYOUT_PRESETS.find((p) => p.id === presetId);
+  const current = base ?? loadInterfacePrefs();
+  if (!preset) return current;
+  return {
+    ...current,
+    theme: preset.theme,
+    layout: preset.layout,
+    effect: preset.effect,
+    accent: preset.accent,
+  };
+}
+
 export const EFFECTS: {
   id: Exclude<EffectId, 'none'>;
   title: string;
@@ -331,6 +377,7 @@ export function applyInterfaceTheme(prefs: InterfacePrefs = loadInterfacePrefs()
   root.dataset.theme = prefs.theme;
   root.dataset.animations = prefs.animations ? 'on' : 'off';
   root.dataset.effect = prefs.effect;
+  root.dataset.layout = prefs.layout;
 
   root.style.setProperty('--electric', accent);
   root.style.setProperty('--accent-rgb', accentRgb);
