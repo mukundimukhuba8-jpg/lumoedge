@@ -865,6 +865,7 @@ export function OpenOrdersPage() {
 export function ProfilePage() {
   const { admin, profile, updateProfile } = useAdmin();
   const [form, setForm] = useState(profile);
+  const [customMedia, setCustomMedia] = useState(() => profile.customMedia);
   const [imageError, setImageError] = useState('');
   const [savingImage, setSavingImage] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -914,6 +915,7 @@ export function ProfilePage() {
         eaImage: keepPreview ? prev.eaImage : resolved || prev.eaImage || '',
       };
     });
+    setCustomMedia(profile.customMedia);
   }, [profile]);
 
   const onPickImage = async (file: File | null) => {
@@ -972,7 +974,7 @@ export function ProfilePage() {
     setImageSavedMsg('');
     setSavingProfile(true);
     try {
-      let payload = { ...form };
+      let payload = { ...form, customMedia };
       if (payload.eaImage?.startsWith('blob:')) {
         payload = {
           ...payload,
@@ -986,10 +988,15 @@ export function ProfilePage() {
           !payload.eaImage.startsWith('blob:') &&
           String(payload.eaImage).trim(),
       );
+      const hasBackgrounds = customMedia.some((m) => Boolean(m.url));
       setImageSavedMsg(
-        hasPicture
-          ? 'Profile updated — picture saved and synced to clients.'
-          : 'Profile updated — branding synced to license keys & clients.',
+        hasPicture && hasBackgrounds
+          ? 'Profile updated — picture and backgrounds saved. Syncing to clients…'
+          : hasBackgrounds
+            ? 'Profile updated — backgrounds saved. Syncing to clients…'
+            : hasPicture
+              ? 'Profile updated — picture saved and synced to clients.'
+              : 'Profile updated — branding synced to license keys & clients.',
       );
     } catch (err) {
       setImageError(
@@ -1078,8 +1085,10 @@ export function ProfilePage() {
 
       <BackgroundManager
         adminId={admin?.id || ''}
-        customMedia={profile.customMedia}
+        customMedia={customMedia}
+        onMediaChange={setCustomMedia}
         onSync={async (nextMedia) => {
+          setCustomMedia(nextMedia);
           await updateProfile({ ...form, customMedia: nextMedia });
         }}
       />
