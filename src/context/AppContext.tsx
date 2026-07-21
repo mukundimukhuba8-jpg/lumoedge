@@ -513,9 +513,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // still clear locally
           }
         }
+        const nextAccess =
+          session.accessStatus === 'licensed' || session.accessStatus === 'paid'
+            ? 'approved'
+            : session.accessStatus;
         persist({
           ...session,
-          accessStatus: 'pending',
+          accessStatus: nextAccess,
           bot: {
             ...session.bot,
             status: 'paused',

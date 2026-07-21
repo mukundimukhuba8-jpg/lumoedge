@@ -19,6 +19,7 @@ type Props = {
   adminId: string;
   customMedia: MentorMediaItem[];
   onSync: (next: MentorMediaItem[]) => Promise<void>;
+  onMediaChange?: (next: MentorMediaItem[]) => void;
 };
 
 function resolvePreviewUrl(url: string): string {
@@ -39,7 +40,7 @@ function resolvePreviewUrl(url: string): string {
   return u;
 }
 
-export function BackgroundManager({ adminId, customMedia, onSync }: Props) {
+export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange }: Props) {
   const [localMedia, setLocalMedia] = useState<MentorMediaItem[]>(() =>
     normalizeCustomMedia(customMedia),
   );
@@ -88,6 +89,7 @@ export function BackgroundManager({ adminId, customMedia, onSync }: Props) {
       updatedAt: new Date().toISOString(),
     });
     setLocalMedia(withPreview);
+    onMediaChange?.(withPreview);
 
     try {
       setActiveSlot(slot);
@@ -107,6 +109,7 @@ export function BackgroundManager({ adminId, customMedia, onSync }: Props) {
       });
 
       setLocalMedia(nextMedia);
+      onMediaChange?.(nextMedia);
       setProgress({ pct: 96, stage: 'Syncing to clients…' });
 
       try {
@@ -141,6 +144,7 @@ export function BackgroundManager({ adminId, customMedia, onSync }: Props) {
     setMessage('');
     const nextMedia = removeMediaSlot(localMedia, slot);
     setLocalMedia(nextMedia);
+    onMediaChange?.(nextMedia);
     try {
       await onSync(nextMedia);
       setMessage('Background removed.');

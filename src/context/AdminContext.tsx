@@ -257,6 +257,13 @@ function displayableImage(value: string | undefined, adminId?: string): string {
  * Push mentor profile image + EA symbols onto licenses already activated by clients.
  * Never auto-assign license keys — admin sends the key manually; client enters it.
  */
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => window.setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 async function syncPortalBrandingToClients(
   adminId: string,
   ws: AdminWorkspace,
@@ -1705,7 +1712,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         return entry;
       },
       approveClient: (id) => {
-        const hit = clients.find((c) => c.id === id);
+        const hit =
+          clients.find((c) => c.id === id) ||
+          clients.find((c) => c.email.toLowerCase() === id.toLowerCase());
         if (!hit) return;
         const email = hit.email.toLowerCase();
         const claimedAt = hit.paymentClaimedAt || new Date().toISOString();
@@ -1715,13 +1724,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           paymentClaimed: true,
           paymentClaimedAt: claimedAt,
         };
-        setClients((prev) => mergeClientLists(prev, [approved]));
+        setClients((prev) => {
+          const merged = mergeClientLists(prev, [approved]);
+          void pushDb({ clients: merged }).catch(() => undefined);
+          return merged;
+        });
         const sid = SUPER_ADMIN.user.id;
         patchWorkspace(sid, (ws) => ({
           ...ws,
           clientRequests: mergeClientLists(ws.clientRequests, [approved]),
         }));
-        void pushDb({ clients: mergeClientLists(clients, [approved]) }).catch(() => undefined);
         const persistApproval = async (server: ClientRequest | null) => {
           const merged = server
             ? ({
@@ -1732,28 +1744,49 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               } as ClientRequest)
             : approved;
           setClients((prev) => mergeClientLists(prev, [merged]));
-          const db = await fetchDb();
-          const session = (db?.sessions?.[email] as Record<string, unknown> | undefined) || {};
-          await pushSession(email, {
-            ...session,
-            accessStatus: 'approved',
-          });
+          patchWorkspace(sid, (ws) => ({
+            ...ws,
+            clientRequests: mergeClientLists(ws.clientRequests, [merged]),
+          }));
+          try {
+            const db = await Promise.race([
+              fetchDb(),
+              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
+            ]);
+            const session =
+              (db?.sessions?.[email] as Record<string, unknown> | undefined) || {};
+            await Promise.race([
+              pushSession(email, {
+                ...session,
+                accessStatus: 'approved',
+              }),
+              new Promise((resolve) => window.setTimeout(resolve, 8000)),
+            ]);
+          } catch {
+            // local approval already saved
+          }
         };
-        void patchClient(hit.id, {
-          status: 'approved',
-          paymentClaimed: true,
-          paymentClaimedAt: claimedAt,
-        })
+        void Promise.race([
+          patchClient(hit.id, {
+            status: 'approved',
+            paymentClaimed: true,
+            paymentClaimedAt: claimedAt,
+          }),
+          new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 12_000)),
+        ])
           .then(async (server) => {
             if (server) {
               await persistApproval(server as ClientRequest);
               return;
             }
-            const byEmail = await patchClient(email, {
-              status: 'approved',
-              paymentClaimed: true,
-              paymentClaimedAt: claimedAt,
-            });
+            const byEmail = await Promise.race([
+              patchClient(email, {
+                status: 'approved',
+                paymentClaimed: true,
+                paymentClaimedAt: claimedAt,
+              }),
+              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 12_000)),
+            ]);
             await persistApproval(byEmail as ClientRequest | null);
           })
           .catch(async () => {
@@ -1873,10 +1906,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const sid = SUPER_ADMIN.user.id;
         patchWorkspace(sid, (ws) => ({
           ...ws,
-          clientRequests: [
-            updated,
-            ...ws.clientRequests.filter((c) => c.email.toLowerCase() !== normalized),
-          ],
+          clientRequests: mergeClientLists(ws.clientRequests, [updated]),
         }));
         try {
           const server = await Promise.race([
@@ -2354,7 +2384,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           if (imagePatch && imagePatch.startsWith('blob:')) {
             try {
               const { blobUrlToDataUrl } = await import('../lib/storage');
-              imagePatch = await blobUrlToDataUrl(imagePatch);
+              imagePatch = await withTimeout(
+                blobUrlToDataUrl(imagePatch),
+                12_000,
+                '',
+              );
             } catch {
               imagePatch = undefined;
             }
@@ -2363,11 +2397,21 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             displayBytes = imagePatch;
             saveEaImage(`profile-${adminId}`, imagePatch);
             saveEaImage(`img:profile-${adminId}`, imagePatch);
-            await firebaseSaveImage(`profile-${adminId}`, imagePatch);
-            const published = await publishEaImage(`profile-${adminId}`, imagePatch);
+            await withTimeout(
+              firebaseSaveImage(`profile-${adminId}`, imagePatch),
+              12_000,
+              null,
+            );
+            const published = await withTimeout(
+              publishEaImage(`profile-${adminId}`, imagePatch),
+              20_000,
+              `img:profile-${adminId}`,
+            );
             imagePatch = published?.startsWith('img:')
               ? published
-              : `img:profile-${adminId}`;
+              : published?.startsWith('http') || published?.startsWith('/')
+                ? published
+                : `img:profile-${adminId}`;
           } else if (imagePatch && imagePatch.startsWith('img:')) {
             displayBytes = getEaImage(imagePatch) || getEaImage(imagePatch.slice(4)) || '';
           } else if (imagePatch && (imagePatch.startsWith('http') || imagePatch.startsWith('/'))) {
@@ -2405,36 +2449,31 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                 saveEaImage(mediaKeyId, item.url);
                 let published = item.url;
                 try {
-                  const hosted = await Promise.race([
+                  const hosted = await withTimeout(
                     firebaseUploadDataUrl(`media/${mediaKeyId}`, item.url),
-                    new Promise<string | null>((resolve) =>
-                      window.setTimeout(() => resolve(null), 10_000),
-                    ),
-                  ]);
+                    12_000,
+                    null,
+                  );
                   if (hosted) {
                     saveEaImage(mediaKeyId, hosted);
                     published = hosted;
                   } else {
                     const { imagePublicUrl } = await import('../lib/storage');
                     const apiUrl = imagePublicUrl(mediaKeyId);
-                    try {
-                      const res = await Promise.race([
-                        fetch(apiUrl, {
-                          method: 'PUT',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ dataUrl: item.url }),
-                        }),
-                        new Promise<Response>((_, reject) =>
-                          window.setTimeout(() => reject(new Error('timeout')), 8_000),
-                        ),
-                      ]);
-                      if (res.ok) published = apiUrl;
-                    } catch {
-                      published = apiUrl;
-                    }
+                    const res = await withTimeout(
+                      fetch(apiUrl, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ dataUrl: item.url }),
+                      }),
+                      12_000,
+                      null as Response | null,
+                    );
+                    published = res?.ok ? apiUrl : apiUrl;
                   }
                 } catch {
-                  // keep local data URL / api path
+                  const { imagePublicUrl } = await import('../lib/storage');
+                  published = imagePublicUrl(mediaKeyId);
                 }
                 nextMedia.push({ ...item, url: published });
               } else {
@@ -2495,33 +2534,43 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             return next;
           });
 
-          const licenses = await syncPortalBrandingToClients(adminId, branded, {
-            imageRef: clearingImage ? '' : branded.profile.eaImage || '',
-            displayImage: clearingImage
-              ? ''
-              : displayBytes ||
-                displayableImage(branded.profile.eaImage, adminId),
-          });
-          setStore((prev) => {
-            const cur = normalizeWorkspace(
-              prev.workspaces[adminId],
-              auth.admin ?? { id: adminId },
-            );
-            const merged: AdminWorkspace = { ...cur, ...branded, licenses };
-            const next = {
-              ...prev,
-              workspaces: { ...prev.workspaces, [adminId]: merged },
-            };
-            saveJSON(STORE_KEY, next);
-            void pushDb({
-              store: { workspaces: { [adminId]: merged } },
-              vault: loadVault(),
-              ...(displayBytes
-                ? { images: { [`profile-${adminId}`]: displayBytes } }
-                : {}),
-            }).catch(() => undefined);
-            return next;
-          });
+          void (async () => {
+            try {
+              const licenses = await withTimeout(
+                syncPortalBrandingToClients(adminId, branded, {
+                  imageRef: clearingImage ? '' : branded.profile.eaImage || '',
+                  displayImage: clearingImage
+                    ? ''
+                    : displayBytes ||
+                      displayableImage(branded.profile.eaImage, adminId),
+                }),
+                25_000,
+                branded.licenses,
+              );
+              setStore((prev) => {
+                const cur = normalizeWorkspace(
+                  prev.workspaces[adminId],
+                  auth.admin ?? { id: adminId },
+                );
+                const merged: AdminWorkspace = { ...cur, ...branded, licenses };
+                const next = {
+                  ...prev,
+                  workspaces: { ...prev.workspaces, [adminId]: merged },
+                };
+                saveJSON(STORE_KEY, next);
+                void pushDb({
+                  store: { workspaces: { [adminId]: merged } },
+                  vault: loadVault(),
+                  ...(displayBytes
+                    ? { images: { [`profile-${adminId}`]: displayBytes } }
+                    : {}),
+                }).catch(() => undefined);
+                return next;
+              });
+            } catch {
+              // local profile already saved — cloud sync can retry on next save
+            }
+          })();
         })();
       },
       executeOrder: (order) => {

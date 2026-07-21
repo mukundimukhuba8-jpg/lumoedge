@@ -818,27 +818,44 @@ export default async function handler(req, res) {
         });
       }
 
-      // Reset subscription payment so client must pay again
-      const clients = dbList(await firebaseRead('lumo/clients'));
-      const clientIdx = clients.findIndex(
+      // Reset subscription payment so client must pay again — never downgrade approval
+      const freshClients = dbList(await firebaseRead('lumo/clients'));
+      const clientIdx = freshClients.findIndex(
         (c) => String(c?.email || '').toLowerCase() === email,
       );
+      let clientStatus = 'pending';
       if (clientIdx >= 0) {
-        clients[clientIdx] = {
-          ...clients[clientIdx],
+        const prev = freshClients[clientIdx];
+        freshClients[clientIdx] = mergeClientRecord(prev, {
+          ...prev,
           paymentClaimed: false,
           paymentClaimedAt: null,
-        };
-        await firebaseWrite('lumo/clients', clients);
+        });
+        clientStatus = freshClients[clientIdx].status || 'pending';
       }
+
+      const wsMirror = { store: { workspaces: { ...workspaces } } };
+      if (clientIdx >= 0) {
+        mirrorClientToSuper(wsMirror, freshClients[clientIdx]);
+      }
+      const sid = 'LM-004821';
+      const superWs = wsMirror.store.workspaces[sid];
+
+      await Promise.all([
+        firebaseWrite('lumo/clients', freshClients),
+        superWs
+          ? firebaseWrite(`lumo/store/workspaces/${sid}`, superWs)
+          : Promise.resolve(true),
+      ]);
 
       const sessions = (await firebaseRead('lumo/sessions')) || {};
       if (sessions[email]) {
         const prev = sessions[email];
         const prevBot = prev?.bot && typeof prev.bot === 'object' ? prev.bot : {};
+        const keepApproved = clientStatus === 'approved';
         sessions[email] = {
           ...prev,
-          accessStatus: 'pending',
+          accessStatus: keepApproved ? 'approved' : 'pending',
           bot: {
             ...prevBot,
             licenseKey: '',

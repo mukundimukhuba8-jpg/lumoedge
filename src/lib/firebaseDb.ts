@@ -251,10 +251,9 @@ function mergeWorkspace(
     eas,
     licenses,
     profile,
-    clientRequests: mergeById(
+    clientRequests: mergeClients(
       (Array.isArray(a.clientRequests) ? a.clientRequests : []) as Record<string, unknown>[],
       (Array.isArray(b.clientRequests) ? b.clientRequests : []) as Record<string, unknown>[],
-      (c) => String(c.id || c.email || ''),
     ),
     revokedKeys: Array.from(
       new Set([
@@ -367,10 +366,9 @@ export async function firebasePushDb(
             e.toLowerCase(),
           ),
         );
-        patch.clients = mergeById(
+        patch.clients = mergeClients(
           curClients,
-          partial.clients,
-          (c) => String(c.id || c.email || ''),
+          partial.clients as RemoteDb['clients'],
         ).filter((c) => !deleted.has(String(c.email || '').toLowerCase()));
       }
 
@@ -594,7 +592,15 @@ export async function firebasePostClient(input: {
         await getPath<RemoteDb['clients']>(`${ROOT}/clients`),
       );
       const existing = curClients.find((c) => c.email.toLowerCase() === email);
-      if (existing) return existing;
+      if (existing) {
+        const remoteWs =
+          (await getPath<Record<string, unknown>>(`${ROOT}/store/workspaces`)) || {};
+        await update(ref(getFirebaseDb(), ROOT), {
+          'store/workspaces': mirrorClientToSuperWorkspace(remoteWs, existing),
+          updatedAt: new Date().toISOString(),
+        }).catch(() => undefined);
+        return existing;
+      }
       const entry: RemoteDb['clients'][number] = {
         id: `cli-${Date.now()}`,
         email,

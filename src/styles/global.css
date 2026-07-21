@@ -112,8 +112,12 @@ a {
   border-radius: 12px;
   color: var(--text);
   padding: 12px 14px;
-  font-size: 14px;
+  font-size: 16px;
   outline: none;
+}
+
+.field textarea {
+  font-size: 16px;
 }
 
 .field input:focus,
@@ -645,6 +649,8 @@ a {
   background: rgba(8, 12, 22, 0.72);
   border: 1px solid rgba(103, 232, 249, 0.18);
   border-radius: 14px;
+  /* 16px prevents iOS Safari zoom-on-focus in admin portal */
+  font-size: 16px;
 }
 
 .admin-shell-dark .field input:focus,
