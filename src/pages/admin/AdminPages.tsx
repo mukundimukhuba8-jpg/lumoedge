@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Loader2, MoreVertical, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck } from 'lucide-react';
 import { BackgroundManager } from '../../components/BackgroundManager';
+import { normalizeAdminRole } from '../../lib/adminQueue';
 import { normalizeClientStatus } from '../../lib/clientQueue';
 import { useAdmin, type ClientRequest } from '../../context/AdminContext';
 import { resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
@@ -1150,8 +1151,12 @@ export function ApproveAdminsPage() {
       .toLowerCase()
       .includes(query);
   };
-  const pending = admins.filter((a) => a.role === 'pending').filter(match);
-  const approved = admins.filter((a) => a.role === 'admin').filter(match);
+  const pending = admins
+    .filter((a) => normalizeAdminRole(a.role) === 'pending')
+    .filter(match);
+  const approved = admins
+    .filter((a) => normalizeAdminRole(a.role) === 'admin')
+    .filter(match);
 
   const onDelete = (id: string, label: string) => {
     if (!confirm(`Delete ${label}? This cannot be undone.`)) return;

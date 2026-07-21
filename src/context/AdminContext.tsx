@@ -74,6 +74,7 @@ import {
   validateLicenseEmailAccess,
 } from '../lib/licenseClaim';
 import { approvalError, approvalLog, approvalWarn } from '../lib/approvalLog';
+import { isApprovedAdminRole, normalizeAdminRole } from '../lib/adminQueue';
 import { countClientQueue, normalizeClientStatus, pickClientStatus } from '../lib/clientQueue';
 import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
 
@@ -1012,22 +1013,29 @@ function applyRemoteAdmins(
   prev: AuthState,
   remoteAdmins: AdminUser[],
 ): AuthState {
-  const admins = mergeAdmins(prev.admins, remoteAdmins) as AdminUser[];
+  const admins = mergeAdmins(prev.admins, remoteAdmins).map((a) => ({
+    ...a,
+    role: normalizeAdminRole(a.role),
+  })) as AdminUser[];
   const healed = admins.some((a) => {
     const remote = remoteAdmins.find(
       (r) => r.email.toLowerCase() === a.email.toLowerCase(),
     );
-    return remote && a.role === 'admin' && remote.role === 'pending';
+    return (
+      remote &&
+      normalizeAdminRole(a.role) === 'admin' &&
+      normalizeAdminRole(remote.role) === 'pending'
+    );
   });
   if (healed) {
     void pushDb({ auth: { admins, admin: null } }).catch(() => undefined);
   }
   let admin = prev.admin;
-  if (admin && admin.role !== 'super') {
+    if (admin && normalizeAdminRole(admin.role) !== 'super') {
     const remote = admins.find(
       (a) => a.email.toLowerCase() === admin!.email.toLowerCase(),
     );
-    if (!remote || remote.role !== 'admin') admin = null;
+    if (!remote || normalizeAdminRole(remote.role) !== 'admin') admin = null;
   }
   return { portalOpen: prev.portalOpen, admin, admins };
 }
@@ -1206,7 +1214,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         if (adminsMatch(prev.admins, nextAuth.admins)) return prev;
         const addedPending = nextAuth.admins.filter(
           (a) =>
-            a.role === 'pending' &&
+            normalizeAdminRole(a.role) === 'pending' &&
             !prev.admins.some((p) => p.id === a.id || p.email.toLowerCase() === a.email.toLowerCase()),
         );
         if (addedPending.length) {
@@ -1324,7 +1332,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
     for (const id of unique) {
       const hit = auth.admins.find((a) => a.id === id);
-      if (!hit || hit.role !== 'pending') {
+      if (!hit || normalizeAdminRole(hit.role) !== 'pending') {
         approvalWarn('mentor', 'approve_target_missing', { id });
         continue;
       }
@@ -1336,10 +1344,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       });
 
       let result = await patchAdminRole(hit.id, 'admin');
-      if (!result?.admin && !result?.ok) {
+      if (!result?.admin || !isApprovedAdminRole(result.admin.role)) {
         result = await patchAdminRole(hit.email, 'admin');
       }
-      if (!result?.admin && !result?.ok) {
+      if (!result?.admin || !isApprovedAdminRole(result.admin.role)) {
         approvalError('mentor', 'database_update_failure', {
           id: hit.id,
           email: hit.email,
@@ -1357,10 +1365,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const nextAdmins = prev.admins.map((a) =>
           a.id === hit.id || a.email.toLowerCase() === hit.email.toLowerCase()
             ? approved
-            : a,
+            : { ...a, role: normalizeAdminRole(a.role) },
         );
         const next = { ...prev, admins: nextAdmins };
         saveJSON(AUTH_KEY, { ...next, portalOpen: false });
+        void pushDb({ auth: { admins: nextAdmins, admin: null } }).catch(() => undefined);
         return next;
       });
 

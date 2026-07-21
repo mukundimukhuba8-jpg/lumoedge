@@ -963,7 +963,15 @@ export default async function handler(req, res) {
         firebasePatchAdminRole,
       } = await import('./_lib/clientMerge.mjs');
       const fbUpdated = await firebasePatchAdminRole(id, role);
-      send(res, 200, { ok: true, admin: fbUpdated || updated });
+      if (!fbUpdated) {
+        send(res, 404, {
+          error: 'Mentor not found in Firebase or role update failed',
+          id,
+          table: 'lumo/auth/admins',
+        });
+        return;
+      }
+      send(res, 200, { ok: true, admin: fbUpdated });
       return;
     }
 

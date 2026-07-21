@@ -474,7 +474,12 @@ export async function patchAdminRole(id: string, role: 'pending' | 'admin') {
     })(),
     MENTOR_APPROVE_TIMEOUT_MS,
   );
-  if (result?.admin || result?.ok) {
+  const approved =
+    result?.admin &&
+    String(result.admin.role ?? '')
+      .trim()
+      .toLowerCase() === 'admin';
+  if (approved) {
     approvalLog('mentor', 'database_patch_success', {
       id: key,
       after: role,
@@ -483,8 +488,11 @@ export async function patchAdminRole(id: string, role: 'pending' | 'admin') {
   } else {
     approvalError('mentor', 'database_patch_failure', {
       id: key,
-      error: 'Mentor approve API returned no result',
+      error: result?.admin
+        ? `Mentor approve returned role ${String(result.admin.role)}`
+        : 'Mentor approve API returned no admin record',
     });
+    return null;
   }
   return result;
 }
