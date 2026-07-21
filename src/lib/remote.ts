@@ -37,6 +37,8 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 const FETCH_DB_TIMEOUT_MS = 15_000;
+const FETCH_DB_CACHE_MS = 4000;
+const FETCH_SESSION_TIMEOUT_MS = 8000;
 const FETCH_CLIENTS_TIMEOUT_MS = 15_000;
 const FETCH_ADMINS_TIMEOUT_MS = 12_000;
 const MENTOR_REGISTER_TIMEOUT_MS = 20_000;
@@ -49,7 +51,19 @@ function fetchWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null>
   ]);
 }
 
+let fetchDbCache: {
+  at: number;
+  value: RemoteDb | null;
+  inflight: Promise<RemoteDb | null> | null;
+} = { at: 0, value: null, inflight: null };
+
 export async function fetchDb(): Promise<RemoteDb | null> {
+  const now = Date.now();
+  if (fetchDbCache.value && now - fetchDbCache.at < FETCH_DB_CACHE_MS) {
+    return fetchDbCache.value;
+  }
+  if (fetchDbCache.inflight) return fetchDbCache.inflight;
+
   const work = async (): Promise<RemoteDb | null> => {
     if (isFirebaseConfigured()) {
       const fb = await firebaseFetchDb();
@@ -61,7 +75,14 @@ export async function fetchDb(): Promise<RemoteDb | null> {
       return null;
     }
   };
-  return fetchWithTimeout(work(), FETCH_DB_TIMEOUT_MS);
+
+  fetchDbCache.inflight = fetchWithTimeout(work(), FETCH_DB_TIMEOUT_MS).then((result) => {
+    fetchDbCache.value = result;
+    fetchDbCache.at = Date.now();
+    fetchDbCache.inflight = null;
+    return result;
+  });
+  return fetchDbCache.inflight;
 }
 
 export type PublishLicensesResult =
@@ -183,25 +204,27 @@ export async function claimLicenseRemote(
 }
 
 export async function pushDb(partial: Partial<RemoteDb>): Promise<RemoteDb | null> {
-  if (isFirebaseConfigured()) {
-    const fb = await firebasePushDb(partial);
-    if (fb) {
-      // Best-effort mirror to /api for local/dev tools
-      void req<RemoteDb>('/api/db', {
+  const work = async (): Promise<RemoteDb | null> => {
+    if (isFirebaseConfigured()) {
+      const fb = await firebasePushDb(partial);
+      if (fb) {
+        void req<RemoteDb>('/api/db', {
+          method: 'PUT',
+          body: JSON.stringify(partial),
+        }).catch(() => null);
+        return fb;
+      }
+    }
+    try {
+      return await req<RemoteDb>('/api/db', {
         method: 'PUT',
         body: JSON.stringify(partial),
-      }).catch(() => null);
-      return fb;
+      });
+    } catch {
+      return null;
     }
-  }
-  try {
-    return await req<RemoteDb>('/api/db', {
-      method: 'PUT',
-      body: JSON.stringify(partial),
-    });
-  } catch {
-    return null;
-  }
+  };
+  return fetchWithTimeout(work(), FETCH_DB_TIMEOUT_MS);
 }
 
 export async function fetchClients() {
@@ -549,15 +572,18 @@ export async function deleteClientRemote(id: string) {
 }
 
 export async function fetchSession<T>(email: string): Promise<T | null> {
-  if (isFirebaseConfigured()) {
-    const fb = await firebaseFetchSession<T>(email);
-    if (fb) return fb;
-  }
-  try {
-    return await req<T | null>(`/api/sessions/${encodeURIComponent(email.toLowerCase())}`);
-  } catch {
-    return null;
-  }
+  const work = async (): Promise<T | null> => {
+    if (isFirebaseConfigured()) {
+      const fb = await firebaseFetchSession<T>(email);
+      if (fb) return fb;
+    }
+    try {
+      return await req<T | null>(`/api/sessions/${encodeURIComponent(email.toLowerCase())}`);
+    } catch {
+      return null;
+    }
+  };
+  return fetchWithTimeout(work(), FETCH_SESSION_TIMEOUT_MS);
 }
 
 export async function pushSession(email: string, session: unknown) {

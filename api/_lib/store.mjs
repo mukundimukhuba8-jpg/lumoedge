@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mergeDatabases } from './mergeDb.mjs';
 
 const OWNER = process.env.LUMO_DATA_OWNER || 'mukundimukhuba8-jpg';
 const REPO = process.env.LUMO_DATA_REPO || 'lumoedge';
@@ -128,7 +129,18 @@ export async function loadDb() {
 }
 
 export async function saveDb(db, sha) {
-  const next = { ...normalizeDb(db), updatedAt: new Date().toISOString() };
+  let latest = emptyDb();
+  try {
+    const loaded = await loadDb();
+    latest = loaded.db;
+    if (loaded.sha) sha = loaded.sha;
+  } catch {
+    latest = structuredClone(memoryDb);
+  }
+  const next = {
+    ...mergeDatabases(latest, db),
+    updatedAt: new Date().toISOString(),
+  };
   if (!useGitHub()) {
     return { db: saveLocal(next), sha: null, backend: 'local-file' };
   }
@@ -151,25 +163,10 @@ export async function saveDb(db, sha) {
   });
   if (res.status === 409) {
     const fresh = await loadDb();
-    const merged = normalizeDb({
-      ...fresh.db,
-      ...next,
-      auth: { ...fresh.db.auth, ...(next.auth || {}) },
-      store: {
-        workspaces: {
-          ...(fresh.db.store?.workspaces || {}),
-          ...(next.store?.workspaces || {}),
-        },
-      },
-      clients: Array.isArray(next.clients) ? next.clients : fresh.db.clients,
-      sessions: { ...(fresh.db.sessions || {}), ...(next.sessions || {}) },
-      images: { ...(fresh.db.images || {}), ...(next.images || {}) },
-      vault: Array.isArray(next.vault) ? next.vault : fresh.db.vault,
-      revokedKeys: [
-        ...new Set([...(fresh.db.revokedKeys || []), ...(next.revokedKeys || [])]),
-      ],
-    });
-    merged.updatedAt = new Date().toISOString();
+    const merged = {
+      ...mergeDatabases(fresh.db, next),
+      updatedAt: new Date().toISOString(),
+    };
     const retry = await fetch(url, {
       method: 'PUT',
       headers: { ...ghHeaders(), 'Content-Type': 'application/json' },
