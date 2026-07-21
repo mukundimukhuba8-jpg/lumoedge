@@ -264,11 +264,12 @@ export function HomePage() {
   return (
     <div className={`app-shell home-layout-${stylePrefs.layout}`}>
       {fxClass ? <div className={`iface-fx ${fxClass}`} aria-hidden /> : null}
-      {/* Floating profile avatar — only when mentor uploaded a real photo */}
-      {stylePrefs.layout !== 'vortex' && displayAvatar ? (
+      {/* Floating profile avatar — visible only while EA is running */}
+      {stylePrefs.layout !== 'vortex' && displayAvatar && !isPaused ? (
         <button
           type="button"
           ref={floatRef}
+          className="ea-float-avatar ea-float-live"
           aria-label="EA profile"
           onPointerDown={onFloatPointerDown}
           onPointerMove={onFloatPointerMove}
@@ -289,7 +290,7 @@ export function HomePage() {
             border: '2px solid var(--electric)',
             background: '#0e1220',
             boxShadow: `0 4px 18px rgba(${accentRgb},0.45)`,
-            overflow: 'hidden',
+            overflow: 'visible',
           }}
         >
           <img
@@ -307,6 +308,7 @@ export function HomePage() {
               objectFit: 'cover',
               pointerEvents: 'none',
               display: 'block',
+              borderRadius: '50%',
             }}
           />
         </button>
@@ -537,12 +539,15 @@ export function HomePage() {
             >
               ×
             </button>
-            <div className="ea-status-avatar-ring">
-              {displayAvatar ? (
-                <img src={displayAvatar} alt="" />
-              ) : (
-                <span className="ea-status-avatar-empty" aria-hidden />
-              )}
+            <div className="ea-status-avatar-wrap">
+              {!isPaused ? <span className="ea-status-live-ring" aria-hidden /> : null}
+              <div className="ea-status-avatar-ring">
+                {displayAvatar ? (
+                  <img src={displayAvatar} alt="" />
+                ) : (
+                  <span className="ea-status-avatar-empty" aria-hidden />
+                )}
+              </div>
             </div>
             <span className={`ea-status-pill${isPaused ? ' off' : ''}`}>
               <span className="ea-status-dot" />
