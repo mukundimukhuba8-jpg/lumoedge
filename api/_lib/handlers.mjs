@@ -4,10 +4,20 @@ import {
   firebasePatchAdminRole,
   firebasePatchClientById,
   firebasePostClientEntry,
+  firebaseRegisterMentor,
+  firebaseRead,
   loadMergedClients,
+  mergeAdminsLive,
   mergeClients,
+  normalizeAdminRole,
 } from './clientMerge.mjs';
 import { mergeDatabases } from './mergeDb.mjs';
+
+function toArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') return Object.values(value);
+  return [];
+}
 
 function json(res, status, data) {
   res.statusCode = status;
@@ -169,6 +179,116 @@ export async function handleApi(req, res, pathname) {
       mirrorClientToSuper(db, fbUpdated);
       await saveDb(db, sha);
       json(res, 200, fbUpdated);
+      return true;
+    }
+
+    if (pathname === '/api/auth/admins' && req.method === 'GET') {
+      const curAuth = await firebaseRead('lumo/auth');
+      const fbAdmins = toArray(curAuth?.admins);
+      const { db } = await loadDb();
+      const localAdmins = toArray(db.auth?.admins);
+      json(res, 200, mergeAdminsLive(fbAdmins, localAdmins));
+      return true;
+    }
+
+    if (pathname === '/api/auth/admins/repair-sync' && req.method === 'POST') {
+      const curAuth = await firebaseRead('lumo/auth');
+      const fbAdmins = toArray(curAuth?.admins);
+      const { db, sha } = await loadDb();
+      const localAdmins = toArray(db.auth?.admins);
+      const merged = mergeAdminsLive(fbAdmins, localAdmins);
+      db.auth = db.auth || { admins: [], admin: null };
+      db.auth.admins = merged;
+      try {
+        await saveDb(db, sha);
+      } catch {
+        // Firebase still holds the live mentor queue even if local write fails
+      }
+      json(res, 200, {
+        ok: true,
+        total: merged.length,
+        pending: merged.filter((a) => normalizeAdminRole(a?.role) === 'pending').length,
+        approved: merged.filter((a) => normalizeAdminRole(a?.role) === 'admin').length,
+      });
+      return true;
+    }
+
+    if (pathname === '/api/auth/register' && req.method === 'POST') {
+      const body = await readBody(req);
+      const email = String(body.email || '')
+        .trim()
+        .toLowerCase();
+      const fullName = String(body.fullName || '').trim();
+      const password = String(body.password || '');
+      if (!email || !password || !fullName) {
+        json(res, 400, { error: 'email, password, fullName required' });
+        return true;
+      }
+      if (email === 'mukundimukhuba8@gmail.com') {
+        json(res, 403, { error: 'This email is reserved for Super Admin.' });
+        return true;
+      }
+      const fbAdmins = toArray((await firebaseRead('lumo/auth'))?.admins);
+      const existingFb = fbAdmins.find((a) => String(a.email || '').toLowerCase() === email);
+      if (existingFb) {
+        json(res, 200, existingFb);
+        return true;
+      }
+      const { db, sha } = await loadDb();
+      const admins = toArray(db.auth?.admins);
+      const existing = admins.find((a) => String(a.email || '').toLowerCase() === email);
+      if (existing) {
+        json(res, 200, existing);
+        return true;
+      }
+      const entry = {
+        id: `LM-${Math.floor(100000 + Math.random() * 900000)}`,
+        email,
+        fullName,
+        password,
+        role: 'pending',
+        mentorName: String(body.mentorName || '').trim(),
+        eaName: String(body.eaName || '').trim(),
+        phone: String(body.phone || '').trim(),
+        mainText: String(body.mainText || '').trim(),
+      };
+      const nameParts = fullName.split(/\s+/).filter(Boolean);
+      const workspace = {
+        eas: [],
+        licenses: [],
+        clientRequests: [],
+        mt5: {},
+        profile: {
+          firstName: nameParts[0] || '',
+          lastName: nameParts.slice(1).join(' '),
+          email,
+          phone: entry.phone,
+          mentorName: entry.mentorName,
+          mentorId: entry.id,
+          eaDisplayName: entry.eaName,
+          mainText: entry.mainText,
+          eaImage: '',
+          customMedia: [],
+        },
+        orders: [],
+        revokedKeys: [],
+      };
+      const savedToFirebase = await firebaseRegisterMentor(entry, workspace);
+      if (!savedToFirebase) {
+        json(res, 503, { error: 'Could not save registration to cloud database' });
+        return true;
+      }
+      db.auth = db.auth || { admins: [], admin: null };
+      db.auth.admins = mergeAdminsLive(admins, [entry]);
+      db.store = db.store || { workspaces: {} };
+      db.store.workspaces = db.store.workspaces || {};
+      db.store.workspaces[entry.id] = workspace;
+      try {
+        await saveDb(db, sha);
+      } catch {
+        // Firebase is the source of truth for live mentor registrations
+      }
+      json(res, 201, entry);
       return true;
     }
 

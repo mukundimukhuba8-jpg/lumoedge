@@ -59,7 +59,7 @@ export function EmailCenterPage() {
     [audience],
   );
 
-  const useTemplate = (tpl: Template) => {
+  const applyTemplate = (tpl: Template) => {
     setSubject(tpl.subject);
     setBody(tpl.body);
     setTab('compose');
@@ -111,13 +111,13 @@ export function EmailCenterPage() {
               <h3>{tpl.title}</h3>
               <p className="muted">{tpl.subject}</p>
               <div className="email-template-actions">
-                <button type="button" className="btn btn-ghost" onClick={() => useTemplate(tpl)}>
+                <button type="button" className="btn btn-ghost" onClick={() => applyTemplate(tpl)}>
                   <Edit3 size={14} /> Use
                 </button>
-                <button type="button" className="btn btn-ghost" onClick={() => useTemplate(tpl)}>
+                <button type="button" className="btn btn-ghost" onClick={() => applyTemplate(tpl)}>
                   Preview
                 </button>
-                <button type="button" className="btn btn-ghost" onClick={() => useTemplate({ ...tpl, id: `${tpl.id}-copy` })}>
+                <button type="button" className="btn btn-ghost" onClick={() => applyTemplate({ ...tpl, id: `${tpl.id}-copy` })}>
                   <Copy size={14} />
                 </button>
                 <button type="button" className="btn btn-ghost" aria-label="Delete">

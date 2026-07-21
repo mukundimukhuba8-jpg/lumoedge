@@ -1247,9 +1247,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Keep subscription list fresh for admin portal only
+  // Keep subscription list fresh — admin portal + waiting clients on phones
   useEffect(() => {
-    if (booting || !isAdminPortalSession()) return;
+    if (booting) return;
     const tick = async () => {
       const list = await fetchClients();
       if (list) {
