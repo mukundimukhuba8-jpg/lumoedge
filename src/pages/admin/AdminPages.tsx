@@ -1244,8 +1244,15 @@ export function ApproveAdminsPage() {
 }
 
 export function SubscriptionsPage() {
-  const { clientRequests, approveClient, markClientPaid, deleteClient, stats } = useAdmin();
+  const { clientRequests, approveClient, addApprovedSubscriber, markClientPaid, deleteClient, stats } =
+    useAdmin();
   const [q, setQ] = useState('');
+  const [manualEmail, setManualEmail] = useState('');
+  const [manualFirst, setManualFirst] = useState('');
+  const [manualLast, setManualLast] = useState('');
+  const [manualMsg, setManualMsg] = useState('');
+  const [manualTone, setManualTone] = useState<'ok' | 'err'>('ok');
+  const [manualSaving, setManualSaving] = useState(false);
   const query = q.trim().toLowerCase();
   const match = (c: { firstName: string; lastName: string; email: string }) => {
     if (!query) return true;
@@ -1263,14 +1270,101 @@ export function SubscriptionsPage() {
     deleteClient(id);
   };
 
+  const onAddManual = async () => {
+    if (manualSaving) return;
+    setManualMsg('');
+    setManualSaving(true);
+    try {
+      const result = await addApprovedSubscriber({
+        email: manualEmail,
+        firstName: manualFirst,
+        lastName: manualLast,
+      });
+      if (result.ok) {
+        setManualTone('ok');
+        setManualMsg(
+          `${result.client.firstName} ${result.client.lastName} (${result.client.email}) added as approved — ready for license key.`,
+        );
+        setManualEmail('');
+        setManualFirst('');
+        setManualLast('');
+      } else {
+        setManualTone('err');
+        setManualMsg(result.error);
+      }
+    } catch {
+      setManualTone('err');
+      setManualMsg('Could not add subscriber. Try again.');
+    } finally {
+      setManualSaving(false);
+    }
+  };
+
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div>
         <h2 className="title-blue" style={{ fontSize: 17, margin: 0 }}>Subscriptions</h2>
         <p className="muted">
           New Lumo Edge registrations land here (saved on server). Approve after you
-          confirm payment proof at lumoedge08@gmail.com.
+          confirm payment proof at lumoedge08@gmail.com. If someone does not show up,
+          add them manually below — they go straight to approved.
         </p>
+      </div>
+
+      <div className="glow-card">
+        <h3 style={{ marginTop: 0 }}>Add subscriber manually</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Use when a client paid but is missing from the list. They are saved as{' '}
+          <strong style={{ color: 'var(--green)' }}>approved</strong> immediately.
+        </p>
+        <div className="field">
+          <label>Email</label>
+          <input
+            type="email"
+            value={manualEmail}
+            onChange={(e) => setManualEmail(e.target.value)}
+            placeholder="client@email.com"
+            autoComplete="email"
+          />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div className="field">
+            <label>First name</label>
+            <input
+              value={manualFirst}
+              onChange={(e) => setManualFirst(e.target.value)}
+              placeholder="First name"
+            />
+          </div>
+          <div className="field">
+            <label>Last name</label>
+            <input
+              value={manualLast}
+              onChange={(e) => setManualLast(e.target.value)}
+              placeholder="Last name"
+            />
+          </div>
+        </div>
+        <button
+          className="btn btn-blue"
+          type="button"
+          disabled={manualSaving || !manualEmail.trim()}
+          onClick={() => void onAddManual()}
+        >
+          {manualSaving ? 'Adding…' : 'Add as approved'}
+        </button>
+        {manualMsg ? (
+          <p
+            style={{
+              margin: '10px 0 0',
+              color: manualTone === 'ok' ? 'var(--green)' : '#f87171',
+              fontWeight: 700,
+              fontSize: 13,
+            }}
+          >
+            {manualMsg}
+          </p>
+        ) : null}
       </div>
 
       <div className="field" style={{ marginBottom: 0 }}>

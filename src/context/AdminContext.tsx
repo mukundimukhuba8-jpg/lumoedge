@@ -879,6 +879,12 @@ type Ctx = {
     lastName: string;
   }) => ClientRequest;
   approveClient: (id: string) => void;
+  /** Super Admin — add a subscriber who never appeared in the queue */
+  addApprovedSubscriber: (input: {
+    email: string;
+    firstName: string;
+    lastName: string;
+  }) => Promise<{ ok: true; client: ClientRequest } | { ok: false; error: string }>;
   markClientPaid: (id: string) => void;
   rejectClient: (id: string) => void;
   deleteClient: (id: string) => void;
@@ -1792,6 +1798,116 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           .catch(async () => {
             await persistApproval(approved);
           });
+      },
+      addApprovedSubscriber: async (input) => {
+        const email = input.email.trim().toLowerCase();
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          return { ok: false, error: 'Enter a valid email address.' };
+        }
+        forgetDeletedClient(email);
+        const firstName = input.firstName.trim() || email.split('@')[0] || 'Client';
+        const lastName = input.lastName.trim();
+        const claimedAt = new Date().toISOString();
+        const existing =
+          clients.find((c) => c.email.toLowerCase() === email) ||
+          Object.values(store.workspaces)
+            .flatMap((ws) => ws.clientRequests)
+            .find((c) => c.email.toLowerCase() === email);
+
+        const approved: ClientRequest = {
+          id: existing?.id || `cli-${Date.now()}`,
+          email,
+          firstName: firstName || existing?.firstName || 'Client',
+          lastName: lastName || existing?.lastName || '',
+          status: 'approved',
+          createdAt: existing?.createdAt || claimedAt,
+          notifiedAt: claimedAt,
+          paymentClaimed: true,
+          paymentClaimedAt: existing?.paymentClaimedAt || claimedAt,
+        };
+
+        const sid = SUPER_ADMIN.user.id;
+        setClients((prev) => {
+          const merged = mergeClientLists(prev, [approved]);
+          void pushDb({ clients: merged }).catch(() => undefined);
+          return merged;
+        });
+        patchWorkspace(sid, (ws) => ({
+          ...ws,
+          clientRequests: mergeClientLists(ws.clientRequests, [approved]),
+        }));
+
+        const finalize = async (server: ClientRequest | null) => {
+          const merged: ClientRequest = server
+            ? {
+                ...(server as ClientRequest),
+                email,
+                firstName: approved.firstName,
+                lastName: approved.lastName,
+                status: 'approved',
+                paymentClaimed: true,
+                paymentClaimedAt: approved.paymentClaimedAt,
+              }
+            : approved;
+          setClients((prev) => mergeClientLists(prev, [merged]));
+          patchWorkspace(sid, (ws) => ({
+            ...ws,
+            clientRequests: mergeClientLists(ws.clientRequests, [merged]),
+          }));
+          try {
+            const db = await Promise.race([
+              fetchDb(),
+              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 8000)),
+            ]);
+            const session =
+              (db?.sessions?.[email] as Record<string, unknown> | undefined) || {};
+            await Promise.race([
+              pushSession(email, {
+                ...session,
+                accessStatus: 'approved',
+              }),
+              new Promise((resolve) => window.setTimeout(resolve, 8000)),
+            ]);
+          } catch {
+            // local record is enough for admin list
+          }
+          return merged;
+        };
+
+        try {
+          const posted = await Promise.race([
+            postClient({
+              email,
+              firstName: approved.firstName,
+              lastName: approved.lastName,
+            }),
+            new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 12_000)),
+          ]);
+          const serverId = (posted as ClientRequest | null)?.id || approved.id;
+          let patched = await Promise.race([
+            patchClient(serverId, {
+              status: 'approved',
+              paymentClaimed: true,
+              paymentClaimedAt: approved.paymentClaimedAt,
+            }),
+            new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 12_000)),
+          ]);
+          if (!patched) {
+            patched = await Promise.race([
+              patchClient(email, {
+                status: 'approved',
+                paymentClaimed: true,
+                paymentClaimedAt: approved.paymentClaimedAt,
+              }),
+              new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 12_000)),
+            ]);
+          }
+          const merged = await finalize(patched as ClientRequest | null);
+          return { ok: true, client: merged };
+        } catch {
+          const merged = await finalize(approved);
+          return { ok: true, client: merged };
+        }
       },
       markClientPaid: (id) => {
         const hit = clients.find((c) => c.id === id);
