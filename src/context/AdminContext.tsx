@@ -1468,16 +1468,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         before: hit.role,
       });
 
-      let result = await patchAdminRole(hit.id, 'admin');
+      let result = await patchAdminRole(hit.id, 'admin', hit as Record<string, unknown>);
       if (!result?.admin || !isApprovedAdminRole(result.admin.role)) {
-        result = await patchAdminRole(hit.email, 'admin');
+        result = await patchAdminRole(hit.email, 'admin', hit as Record<string, unknown>);
       }
       if (!result?.admin || !isApprovedAdminRole(result.admin.role)) {
         approvalError('mentor', 'database_update_failure', {
           id: hit.id,
           email: hit.email,
         });
-        throw new Error(`Could not approve ${hit.email}. Check connection and try again.`);
+        throw new Error(MENTOR_AUTH_MSG.approveFailed);
       }
 
       const approved: AdminUser = {

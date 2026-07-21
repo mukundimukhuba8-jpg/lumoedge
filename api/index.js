@@ -978,6 +978,18 @@ export default async function handler(req, res) {
           (a) =>
             a.id === id || String(a.email || '').toLowerCase() === id.toLowerCase(),
         ) || null;
+      let fallback = updated;
+      if (!fallback) {
+        const fbAuth = await firebaseRead('lumo/auth');
+        fallback =
+          toArray(fbAuth?.admins).find(
+            (a) =>
+              a.id === id || String(a.email || '').toLowerCase() === id.toLowerCase(),
+          ) || null;
+      }
+      if (!fallback && body.fallback && typeof body.fallback === 'object') {
+        fallback = body.fallback;
+      }
       try {
         await saveDb(db, sha);
       } catch {
@@ -986,13 +998,9 @@ export default async function handler(req, res) {
       const {
         firebasePatchAdminRole,
       } = await import('./_lib/clientMerge.mjs');
-      const fbUpdated = await firebasePatchAdminRole(id, role);
+      const fbUpdated = await firebasePatchAdminRole(id, role, fallback);
       if (!fbUpdated) {
-        send(res, 404, {
-          error: 'Mentor not found in Firebase or role update failed',
-          id,
-          table: 'lumo/auth/admins',
-        });
+        send(res, 502, { ok: false, error: 'approve_failed' });
         return;
       }
       send(res, 200, { ok: true, admin: fbUpdated });

@@ -11,6 +11,11 @@ export const MENTOR_AUTH_MSG = {
   registerUnavailable: 'Service is temporarily unavailable.',
   registerSuccess:
     'Registration saved. Super Admin will approve your account before you can sign in.',
+  approveFailed: 'Unable to approve mentor. Please try again.',
+  approveSuccess: 'Mentor approved successfully.',
+  approveAllSuccess: 'All pending mentors approved successfully.',
+  refreshFailed: 'Unable to refresh list. Please try again.',
+  refreshSuccess: 'List restored from cloud.',
 } as const;
 
 export const MENTOR_LOGIN_UI_TIMEOUT_MS = 18_000;

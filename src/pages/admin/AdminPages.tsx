@@ -3,6 +3,7 @@ import { Copy, Loader2, MoreVertical, Plus, Trash2, Ban, Clock, CreditCard, KeyR
 import { BackgroundManager } from '../../components/BackgroundManager';
 import { normalizeAdminRole } from '../../lib/adminQueue';
 import { normalizeClientStatus } from '../../lib/clientQueue';
+import { MENTOR_AUTH_MSG } from '../../lib/mentorAuthUi';
 import { useAdmin, type ClientRequest } from '../../context/AdminContext';
 import { resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
 import { compressImageFile, getEaImage, blobUrlToDataUrl } from '../../lib/storage';
@@ -1165,17 +1166,16 @@ export function ApproveAdminsPage() {
     deleteAdmin(id);
   };
 
-  const onApprove = async (id: string, label: string) => {
+  const onApprove = async (id: string) => {
     if (approvingId) return;
     setApproveMsg('');
     setApprovingId(id);
     try {
       await approveAdmin(id);
-      setApproveMsg(`${label} approved and saved to Firebase.`);
+      setApproveMsg(MENTOR_AUTH_MSG.approveSuccess);
     } catch (err) {
-      setApproveMsg(
-        err instanceof Error ? err.message : 'Could not approve mentor — try again.',
-      );
+      console.error('[mentor-auth] Approve failed', err);
+      setApproveMsg(MENTOR_AUTH_MSG.approveFailed);
     } finally {
       setApprovingId(null);
     }
@@ -1187,11 +1187,10 @@ export function ApproveAdminsPage() {
     setApprovingId('all');
     try {
       await approveAdmins(pending.map((a) => a.id));
-      setApproveMsg(`${pending.length} mentor(s) approved and saved to Firebase.`);
+      setApproveMsg(MENTOR_AUTH_MSG.approveAllSuccess);
     } catch (err) {
-      setApproveMsg(
-        err instanceof Error ? err.message : 'Could not approve all mentors — try again.',
-      );
+      console.error('[mentor-auth] Approve all failed', err);
+      setApproveMsg(MENTOR_AUTH_MSG.approveFailed);
     } finally {
       setApprovingId(null);
     }
@@ -1204,14 +1203,14 @@ export function ApproveAdminsPage() {
     try {
       const result = await refreshAdminQueue();
       if (result.ok) {
-        setRefreshMsg(
-          `Restored from cloud — ${result.pending ?? 0} awaiting approval, ${result.approved ?? 0} approved (${result.total ?? 0} total).`,
-        );
+        setRefreshMsg(MENTOR_AUTH_MSG.refreshSuccess);
       } else {
-        setRefreshMsg(result.error || 'Could not refresh mentor list.');
+        console.warn('[mentor-auth] Refresh failed', result.error);
+        setRefreshMsg(MENTOR_AUTH_MSG.refreshFailed);
       }
-    } catch {
-      setRefreshMsg('Could not refresh mentor list. Check your connection.');
+    } catch (err) {
+      console.error('[mentor-auth] Refresh failed', err);
+      setRefreshMsg(MENTOR_AUTH_MSG.refreshFailed);
     } finally {
       setRefreshing(false);
     }
@@ -1245,7 +1244,7 @@ export function ApproveAdminsPage() {
         <p
           style={{
             margin: 0,
-            color: approveMsg.startsWith('Could') ? '#f87171' : 'var(--green)',
+            color: approveMsg === MENTOR_AUTH_MSG.approveFailed ? '#f87171' : 'var(--green)',
             fontWeight: 700,
             fontSize: 13,
           }}
@@ -1258,9 +1257,7 @@ export function ApproveAdminsPage() {
         <p
           style={{
             margin: 0,
-            color: refreshMsg.startsWith('Could') || refreshMsg.includes('not refresh')
-              ? '#f87171'
-              : 'var(--green)',
+            color: refreshMsg === MENTOR_AUTH_MSG.refreshFailed ? '#f87171' : 'var(--green)',
             fontWeight: 700,
             fontSize: 13,
           }}
@@ -1307,7 +1304,7 @@ export function ApproveAdminsPage() {
                   type="button"
                   style={{ flex: 1 }}
                   disabled={Boolean(approvingId)}
-                  onClick={() => void onApprove(a.id, a.fullName || a.email)}
+                  onClick={() => void onApprove(a.id)}
                 >
                   {approvingId === a.id ? 'Approving…' : 'Approve'}
                 </button>

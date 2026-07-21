@@ -475,6 +475,54 @@ export async function firebaseFetchAdmins(): Promise<
   }
 }
 
+/** Patch or insert mentor in Firebase — fixes approve when backup-only pending rows. */
+export async function firebasePatchAdminRole(
+  idOrEmail: string,
+  role: 'pending' | 'admin',
+  fallback?: Record<string, unknown> | null,
+): Promise<Record<string, unknown> | null> {
+  if (!isFirebaseConfigured()) return null;
+  return enqueueWrite(async () => {
+    try {
+      const key = String(idOrEmail || '').trim();
+      const keyLower = key.toLowerCase();
+      const curAuth =
+        (await getPath<RemoteDb['auth']>(`${ROOT}/auth`)) || emptyDb().auth;
+      let admins = dbList<AdminLike>(curAuth.admins);
+      let hit: AdminLike | null = null;
+
+      admins = admins.map((a) => {
+        const match =
+          a.id === key || String(a.email || '').trim().toLowerCase() === keyLower;
+        if (!match) return a;
+        hit = { ...a, role: pickAdminRole(a.role, role) as AdminLike['role'] };
+        return hit;
+      });
+
+      if (!hit && fallback) {
+        hit = {
+          ...fallback,
+          email: String(fallback.email || '').trim().toLowerCase(),
+          role: pickAdminRole(fallback.role, role),
+        } as AdminLike;
+        admins = mergeAdmins(admins, [hit]);
+      }
+
+      if (!hit) return null;
+
+      await update(ref(getFirebaseDb(), `${ROOT}/auth`), {
+        admins,
+        admin: null,
+      });
+      await set(ref(getFirebaseDb(), `${ROOT}/updatedAt`), new Date().toISOString());
+      return hit as Record<string, unknown>;
+    } catch (err) {
+      console.warn('[firebase] patchAdminRole failed', err);
+      return null;
+    }
+  });
+}
+
 export async function firebasePostMentorRegistration(input: {
   email: string;
   password: string;
