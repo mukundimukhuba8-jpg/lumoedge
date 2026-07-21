@@ -17,6 +17,8 @@ import {
   type RemoteDb,
 } from './firebaseDb';
 import { isFirebaseConfigured } from './firebase';
+import { approvalError, approvalLog, approvalWarn } from './approvalLog';
+import { normalizeClientStatus } from './clientQueue';
 
 export type { RemoteDb };
 
@@ -296,15 +298,52 @@ export async function postClient(input: {
   email: string;
   firstName: string;
   lastName: string;
+  status?: 'pending' | 'approved' | 'rejected';
+  paymentClaimed?: boolean;
+  paymentClaimedAt?: string;
 }) {
+  const email = input.email.trim().toLowerCase();
+  approvalLog('client', 'database_post_request', {
+    email,
+    table: 'lumo/clients',
+    status: input.status || 'pending',
+  });
+  let api: RemoteDb['clients'][number] | null = null;
+  try {
+    api = await req<RemoteDb['clients'][number]>('/api/clients', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    if (api) {
+      approvalLog('client', 'database_post_success', {
+        email,
+        id: api.id,
+        status: normalizeClientStatus(api.status),
+        source: 'api',
+      });
+      return api;
+    }
+  } catch (err) {
+    approvalError('client', 'database_post_failure', {
+      email,
+      source: 'api',
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
   if (isFirebaseConfigured()) {
     const fb = await firebasePostClient(input);
-    if (fb) return fb;
+    if (fb) {
+      approvalLog('client', 'database_post_success', {
+        email,
+        id: fb.id,
+        status: normalizeClientStatus(fb.status),
+        source: 'firebase_sdk',
+      });
+      return fb;
+    }
+    approvalWarn('client', 'database_post_failure', { email, source: 'firebase_sdk' });
   }
-  return req<RemoteDb['clients'][number]>('/api/clients', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
+  return api;
 }
 
 export async function patchClient(
@@ -315,18 +354,68 @@ export async function patchClient(
     paymentClaimedAt?: string;
   },
 ) {
-  let fb: RemoteDb['clients'][number] | null = null;
-  if (isFirebaseConfigured()) {
-    fb = await firebasePatchClient(id, patch);
-  }
-  if (fb) return fb;
+  const key = String(id || '').trim();
+  approvalLog('client', 'database_patch_request', {
+    id: key,
+    table: 'lumo/clients',
+    patch,
+  });
+  let api: RemoteDb['clients'][number] | null = null;
   try {
-    return await req<RemoteDb['clients'][number] | null>(`/api/clients/${encodeURIComponent(id)}`, {
+    api = await req<RemoteDb['clients'][number] | null>(
+      `/api/clients/${encodeURIComponent(key)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      },
+    );
+    if (api) {
+      approvalLog('client', 'database_patch_success', {
+        id: api.id,
+        email: api.email,
+        after: normalizeClientStatus(api.status),
+        source: 'api',
+      });
+      return api;
+    }
+    if (api === null) {
+      approvalWarn('client', 'database_patch_not_found', { id: key, source: 'api' });
+    }
+  } catch (err) {
+    approvalError('client', 'database_patch_failure', {
+      id: key,
+      source: 'api',
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  if (isFirebaseConfigured()) {
+    const fb = await firebasePatchClient(key, patch);
+    if (fb) {
+      approvalLog('client', 'database_patch_success', {
+        id: fb.id,
+        email: fb.email,
+        after: normalizeClientStatus(fb.status),
+        source: 'firebase_sdk',
+      });
+      return fb;
+    }
+    approvalError('client', 'database_patch_failure', {
+      id: key,
+      source: 'firebase_sdk',
+      error: 'firebasePatchClient returned null',
+    });
+  }
+  return api;
+}
+
+export async function patchAdminRole(id: string, role: 'pending' | 'admin') {
+  try {
+    return await req<{ ok: boolean }>(`/api/auth/admins/${encodeURIComponent(id)}`, {
       method: 'PATCH',
-      body: JSON.stringify(patch),
+      body: JSON.stringify({ role }),
     });
   } catch {
-    return fb;
+    return null;
   }
 }
 

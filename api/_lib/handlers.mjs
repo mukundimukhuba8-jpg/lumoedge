@@ -1,4 +1,12 @@
 import { emptyDb, hasDurableBackend, loadDb, saveDb } from './store.mjs';
+import {
+  adminRoleRank,
+  firebasePatchAdminRole,
+  firebasePatchClientById,
+  firebasePostClientEntry,
+  loadMergedClients,
+  mergeClients,
+} from './clientMerge.mjs';
 
 function json(res, status, data) {
   res.statusCode = status;
@@ -91,7 +99,8 @@ export async function handleApi(req, res, pathname) {
 
     if (pathname === '/api/db' && req.method === 'GET') {
       const { db } = await loadDb();
-      json(res, 200, db);
+      const mergedClients = await loadMergedClients(loadDb);
+      json(res, 200, { ...db, clients: mergedClients });
       return true;
     }
 
@@ -122,14 +131,13 @@ export async function handleApi(req, res, pathname) {
     }
 
     if (pathname === '/api/clients' && req.method === 'GET') {
-      const { db } = await loadDb();
-      json(res, 200, db.clients || []);
+      const merged = await loadMergedClients(loadDb);
+      json(res, 200, merged);
       return true;
     }
 
     if (pathname === '/api/clients' && req.method === 'POST') {
       const body = await readBody(req);
-      const { db, sha } = await loadDb();
       const email = String(body.email || '')
         .trim()
         .toLowerCase();
@@ -137,25 +145,30 @@ export async function handleApi(req, res, pathname) {
         json(res, 400, { error: 'email, firstName, lastName required' });
         return true;
       }
-      const existing = (db.clients || []).find((c) => c.email === email);
-      if (existing) {
-        json(res, 200, existing);
-        return true;
-      }
-      const entry = {
-        id: `cli-${Date.now()}`,
+      let created = await firebasePostClientEntry({
         email,
         firstName: String(body.firstName).trim(),
         lastName: String(body.lastName).trim(),
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        notifiedAt: new Date().toISOString(),
-        paymentClaimed: false,
-      };
-      db.clients = [entry, ...(db.clients || [])];
-      mirrorClientToSuper(db, entry);
-      const saved = await saveDb(db, sha);
-      const created = (saved.db.clients || []).find((c) => c.email === email) || entry;
+        status: body.status || 'pending',
+        paymentClaimed: body.paymentClaimed,
+        paymentClaimedAt: body.paymentClaimedAt,
+      });
+      if (body.status === 'approved' || body.paymentClaimed) {
+        created =
+          (await firebasePatchClientById(email, {
+            status: 'approved',
+            paymentClaimed: true,
+            paymentClaimedAt: body.paymentClaimedAt || new Date().toISOString(),
+          })) || created;
+      }
+      if (!created) {
+        json(res, 503, { error: 'Could not save client to Firebase' });
+        return true;
+      }
+      const { db, sha } = await loadDb();
+      db.clients = mergeClients(db.clients || [], [created]);
+      mirrorClientToSuper(db, created);
+      await saveDb(db, sha);
       json(res, 201, created);
       return true;
     }
@@ -163,30 +176,40 @@ export async function handleApi(req, res, pathname) {
     if (pathname.startsWith('/api/clients/') && req.method === 'PATCH') {
       const id = decodeURIComponent(pathname.replace('/api/clients/', ''));
       const body = await readBody(req);
+      const fbUpdated = await firebasePatchClientById(id, body);
+      if (!fbUpdated) {
+        json(res, 404, { error: 'Client not found in Firebase', id, table: 'lumo/clients' });
+        return true;
+      }
       const { db, sha } = await loadDb();
-      db.clients = (db.clients || []).map((c) => {
-        if (c.id !== id && c.email !== id) return c;
+      db.clients = mergeClients(db.clients || [], [fbUpdated]);
+      mirrorClientToSuper(db, fbUpdated);
+      await saveDb(db, sha);
+      json(res, 200, fbUpdated);
+      return true;
+    }
+
+    if (pathname.startsWith('/api/auth/admins/') && req.method === 'PATCH') {
+      const id = decodeURIComponent(pathname.replace('/api/auth/admins/', ''));
+      const body = await readBody(req);
+      const role = body.role === 'admin' ? 'admin' : body.role === 'pending' ? 'pending' : null;
+      if (!role || !id) {
+        json(res, 400, { error: 'id and role (admin|pending) required' });
+        return true;
+      }
+      const { db, sha } = await loadDb();
+      db.auth = db.auth || { admins: [], admin: null };
+      db.auth.admins = (db.auth.admins || []).map((a) => {
+        if (a.id !== id) return a;
         return {
-          ...c,
-          ...body,
-          id: c.id,
-          email: c.email,
-          paymentClaimed:
-            body.paymentClaimed === true || c.paymentClaimed === true
-              ? true
-              : Boolean(body.paymentClaimed ?? c.paymentClaimed),
-          paymentClaimedAt:
-            body.paymentClaimed === true
-              ? body.paymentClaimedAt || new Date().toISOString()
-              : c.paymentClaimedAt,
+          ...a,
+          role: adminRoleRank(a.role) >= adminRoleRank(role) ? a.role : role,
         };
       });
-      const updated =
-        db.clients.find((c) => c.id === id) ||
-        db.clients.find((c) => c.email === id);
-      if (updated) mirrorClientToSuper(db, updated);
+      const updated = (db.auth.admins || []).find((a) => a.id === id) || null;
       await saveDb(db, sha);
-      json(res, 200, updated || null);
+      const fbUpdated = await firebasePatchAdminRole(id, role).catch(() => null);
+      json(res, 200, { ok: true, admin: fbUpdated || updated });
       return true;
     }
 
