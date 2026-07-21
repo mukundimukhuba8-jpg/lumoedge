@@ -316,14 +316,23 @@ export async function handleApi(req, res, pathname) {
           (a) =>
             a.id === id || String(a.email || '').toLowerCase() === id.toLowerCase(),
         ) || null;
+      let fallback = updated;
+      if (!fallback) {
+        const fbAuth = await firebaseRead('lumo/auth');
+        fallback =
+          toArray(fbAuth?.admins).find(
+            (a) =>
+              a.id === id || String(a.email || '').toLowerCase() === id.toLowerCase(),
+          ) || null;
+      }
+      if (!fallback && body.fallback && typeof body.fallback === 'object') {
+        fallback = body.fallback;
+      }
       await saveDb(db, sha);
-      const fbUpdated = await firebasePatchAdminRole(id, role).catch(() => null);
+      const fbUpdated = await firebasePatchAdminRole(id, role, fallback).catch(() => null);
       if (!fbUpdated) {
-        json(res, 404, {
-          error: 'Mentor not found in Firebase or role update failed',
-          id,
-          table: 'lumo/auth/admins',
-        });
+        console.warn('[api] mentor approve failed', { id, role, email: updated?.email });
+        json(res, 502, { ok: false, error: 'approve_failed' });
         return true;
       }
       json(res, 200, { ok: true, admin: fbUpdated });

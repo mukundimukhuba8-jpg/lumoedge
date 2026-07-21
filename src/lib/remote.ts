@@ -542,26 +542,49 @@ export async function patchClient(
   return api;
 }
 
-export async function patchAdminRole(id: string, role: 'pending' | 'admin') {
+export async function patchAdminRole(
+  id: string,
+  role: 'pending' | 'admin',
+  fallback?: Record<string, unknown>,
+) {
   const key = String(id || '').trim();
   approvalLog('mentor', 'database_patch_request', {
     id: key,
     table: 'lumo/auth/admins',
     role,
   });
-  const result = await fetchWithTimeout(
+
+  const acceptResult = (result: { ok?: boolean; admin?: Record<string, unknown> } | null) => {
+    const approved =
+      result?.admin &&
+      String(result.admin.role ?? '')
+        .trim()
+        .toLowerCase() === 'admin';
+    if (approved) {
+      approvalLog('mentor', 'database_patch_success', {
+        id: key,
+        after: role,
+        email: result.admin?.email,
+      });
+      return result;
+    }
+    return null;
+  };
+
+  const apiResult = await fetchWithTimeout(
     (async () => {
       try {
         return await req<{ ok: boolean; admin?: Record<string, unknown> }>(
           `/api/auth/admins/${encodeURIComponent(key)}`,
           {
             method: 'PATCH',
-            body: JSON.stringify({ role }),
+            body: JSON.stringify({ role, fallback: fallback || undefined }),
           },
         );
       } catch (err) {
         approvalError('mentor', 'database_patch_failure', {
           id: key,
+          source: 'api',
           error: err instanceof Error ? err.message : String(err),
         });
         return null;
@@ -569,27 +592,30 @@ export async function patchAdminRole(id: string, role: 'pending' | 'admin') {
     })(),
     MENTOR_APPROVE_TIMEOUT_MS,
   );
-  const approved =
-    result?.admin &&
-    String(result.admin.role ?? '')
-      .trim()
-      .toLowerCase() === 'admin';
-  if (approved) {
-    approvalLog('mentor', 'database_patch_success', {
-      id: key,
-      after: role,
-      email: result.admin?.email,
-    });
-  } else {
-    approvalError('mentor', 'database_patch_failure', {
-      id: key,
-      error: result?.admin
-        ? `Mentor approve returned role ${String(result.admin.role)}`
-        : 'Mentor approve API returned no admin record',
-    });
-    return null;
+  const apiHit = acceptResult(apiResult);
+  if (apiHit) return apiHit;
+
+  if (isFirebaseConfigured() && fallback) {
+    const { firebasePatchAdminRole: fbPatch } = await import('./firebaseDb');
+    for (const tryKey of [key, String(fallback.email || '').trim().toLowerCase()].filter(Boolean)) {
+      const fb = await fbPatch(tryKey, role, fallback);
+      if (fb && String(fb.role ?? '').trim().toLowerCase() === role) {
+        approvalLog('mentor', 'database_patch_success', {
+          id: key,
+          after: role,
+          email: fb.email,
+          source: 'firebase_sdk',
+        });
+        return { ok: true, admin: fb };
+      }
+    }
   }
-  return result;
+
+  approvalError('mentor', 'database_patch_failure', {
+    id: key,
+    error: 'Mentor approve failed after API and Firebase attempts',
+  });
+  return null;
 }
 
 export async function deleteClientRemote(id: string) {

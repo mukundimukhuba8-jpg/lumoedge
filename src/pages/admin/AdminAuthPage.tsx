@@ -89,7 +89,11 @@ export function AdminAuthPage() {
           <button
             key={t}
             type="button"
-            onClick={() => setTab(t)}
+            onClick={() => {
+              setTab(t);
+              setError('');
+              setSuccess('');
+            }}
             style={{
               padding: 12,
               background: tab === t ? 'var(--electric)' : '#14141a',
@@ -113,6 +117,7 @@ export function AdminAuthPage() {
           if (tab === 'login') {
             void login(form.email, form.password)
               .then((err) => {
+                setSuccess('');
                 if (err) setError(err);
                 else navigate('/admin/dashboard');
               })
@@ -126,7 +131,8 @@ export function AdminAuthPage() {
               .then((err) => {
                 if (err) setError(err);
                 else {
-                  setSuccess(MENTOR_AUTH_MSG.registerSuccess);
+                  setSuccess(MENTOR_AUTH_MSG.pending);
+                  setError('');
                   setTab('login');
                 }
               })
@@ -175,7 +181,7 @@ export function AdminAuthPage() {
           </div>
         </div>
         {error ? <p className="error">{error}</p> : null}
-        {success ? <p className="success">{success}</p> : null}
+        {success && !error ? <p className="success">{success}</p> : null}
         <button className="btn btn-blue" type="submit" disabled={submitting}>
           {submitting
             ? tab === 'login'

@@ -252,19 +252,32 @@ export function mergeAdminsLive(live, backup) {
   return [...byEmail.values()];
 }
 
-export async function firebasePatchAdminRole(idOrEmail, role) {
+export async function firebasePatchAdminRole(idOrEmail, role, fallbackRecord = null) {
   const key = String(idOrEmail || '').trim();
   const keyLower = key.toLowerCase();
   const curAuth = (await firebaseRead('lumo/auth')) || { admins: [], admin: null };
+  let admins = toArray(curAuth.admins);
   let hit = null;
-  const admins = toArray(curAuth.admins).map((a) => {
+
+  admins = admins.map((a) => {
     const match =
       a.id === key || String(a.email || '').trim().toLowerCase() === keyLower;
     if (!match) return a;
     hit = { ...a, role: pickAdminRole(a.role, role) };
     return hit;
   });
+
+  if (!hit && fallbackRecord) {
+    hit = {
+      ...fallbackRecord,
+      email: String(fallbackRecord.email || '').trim().toLowerCase(),
+      role: pickAdminRole(fallbackRecord.role, role),
+    };
+    admins = mergeAdminsLive(admins, [hit]);
+  }
+
   if (!hit) return null;
+
   const ok = await firebaseWrite('lumo/auth', { admins, admin: null });
   await firebaseWrite('lumo/updatedAt', new Date().toISOString()).catch(() => false);
   return ok ? hit : null;
