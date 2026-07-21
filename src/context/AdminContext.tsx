@@ -2386,22 +2386,51 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             const nextMedia = [];
             for (const item of normalizeCustomMedia(resolvedPatch.customMedia)) {
               if (item.url.startsWith('blob:')) continue;
+              if (
+                item.url.startsWith('http') ||
+                item.url.startsWith('/api/') ||
+                item.url.startsWith('img:')
+              ) {
+                nextMedia.push(item);
+                continue;
+              }
               if (item.url.startsWith('data:')) {
                 const mediaKeyId = `${adminId}-${item.slot}`;
-                // Firebase Storage first (same path per slot → replaces old
-                // file); store only the download URL. RTDB is the fallback.
-                const hosted = await firebaseUploadDataUrl(
-                  `media/${mediaKeyId}`,
-                  item.url,
-                );
-                if (hosted) {
-                  saveEaImage(mediaKeyId, hosted);
-                  nextMedia.push({ ...item, url: hosted });
-                } else {
-                  await firebaseSaveImage(mediaKeyId, item.url);
-                  saveEaImage(mediaKeyId, item.url);
-                  nextMedia.push({ ...item, url: item.url });
+                saveEaImage(mediaKeyId, item.url);
+                let published = item.url;
+                try {
+                  const hosted = await Promise.race([
+                    firebaseUploadDataUrl(`media/${mediaKeyId}`, item.url),
+                    new Promise<string | null>((resolve) =>
+                      window.setTimeout(() => resolve(null), 10_000),
+                    ),
+                  ]);
+                  if (hosted) {
+                    saveEaImage(mediaKeyId, hosted);
+                    published = hosted;
+                  } else {
+                    const { imagePublicUrl } = await import('../lib/storage');
+                    const apiUrl = imagePublicUrl(mediaKeyId);
+                    try {
+                      const res = await Promise.race([
+                        fetch(apiUrl, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ dataUrl: item.url }),
+                        }),
+                        new Promise<Response>((_, reject) =>
+                          window.setTimeout(() => reject(new Error('timeout')), 8_000),
+                        ),
+                      ]);
+                      if (res.ok) published = apiUrl;
+                    } catch {
+                      published = apiUrl;
+                    }
+                  }
+                } catch {
+                  // keep local data URL / api path
                 }
+                nextMedia.push({ ...item, url: published });
               } else {
                 nextMedia.push(item);
               }

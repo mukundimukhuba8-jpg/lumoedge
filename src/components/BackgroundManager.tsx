@@ -79,12 +79,22 @@ export function BackgroundManager({ adminId, customMedia, onSync }: Props) {
       return;
     }
 
+    const previewUrl = URL.createObjectURL(file);
+    const previewKind = file.type.startsWith('video/') ? 'video' : 'image';
+    const withPreview = upsertMediaSlot(localMedia, {
+      slot,
+      kind: previewKind,
+      url: previewUrl,
+      updatedAt: new Date().toISOString(),
+    });
+    setLocalMedia(withPreview);
+
     try {
       setActiveSlot(slot);
       setProgress({ pct: 5, stage: 'Starting…' });
 
       const { url, kind } = await uploadBackgroundMedia(adminId, slot, file, onProgress);
-      const nextMedia = upsertMediaSlot(localMedia, {
+      const nextMedia = upsertMediaSlot(withPreview, {
         slot,
         kind,
         url,
@@ -94,18 +104,21 @@ export function BackgroundManager({ adminId, customMedia, onSync }: Props) {
       setLocalMedia(nextMedia);
       setProgress({ pct: 96, stage: 'Syncing to clients…' });
 
-      await Promise.race([
-        onSync(nextMedia),
-        new Promise((_, reject) =>
-          window.setTimeout(() => reject(new Error('Sync slow — saved locally')), 30_000),
-        ),
-      ]);
+      try {
+        await Promise.race([
+          onSync(nextMedia),
+          new Promise((resolve) => window.setTimeout(resolve, 12_000)),
+        ]);
+      } catch {
+        // local + upload already saved — profile sync can retry on next save
+      }
 
       setProgress({ pct: 100, stage: 'Complete' });
       setMessage(`${BACKGROUND_SLOTS.find((s) => s.id === slot)?.label || slot} uploaded successfully.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed.');
     } finally {
+      URL.revokeObjectURL(previewUrl);
       setActiveSlot(null);
       setProgress(null);
       const input = inputRefs.current[slot];
