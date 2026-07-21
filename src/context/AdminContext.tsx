@@ -1512,6 +1512,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const mentorId = auth.admin?.id ?? '';
     if (!mentorId || licensePublishInFlight > 0) return;
     void fetchDb().then((db) => {
+      if (!db) return;
+      if (db.images && typeof db.images === 'object') {
+        saveJSON(IMAGE_STORE, {
+          ...loadJSON<Record<string, string>>(IMAGE_STORE, {}),
+          ...db.images,
+        });
+      }
       if (!db?.store?.workspaces?.[mentorId]) return;
       const remoteWs = normalizeWorkspace(
         db.store.workspaces[mentorId] as AdminWorkspace,
