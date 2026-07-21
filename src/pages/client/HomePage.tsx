@@ -4,8 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { Home, Monitor, Pause, Play, ScanSearch, Settings, Signal, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
-import { executeCopyOrder, mentorIdForLicense, seedProcessedOrders, type CopyOrderPayload } from '../../lib/copyTrade';
-import { firebaseWatchMentorOrders } from '../../lib/firebaseDb';
 import {
   accentHex,
   hexToRgb,
@@ -18,12 +16,6 @@ import { clearMt5Session, getMt5Token } from '../../lib/mt5Session';
 import { loadJSON, normalizeLicenseKey, saveJSON } from '../../lib/storage';
 import { FocusLayout, TerminalLayout, VortexLayout } from './HomeLayouts';
 import { InterfaceStyleModal } from './InterfaceStyleModal';
-import { CopyTradeStatus } from '../../components/CopyTradeStatus';
-
-const ALL_SYMBOLS = [
-  'XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD',
-  'NZDUSD', 'EURGBP', 'EURJPY', 'GBPJPY', 'XAGUSD', 'NAS100', 'US30', 'BTCUSD',
-];
 
 const FLOAT_KEY = 'ub-web/float-avatar-pos';
 
@@ -36,7 +28,6 @@ export function HomePage() {
     isPaused,
     togglePause,
     deleteBot,
-    setSymbols,
     user,
     activateWithLicense,
     refreshBranding,
@@ -72,11 +63,9 @@ export function HomePage() {
       cancelled = true;
     };
   }, [coverImage, profileAvatar]);
-  const [symbolsOpen, setSymbolsOpen] = useState(false);
   const [licenseOpen, setLicenseOpen] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
   const [stylePrefs, setStylePrefs] = useState<InterfacePrefs>(() => loadInterfacePrefs());
-  const [localSymbols, setLocalSymbols] = useState(bot.symbols);
   const [licenseKey, setLicenseKey] = useState(bot.licenseKey);
   const [floatPos, setFloatPos] = useState<FloatPos>(() =>
     loadJSON<FloatPos>(FLOAT_KEY, { x: 0, y: 0 }),
@@ -112,73 +101,6 @@ export function HomePage() {
   const platformBgKind = customResolved?.kind || 'image';
   const customBg =
     customResolved && customResolved.kind === 'image' ? customResolved.src : '';
-
-  const [copyEngineOpen, setCopyEngineOpen] = useState(false);
-  const [copyEnginePhase, setCopyEnginePhase] = useState<'executing' | 'success' | 'failed'>(
-    'executing',
-  );
-  const [copyEngineMessage, setCopyEngineMessage] = useState('');
-  const [copyEngineProgress, setCopyEngineProgress] = useState(0);
-
-  // Listen for copy trades and mirror them on this client's MT5
-  useEffect(() => {
-    if (!user?.email || !bot.licenseKey || isPaused) return;
-    const mentorId = mentorIdForLicense(bot.licenseKey);
-    if (!mentorId) return;
-
-    let seeded = false;
-    const handleOrders = (orders: Array<Record<string, unknown>>) => {
-      if (!seeded) {
-        seedProcessedOrders(
-          mentorId,
-          orders.map((o) => String(o.id || '')).filter(Boolean),
-        );
-        seeded = true;
-        return;
-      }
-      const latest = orders[0];
-      if (!latest?.id) return;
-      const order: CopyOrderPayload = {
-        id: String(latest.id),
-        symbol: String(latest.symbol || 'XAUUSD'),
-        side: String(latest.side || 'buy') === 'sell' ? 'sell' : 'buy',
-        volume: Number(latest.volume) || 0.01,
-        stopLoss: Number(latest.stopLoss) || 0,
-        takeProfit: Number(latest.takeProfit) || 0,
-        comment: String(latest.comment || ''),
-        trades: Number(latest.trades) || 1,
-      };
-      const sideLabel = order.side === 'sell' ? 'SELL' : 'BUY';
-      setCopyEngineOpen(true);
-      setCopyEnginePhase('executing');
-      setCopyEngineMessage(`Executing ${sideLabel} ${order.symbol}`);
-      setCopyEngineProgress(35);
-
-      void executeCopyOrder({
-        email: user.email,
-        eaName: bot.displayName || bot.name || 'Lumo Edge',
-        order,
-        mentorId,
-      }).then((result) => {
-        if (result.message === 'Already copied') {
-          setCopyEngineOpen(false);
-          return;
-        }
-        if (result.ok) {
-          setCopyEnginePhase('success');
-          setCopyEngineMessage(result.message);
-          setCopyEngineProgress(100);
-          return;
-        }
-        setCopyEnginePhase('failed');
-        setCopyEngineMessage(result.message);
-        setCopyEngineProgress(100);
-      });
-    };
-
-    const unsub = firebaseWatchMentorOrders(mentorId, handleOrders);
-    return () => unsub();
-  }, [user?.email, bot.licenseKey, bot.displayName, bot.name, isPaused]);
 
   // Pull latest mentor branding / profile picture / symbols — image sync only
   useEffect(() => {
@@ -299,10 +221,7 @@ export function HomePage() {
             ? 'iface-fx-night'
             : '';
 
-  const openSymbols = () => {
-    setLocalSymbols(bot.symbols);
-    setSymbolsOpen(true);
-  };
+  const openSymbols = () => navigate('/app/symbols');
 
   const confirmDelete = () => {
     if (
@@ -559,45 +478,6 @@ export function HomePage() {
         </div>
       ) : null}
 
-      {symbolsOpen ? (
-        <Modal title="Select Symbols" onClose={() => setSymbolsOpen(false)}>
-          {ALL_SYMBOLS.map((s) => {
-            const on = localSymbols.includes(s);
-            return (
-              <button
-                key={s}
-                type="button"
-                className="pill"
-                style={{
-                  marginBottom: 8,
-                  borderColor: on ? 'rgba(59,130,246,0.65)' : 'rgba(255,255,255,0.08)',
-                  justifyContent: 'space-between',
-                }}
-                onClick={() =>
-                  setLocalSymbols((prev) =>
-                    on ? prev.filter((x) => x !== s) : [...prev, s],
-                  )
-                }
-              >
-                <span>{s}</span>
-                <span style={{ color: on ? 'var(--electric)' : 'var(--muted)' }}>{on ? '✓' : ''}</span>
-              </button>
-            );
-          })}
-          <button
-            className="btn btn-blue"
-            type="button"
-            onClick={() => {
-              if (!localSymbols.length) return;
-              setSymbols(localSymbols);
-              setSymbolsOpen(false);
-            }}
-          >
-            Save {localSymbols.length} symbols
-          </button>
-        </Modal>
-      ) : null}
-
       {licenseOpen ? (
         <Modal title="Connect EA" onClose={() => setLicenseOpen(false)}>
           <p className="muted">Connect New License Key</p>
@@ -715,14 +595,6 @@ export function HomePage() {
           setStyleOpen(false);
           navigate('/app/scanner');
         }}
-      />
-
-      <CopyTradeStatus
-        open={copyEngineOpen}
-        phase={copyEnginePhase}
-        message={copyEngineMessage}
-        progress={copyEngineProgress}
-        onClose={() => setCopyEngineOpen(false)}
       />
     </div>
   );
