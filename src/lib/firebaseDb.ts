@@ -91,6 +91,8 @@ function normalizeDb(raw: unknown): RemoteDb {
 
 import { normalizeAdminRole, pickAdminRole } from './adminQueue';
 
+export { mergeAdminsLive } from './adminQueue';
+
 type AdminLike = { id?: string; role?: string; [key: string]: unknown };
 
 /** Merge mentor registry — approved role always beats pending (never revert approvals). */

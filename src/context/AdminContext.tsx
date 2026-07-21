@@ -20,6 +20,7 @@ import {
   patchAdminRole,
   pushDb,
   pushSession,
+  repairAdminQueueRemote,
   repairClientQueueRemote,
   type RemoteDb,
 } from '../lib/remote';
@@ -74,7 +75,12 @@ import {
   validateLicenseEmailAccess,
 } from '../lib/licenseClaim';
 import { approvalError, approvalLog, approvalWarn } from '../lib/approvalLog';
-import { isApprovedAdminRole, normalizeAdminRole } from '../lib/adminQueue';
+import {
+  countAdminQueue,
+  isApprovedAdminRole,
+  mergeAdminsForApprovalSync,
+  normalizeAdminRole,
+} from '../lib/adminQueue';
 import { countClientQueue, normalizeClientStatus, pickClientStatus } from '../lib/clientQueue';
 import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
 
@@ -902,6 +908,14 @@ type Ctx = {
     approved?: number;
     error?: string;
   }>;
+  /** Pull live mentor queue from Firebase — restores pending mentors hidden by stale sync */
+  refreshAdminQueue: () => Promise<{
+    ok: boolean;
+    total?: number;
+    pending?: number;
+    approved?: number;
+    error?: string;
+  }>;
   eas: ManagedEA[];
   licenses: LicenseRecord[];
   mt5: Mt5Connection;
@@ -1013,11 +1027,11 @@ function applyRemoteAdmins(
   prev: AuthState,
   remoteAdmins: AdminUser[],
 ): AuthState {
-  const admins = mergeAdmins(prev.admins, remoteAdmins).map((a) => ({
+  const admins = mergeAdminsForApprovalSync(prev.admins, remoteAdmins).map((a) => ({
     ...a,
     role: normalizeAdminRole(a.role),
   })) as AdminUser[];
-  const healed = admins.some((a) => {
+  const healedApproved = admins.some((a) => {
     const remote = remoteAdmins.find(
       (r) => r.email.toLowerCase() === a.email.toLowerCase(),
     );
@@ -1027,7 +1041,13 @@ function applyRemoteAdmins(
       normalizeAdminRole(remote.role) === 'pending'
     );
   });
-  if (healed) {
+  const healedPending = admins.some((a) => {
+    if (normalizeAdminRole(a.role) !== 'pending') return false;
+    return !remoteAdmins.some(
+      (r) => r.email.toLowerCase() === a.email.toLowerCase(),
+    );
+  });
+  if (healedApproved || healedPending) {
     void pushDb({ auth: { admins, admin: null } }).catch(() => undefined);
   }
   let admin = prev.admin;
@@ -1217,10 +1237,25 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             normalizeAdminRole(a.role) === 'pending' &&
             !prev.admins.some((p) => p.id === a.id || p.email.toLowerCase() === a.email.toLowerCase()),
         );
+        const lostPending = prev.admins.filter(
+          (a) =>
+            normalizeAdminRole(a.role) === 'pending' &&
+            !nextAuth.admins.some(
+              (n) =>
+                normalizeAdminRole(n.role) === 'pending' &&
+                n.email.toLowerCase() === a.email.toLowerCase(),
+            ),
+        );
         if (addedPending.length) {
           approvalLog('mentor', 'registration_synced', {
             count: addedPending.length,
             emails: addedPending.map((a) => a.email),
+          });
+        }
+        if (lostPending.length) {
+          approvalWarn('mentor', 'pending_preserved_after_sync', {
+            count: lostPending.length,
+            emails: lostPending.map((a) => a.email),
           });
         }
         saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
@@ -2114,6 +2149,28 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
         const counts = countClientQueue(merged);
         approvalLog('client', 'queue_refreshed', counts);
+        return { ok: true, ...counts };
+      },
+      refreshAdminQueue: async () => {
+        void repairAdminQueueRemote().catch(() => undefined);
+        const remoteAdmins = (await Promise.race([
+          fetchAdmins(),
+          new Promise<AdminUser[] | null>((resolve) =>
+            window.setTimeout(() => resolve(null), 10_000),
+          ),
+        ])) as AdminUser[] | null;
+        if (!remoteAdmins) {
+          return { ok: false, error: 'Could not load mentor queue from cloud' };
+        }
+        let nextAdmins: AdminUser[] = [];
+        setAuth((prev) => {
+          const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
+          nextAdmins = nextAuth.admins;
+          saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+          return nextAuth;
+        });
+        const counts = countAdminQueue(nextAdmins);
+        approvalLog('mentor', 'queue_refreshed', counts);
         return { ok: true, ...counts };
       },
       // Strict per-mentor isolation: even if data ever gets cross-merged,

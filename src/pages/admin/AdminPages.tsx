@@ -1139,10 +1139,12 @@ export function ProfilePage() {
 }
 
 export function ApproveAdminsPage() {
-  const { admins, approveAdmin, approveAdmins, deleteAdmin } = useAdmin();
+  const { admins, approveAdmin, approveAdmins, deleteAdmin, refreshAdminQueue } = useAdmin();
   const [q, setQ] = useState('');
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [approveMsg, setApproveMsg] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState('');
   const query = q.trim().toLowerCase();
   const match = (a: { fullName: string; email: string; id: string; eaName?: string }) => {
     if (!query) return true;
@@ -1195,11 +1197,34 @@ export function ApproveAdminsPage() {
     }
   };
 
+  const onRefreshQueue = async () => {
+    if (refreshing) return;
+    setRefreshMsg('');
+    setRefreshing(true);
+    try {
+      const result = await refreshAdminQueue();
+      if (result.ok) {
+        setRefreshMsg(
+          `Restored from cloud — ${result.pending ?? 0} awaiting approval, ${result.approved ?? 0} approved (${result.total ?? 0} total).`,
+        );
+      } else {
+        setRefreshMsg(result.error || 'Could not refresh mentor list.');
+      }
+    } catch {
+      setRefreshMsg('Could not refresh mentor list. Check your connection.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div>
         <h2 className="title-blue" style={{ fontSize: 17, margin: 0 }}>Approve Admins</h2>
-        <p className="muted">Pending requests and admins already approved. Each admin gets their own empty portal.</p>
+        <p className="muted">
+          Pending requests and admins already approved. Each admin gets their own empty portal.
+          If a mentor vanishes from Pending before you approve, tap Restore from cloud.
+        </p>
       </div>
 
       <div className="field" style={{ marginBottom: 0 }}>
@@ -1228,6 +1253,30 @@ export function ApproveAdminsPage() {
           {approveMsg}
         </p>
       ) : null}
+
+      {refreshMsg ? (
+        <p
+          style={{
+            margin: 0,
+            color: refreshMsg.startsWith('Could') || refreshMsg.includes('not refresh')
+              ? '#f87171'
+              : 'var(--green)',
+            fontWeight: 700,
+            fontSize: 13,
+          }}
+        >
+          {refreshMsg}
+        </p>
+      ) : null}
+
+      <button
+        className="btn btn-ghost"
+        type="button"
+        disabled={refreshing || Boolean(approvingId)}
+        onClick={() => void onRefreshQueue()}
+      >
+        {refreshing ? 'Restoring…' : 'Restore from cloud'}
+      </button>
 
       <div className="glow-card">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>

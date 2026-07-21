@@ -12,7 +12,7 @@ import {
   firebasePostMentorRegistration,
   firebasePushDb,
   firebasePushSession,
-  mergeAdmins,
+  mergeAdminsLive,
   mergeClients,
   type RemoteDb,
 } from './firebaseDb';
@@ -263,12 +263,35 @@ export async function fetchAdmins() {
     api = null;
   }
 
-  const merged = mergeAdmins(
-    (fb || []) as Parameters<typeof mergeAdmins>[0],
-    (api || []) as Parameters<typeof mergeAdmins>[1],
+  const merged = mergeAdminsLive(
+    (fb || []) as Parameters<typeof mergeAdminsLive>[0],
+    (api || []) as Parameters<typeof mergeAdminsLive>[1],
   );
   if (!merged.length && fb === null && api === null) return null;
   return merged;
+}
+
+export async function repairAdminQueueRemote(): Promise<{
+  ok: boolean;
+  total?: number;
+  pending?: number;
+  approved?: number;
+  error?: string;
+}> {
+  try {
+    return await req<{
+      ok: boolean;
+      total?: number;
+      pending?: number;
+      approved?: number;
+      error?: string;
+    }>('/api/auth/admins/repair-sync', { method: 'POST' });
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Could not refresh mentor queue',
+    };
+  }
 }
 
 export async function postMentorRegistration(input: {
