@@ -38,8 +38,11 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 
 const FETCH_DB_TIMEOUT_MS = 15_000;
 const FETCH_CLIENTS_TIMEOUT_MS = 15_000;
+const FETCH_ADMINS_TIMEOUT_MS = 12_000;
 const MENTOR_REGISTER_TIMEOUT_MS = 20_000;
 const MENTOR_APPROVE_TIMEOUT_MS = 20_000;
+const MENTOR_LOGIN_TIMEOUT_MS = 12_000;
+export { MENTOR_LOGIN_TIMEOUT_MS };
 
 function fetchWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([
@@ -251,24 +254,27 @@ export async function repairClientQueueRemote(): Promise<{
 }
 
 export async function fetchAdmins() {
-  let fb: RemoteDb['auth']['admins'] | null = null;
-  let api: RemoteDb['auth']['admins'] | null = null;
+  const work = async (): Promise<RemoteDb['auth']['admins'] | null> => {
+    let fb: RemoteDb['auth']['admins'] | null = null;
+    let api: RemoteDb['auth']['admins'] | null = null;
 
-  if (isFirebaseConfigured()) {
-    fb = await firebaseFetchAdmins();
-  }
-  try {
-    api = await req<RemoteDb['auth']['admins']>('/api/auth/admins');
-  } catch {
-    api = null;
-  }
+    if (isFirebaseConfigured()) {
+      fb = await firebaseFetchAdmins();
+    }
+    try {
+      api = await req<RemoteDb['auth']['admins']>('/api/auth/admins');
+    } catch {
+      api = null;
+    }
 
-  const merged = mergeAdminsLive(
-    (fb || []) as Parameters<typeof mergeAdminsLive>[0],
-    (api || []) as Parameters<typeof mergeAdminsLive>[1],
-  );
-  if (!merged.length && fb === null && api === null) return null;
-  return merged;
+    const merged = mergeAdminsLive(
+      (fb || []) as Parameters<typeof mergeAdminsLive>[0],
+      (api || []) as Parameters<typeof mergeAdminsLive>[1],
+    );
+    if (!merged.length && fb === null && api === null) return null;
+    return merged;
+  };
+  return fetchWithTimeout(work(), FETCH_ADMINS_TIMEOUT_MS);
 }
 
 export async function repairAdminQueueRemote(): Promise<{
@@ -333,6 +339,20 @@ export async function postMentorRegistration(input: {
       source: 'api',
     });
     return created;
+  }
+  // API timed out or failed — reuse existing cloud row instead of inserting again
+  const roster = await fetchWithTimeout(fetchAdmins(), 8000);
+  const existing = roster?.find(
+    (a) => String((a as { email?: string }).email || '').trim().toLowerCase() === email,
+  );
+  if (existing) {
+    approvalLog('mentor', 'registration_success', {
+      email,
+      id: (existing as { id?: string }).id,
+      status: (existing as { role?: string }).role || 'pending',
+      source: 'existing_roster',
+    });
+    return existing as Record<string, unknown>;
   }
   if (isFirebaseConfigured()) {
     const fb = await fetchWithTimeout(
