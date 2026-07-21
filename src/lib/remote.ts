@@ -38,6 +38,7 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 
 const FETCH_DB_TIMEOUT_MS = 15_000;
 const FETCH_CLIENTS_TIMEOUT_MS = 15_000;
+const MENTOR_REGISTER_TIMEOUT_MS = 20_000;
 
 function fetchWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([
@@ -278,18 +279,55 @@ export async function postMentorRegistration(input: {
   phone?: string;
   mainText?: string;
 }) {
-  try {
-    const created = await req<Record<string, unknown>>('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(input),
+  const email = input.email.trim().toLowerCase();
+  approvalLog('mentor', 'registration_request', {
+    email,
+    table: 'lumo/auth/admins',
+  });
+  const created = await fetchWithTimeout(
+    (async () => {
+      try {
+        return await req<Record<string, unknown>>('/api/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({ ...input, email }),
+        });
+      } catch (err) {
+        approvalWarn('mentor', 'registration_api_failed', {
+          email,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      }
+    })(),
+    MENTOR_REGISTER_TIMEOUT_MS,
+  );
+  if (created) {
+    approvalLog('mentor', 'registration_success', {
+      email,
+      id: created.id,
+      status: created.role || 'pending',
+      source: 'api',
     });
-    if (created) return created;
-  } catch {
-    // fall through to direct Firebase write
+    return created;
   }
   if (isFirebaseConfigured()) {
-    const fb = await firebasePostMentorRegistration(input);
-    if (fb) return fb;
+    const fb = await fetchWithTimeout(
+      firebasePostMentorRegistration({ ...input, email }),
+      MENTOR_REGISTER_TIMEOUT_MS,
+    );
+    if (fb) {
+      approvalLog('mentor', 'registration_success', {
+        email,
+        id: fb.id,
+        status: fb.role || 'pending',
+        source: 'firebase_sdk',
+      });
+      return fb;
+    }
+    approvalError('mentor', 'registration_failure', {
+      email,
+      error: 'API and Firebase registration both failed or timed out',
+    });
   }
   return null;
 }

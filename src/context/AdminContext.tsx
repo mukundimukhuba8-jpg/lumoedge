@@ -1601,13 +1601,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         if (email === SUPER_ADMIN.email.toLowerCase()) {
           return 'This email is reserved for Super Admin.';
         }
-        const remoteAdmins = ((await fetchAdmins()) || []) as AdminUser[];
+        // Never block registration on a slow admin sync — server rejects duplicates.
+        const remoteAdmins = ((await Promise.race([
+          fetchAdmins(),
+          new Promise<AdminUser[] | null>((resolve) =>
+            window.setTimeout(() => resolve(null), 5000),
+          ),
+        ])) || []) as AdminUser[];
         const knownEmails = new Set(
           [...auth.admins, ...remoteAdmins].map((a) => a.email.toLowerCase()),
         );
         if (knownEmails.has(email)) {
           return 'An admin with this email already registered.';
         }
+        approvalLog('mentor', 'registration_submit', { email });
         const serverEntry = await postMentorRegistration({
           email,
           password: form.password,
@@ -1618,6 +1625,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           mainText: form.mainText,
         });
         if (!serverEntry) {
+          approvalError('mentor', 'registration_submit_failed', { email });
           return 'Could not save registration. Check your connection and try again.';
         }
         const entry: AdminUser = {
