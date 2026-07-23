@@ -45,6 +45,7 @@ export type LicenseSync = {
 type Session = {
   user: UserProfile | null;
   accessStatus: AccessStatus;
+  requiresRepayment?: boolean;
   bot: EABot;
 };
 
@@ -72,6 +73,7 @@ const RANK: Record<AccessStatus, number> = {
 type Ctx = {
   user: UserProfile | null;
   accessStatus: AccessStatus;
+  requiresRepayment: boolean;
   bot: EABot;
   isPaused: boolean;
   setAccessStatus: (status: AccessStatus) => void;
@@ -111,6 +113,7 @@ function normalizeSession(session: Session): Session {
   return {
     user: session.user ?? null,
     accessStatus,
+    requiresRepayment: Boolean(session.requiresRepayment),
     bot,
   };
 }
@@ -121,6 +124,7 @@ function migrateSession(): Session {
     return normalizeSession({
       user: v2.user ?? null,
       accessStatus: v2.accessStatus ?? 'none',
+      requiresRepayment: Boolean((v2 as Session).requiresRepayment),
       bot: {
         ...DEFAULT_BOT,
         ...(v2.bot ?? {}),
@@ -156,9 +160,12 @@ function mergeSessions(local: Session, remote: Session | null): Session {
       : localN.accessStatus;
   // Hard rule: any saved license key means licensed forever (until deleteBot)
   if (licenseKey) status = 'licensed';
+  const requiresRepayment = Boolean(localN.requiresRepayment || remoteN.requiresRepayment);
+  if (requiresRepayment && !licenseKey) status = 'pending';
   return normalizeSession({
     user: remoteN.user || localN.user,
     accessStatus: status,
+    requiresRepayment: requiresRepayment && !licenseKey,
     bot: {
       ...DEFAULT_BOT,
       ...localN.bot,
@@ -383,6 +390,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => ({
       user: session.user,
       accessStatus: session.accessStatus,
+      requiresRepayment: Boolean(session.requiresRepayment),
       bot: { ...DEFAULT_BOT, ...session.bot },
       isPaused: session.bot.status === 'paused',
       setAccessStatus: (accessStatus) => {
@@ -429,7 +437,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           persist({ ...session, accessStatus: 'licensed' });
           return;
         }
-        persist({ ...session, accessStatus: 'paid' });
+        persist({ ...session, accessStatus: 'paid', requiresRepayment: false });
       },
       activateWithLicense: (key, sync) => {
         const displayName =
@@ -442,6 +450,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         persist({
           ...session,
           accessStatus: 'licensed',
+          requiresRepayment: false,
           bot: {
             ...session.bot,
             licenseKey: normalizedKey,
@@ -513,13 +522,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // still clear locally
           }
         }
-        const nextAccess =
-          session.accessStatus === 'licensed' || session.accessStatus === 'paid'
-            ? 'approved'
-            : session.accessStatus;
         persist({
           ...session,
-          accessStatus: nextAccess,
+          accessStatus: 'pending',
+          requiresRepayment: true,
           bot: {
             ...session.bot,
             status: 'paused',

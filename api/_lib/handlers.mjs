@@ -50,15 +50,17 @@ function mergeSessionPreferLicense(prev, incoming) {
   const nextBot = incoming.bot && typeof incoming.bot === 'object' ? incoming.bot : {};
   const incomingKey = String(nextBot.licenseKey || '').trim();
   const prevKey = String(prevBot.licenseKey || '').trim();
-  // deleteBot sends paid + empty key — allow that clear. Block other demotions.
+  // deleteBot clears license + demotes access — allow empty key when not licensed.
   const intentionalClear =
     nextBot.licenseKey !== undefined &&
     !incomingKey &&
-    (incoming.accessStatus === 'paid' || incoming.accessStatus === 'pending');
+    String(incoming.accessStatus || '') !== 'licensed';
   const licenseKey = intentionalClear ? '' : incomingKey || prevKey;
   const accessStatus = licenseKey
     ? 'licensed'
-    : incoming.accessStatus || prev.accessStatus || 'pending';
+    : intentionalClear
+      ? incoming.accessStatus || 'pending'
+      : incoming.accessStatus || prev.accessStatus || 'pending';
   return {
     ...prev,
     ...incoming,

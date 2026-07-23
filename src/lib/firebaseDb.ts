@@ -136,7 +136,7 @@ function pickClientStatus(
   return 'rejected';
 }
 
-function mergeClientRecord<T extends { email?: string; status?: string; paymentClaimed?: boolean; paymentClaimedAt?: string }>(
+function mergeClientRecord<T extends { email?: string; status?: string; paymentClaimed?: boolean; paymentClaimedAt?: string; licenseReleasedAt?: string }>(
   prev: T,
   incoming: T,
 ): T {
@@ -149,8 +149,18 @@ function mergeClientRecord<T extends { email?: string; status?: string; paymentC
       prev.status as 'pending' | 'approved' | 'rejected' | undefined,
       incoming.status as 'pending' | 'approved' | 'rejected' | undefined,
     ),
-    paymentClaimed: Boolean(prev.paymentClaimed || incoming.paymentClaimed),
-    paymentClaimedAt: prev.paymentClaimedAt || incoming.paymentClaimedAt,
+    paymentClaimed:
+      'paymentClaimed' in incoming
+        ? Boolean(incoming.paymentClaimed)
+        : Boolean(prev.paymentClaimed),
+    paymentClaimedAt:
+      'paymentClaimedAt' in incoming
+        ? incoming.paymentClaimedAt || undefined
+        : prev.paymentClaimedAt,
+    licenseReleasedAt:
+      'licenseReleasedAt' in incoming
+        ? incoming.licenseReleasedAt || undefined
+        : prev.licenseReleasedAt,
   } as T;
 }
 
@@ -794,12 +804,16 @@ export async function firebasePushSession(
       const intentionalClear =
         nextBot.licenseKey !== undefined &&
         !incomingKey &&
-        (incoming.accessStatus === 'paid' || incoming.accessStatus === 'pending');
+        String(incoming.accessStatus || '') !== 'licensed';
       const licenseKey = intentionalClear ? '' : incomingKey || prevKey;
       merged = {
         ...prev,
         ...incoming,
-        accessStatus: licenseKey ? 'licensed' : incoming.accessStatus || (prev as { accessStatus?: string }).accessStatus,
+        accessStatus: licenseKey
+          ? 'licensed'
+          : intentionalClear
+            ? incoming.accessStatus || 'pending'
+            : incoming.accessStatus || (prev as { accessStatus?: string }).accessStatus,
         bot: {
           ...prevBot,
           ...nextBot,

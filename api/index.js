@@ -110,15 +110,17 @@ function mergeSessionPreferLicense(prev, incoming) {
   const nextBot = incoming.bot && typeof incoming.bot === 'object' ? incoming.bot : {};
   const incomingKey = String(nextBot.licenseKey || '').trim();
   const prevKey = String(prevBot.licenseKey || '').trim();
-  // deleteBot sends paid + empty key — allow that clear. Block other demotions.
+  // deleteBot clears license + demotes access — allow empty key when not licensed.
   const intentionalClear =
     nextBot.licenseKey !== undefined &&
     !incomingKey &&
-    (incoming.accessStatus === 'paid' || incoming.accessStatus === 'pending');
+    String(incoming.accessStatus || '') !== 'licensed';
   const licenseKey = intentionalClear ? '' : incomingKey || prevKey;
   const accessStatus = licenseKey
     ? 'licensed'
-    : incoming.accessStatus || prev.accessStatus || 'pending';
+    : intentionalClear
+      ? incoming.accessStatus || 'pending'
+      : incoming.accessStatus || prev.accessStatus || 'pending';
   return {
     ...prev,
     ...incoming,
@@ -148,8 +150,18 @@ function mergeClientRecord(prev, incoming) {
     ...incoming,
     email,
     status: pickClientStatus(prev.status, incoming.status),
-    paymentClaimed: Boolean(prev.paymentClaimed || incoming.paymentClaimed),
-    paymentClaimedAt: prev.paymentClaimedAt || incoming.paymentClaimedAt,
+    paymentClaimed:
+      'paymentClaimed' in incoming
+        ? Boolean(incoming.paymentClaimed)
+        : Boolean(prev.paymentClaimed),
+    paymentClaimedAt:
+      'paymentClaimedAt' in incoming
+        ? incoming.paymentClaimedAt || undefined
+        : prev.paymentClaimedAt,
+    licenseReleasedAt:
+      'licenseReleasedAt' in incoming
+        ? incoming.licenseReleasedAt || undefined
+        : prev.licenseReleasedAt,
   };
 }
 
@@ -826,20 +838,20 @@ export default async function handler(req, res) {
         });
       }
 
-      // Reset subscription payment so client must pay again — never downgrade approval
+      // Reset payment so client must pay again — keep admin approval when present
+      const releasedAt = new Date().toISOString();
       const freshClients = dbList(await firebaseRead('lumo/clients'));
       const clientIdx = freshClients.findIndex(
         (c) => String(c?.email || '').toLowerCase() === email,
       );
-      let clientStatus = 'pending';
       if (clientIdx >= 0) {
         const prev = freshClients[clientIdx];
-        freshClients[clientIdx] = mergeClientRecord(prev, {
+        freshClients[clientIdx] = {
           ...prev,
           paymentClaimed: false,
-          paymentClaimedAt: null,
-        });
-        clientStatus = freshClients[clientIdx].status || 'pending';
+          paymentClaimedAt: undefined,
+          licenseReleasedAt: releasedAt,
+        };
       }
 
       const wsMirror = { store: { workspaces: { ...workspaces } } };
@@ -860,10 +872,10 @@ export default async function handler(req, res) {
       if (sessions[email]) {
         const prev = sessions[email];
         const prevBot = prev?.bot && typeof prev.bot === 'object' ? prev.bot : {};
-        const keepApproved = clientStatus === 'approved';
         sessions[email] = {
           ...prev,
-          accessStatus: keepApproved ? 'approved' : 'pending',
+          accessStatus: 'pending',
+          requiresRepayment: true,
           bot: {
             ...prevBot,
             licenseKey: '',
