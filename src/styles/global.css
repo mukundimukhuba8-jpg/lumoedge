@@ -978,6 +978,21 @@ a {
   flex-shrink: 0;
 }
 
+.home-connect-display {
+  pointer-events: none;
+  user-select: none;
+  cursor: default;
+}
+
+.lay-focus-row-static,
+.lay-term-line-static,
+.lay-vortex-orb-static {
+  pointer-events: none;
+  user-select: none;
+  cursor: default;
+  opacity: 0.92;
+}
+
 .home-connect-pill {
   margin-bottom: 0;
   flex-shrink: 0;

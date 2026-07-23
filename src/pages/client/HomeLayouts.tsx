@@ -26,7 +26,6 @@ export type LayoutActions = {
   accentRgb: string;
   onPauseToggle: () => void;
   onSymbols: () => void;
-  onConnect: () => void;
   onStyle: () => void;
   onDelete: () => void;
   onHomeTap: () => void;
@@ -103,7 +102,8 @@ export function FocusLayout(a: LayoutActions) {
     key: string;
     label: string;
     icon: ReactNode;
-    onClick: () => void;
+    onClick?: () => void;
+    displayOnly?: boolean;
     danger?: boolean;
     trailing?: ReactNode;
   }[] = [
@@ -128,7 +128,7 @@ export function FocusLayout(a: LayoutActions) {
       key: 'connect',
       label: 'Connect New License',
       icon: <Plus size={20} />,
-      onClick: a.onConnect,
+      displayOnly: true,
     },
     {
       key: 'style',
@@ -159,18 +159,29 @@ export function FocusLayout(a: LayoutActions) {
       </div>
 
       <div className="lay-focus-list">
-        {rows.map((row) => (
-          <button
-            key={row.key}
-            type="button"
-            className={`lay-focus-row${row.danger ? ' danger' : ''}`}
-            onClick={row.onClick}
-          >
-            <span className={`lay-focus-ico${row.danger ? ' danger' : ''}`}>{row.icon}</span>
-            <span className="lay-focus-label">{row.label}</span>
-            {row.trailing}
-          </button>
-        ))}
+        {rows.map((row) =>
+          row.displayOnly ? (
+            <div
+              key={row.key}
+              className="lay-focus-row lay-focus-row-static"
+              aria-hidden="true"
+            >
+              <span className="lay-focus-ico">{row.icon}</span>
+              <span className="lay-focus-label">{row.label}</span>
+            </div>
+          ) : (
+            <button
+              key={row.key}
+              type="button"
+              className={`lay-focus-row${row.danger ? ' danger' : ''}`}
+              onClick={row.onClick}
+            >
+              <span className={`lay-focus-ico${row.danger ? ' danger' : ''}`}>{row.icon}</span>
+              <span className="lay-focus-label">{row.label}</span>
+              {row.trailing}
+            </button>
+          ),
+        )}
       </div>
 
       <LayoutDock
@@ -194,7 +205,6 @@ export function TerminalLayout(a: LayoutActions) {
   }[] = [
     { key: 'pause', cmd: 'ea', arg: a.isPaused ? '--resume' : '--pause', onClick: a.onPauseToggle },
     { key: 'symbols', cmd: 'symbols', arg: '--configure', onClick: a.onSymbols },
-    { key: 'connect', cmd: 'license', arg: '--connect', onClick: a.onConnect },
     { key: 'style', cmd: 'interface', arg: '--settings', onClick: a.onStyle },
     { key: 'delete', cmd: 'license', arg: '--delete', onClick: a.onDelete, danger: true },
   ];
@@ -241,6 +251,11 @@ export function TerminalLayout(a: LayoutActions) {
               <span className={`arg${c.danger ? ' danger' : ''}`}>{c.arg}</span>
             </button>
           ))}
+          <div className="lay-term-line lay-term-line-static" aria-hidden="true">
+            <span className="prompt">&gt;</span>
+            <span className="cmd">license</span>
+            <span className="arg">--connect</span>
+          </div>
           <div className="lay-term-cursor" aria-hidden>
             <span className="prompt">&gt;</span>
             <span className="blink" />
@@ -303,11 +318,7 @@ export function VortexLayout(a: LayoutActions) {
             )
           }
         />
-        <VortexOrb
-          label="CONNECT"
-          onClick={a.onConnect}
-          icon={<Plus size={22} />}
-        />
+        <VortexOrbDisplay label="CONNECT" icon={<Plus size={22} />} />
         <VortexOrb label="STYLE" onClick={a.onStyle} icon={<Box size={22} />} />
       </div>
 
@@ -317,6 +328,26 @@ export function VortexLayout(a: LayoutActions) {
         onMetaTrader={a.onMetaTrader}
       />
     </LayoutBackdrop>
+  );
+}
+
+function VortexOrbDisplay({
+  label,
+  icon,
+  large,
+}: {
+  label: string;
+  icon: ReactNode;
+  large?: boolean;
+}) {
+  return (
+    <div
+      className={`lay-vortex-orb lay-vortex-orb-static${large ? ' large' : ''}`}
+      aria-hidden="true"
+    >
+      <span className="lay-vortex-circle">{icon}</span>
+      <span className="lay-vortex-label">{label}</span>
+    </div>
   );
 }
 

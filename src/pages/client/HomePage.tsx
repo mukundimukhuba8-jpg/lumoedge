@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Home, Monitor, Pause, Play, ScanSearch, Settings, Signal, Trash2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
@@ -13,7 +12,7 @@ import {
 } from '../../lib/interfaceStyle';
 import { resolveCustomBackdrop, resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
 import { clearMt5Session, getMt5Token } from '../../lib/mt5Session';
-import { getEaImage, isStreamableMediaUrl, loadJSON, normalizeLicenseKey, saveJSON } from '../../lib/storage';
+import { getEaImage, isStreamableMediaUrl, loadJSON, saveJSON } from '../../lib/storage';
 import { FocusLayout, TerminalLayout, VortexLayout } from './HomeLayouts';
 import { InterfaceStyleModal } from './InterfaceStyleModal';
 
@@ -29,10 +28,9 @@ export function HomePage() {
     togglePause,
     deleteBot,
     user,
-    activateWithLicense,
     refreshBranding,
   } = useApp();
-  const { openPortal, claimLicense } = useAdmin();
+  const { openPortal } = useAdmin();
   // Profile circles vs hero cover — both use mentor branding when available
   const profileAvatar = resolveProfileImage(bot.imageUrl, bot.customMedia);
   const coverImage = (() => {
@@ -84,10 +82,8 @@ export function HomePage() {
       cancelled = true;
     };
   }, [coverImage, profileAvatar]);
-  const [licenseOpen, setLicenseOpen] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
   const [stylePrefs, setStylePrefs] = useState<InterfacePrefs>(() => loadInterfacePrefs());
-  const [licenseKey, setLicenseKey] = useState(bot.licenseKey);
   const [floatPos, setFloatPos] = useState<FloatPos>(() =>
     loadJSON<FloatPos>(FLOAT_KEY, { x: 0, y: 0 }),
   );
@@ -268,7 +264,6 @@ export function HomePage() {
     accentRgb,
     onPauseToggle: togglePause,
     onSymbols: openSymbols,
-    onConnect: () => setLicenseOpen(true),
     onStyle: () => setStyleOpen(true),
     onDelete: confirmDelete,
     onHomeTap,
@@ -439,18 +434,16 @@ export function HomePage() {
             </div>
 
             <div className="pill home-connect-pill">
-              <button
-                type="button"
-                onClick={() => setLicenseOpen(true)}
+              <div
+                className="home-connect-display"
+                aria-hidden="true"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 12,
                   flex: 1,
-                  background: 'transparent',
                   color: 'var(--text)',
                   textAlign: 'left',
-                  padding: 0,
                 }}
               >
                 <span className="circle-btn" style={{ width: 44, height: 44 }}>+</span>
@@ -458,7 +451,7 @@ export function HomePage() {
                   <div style={{ fontWeight: 700 }}>Connect EA</div>
                   <div className="muted" style={{ fontSize: 12 }}>Connect New License Key</div>
                 </div>
-              </button>
+              </div>
               <button
                 type="button"
                 aria-label="Interface Style"
@@ -499,49 +492,6 @@ export function HomePage() {
             </button>
           </nav>
         </div>
-      ) : null}
-
-      {licenseOpen ? (
-        <Modal title="Connect EA" onClose={() => setLicenseOpen(false)}>
-          <p className="muted">Connect New License Key</p>
-          <div className="field">
-            <label>License Key</label>
-            <input
-              value={licenseKey}
-              onChange={(e) => setLicenseKey(normalizeLicenseKey(e.target.value))}
-              placeholder="LUMO-XXXX-XXXX-XXXX"
-              style={{ letterSpacing: 1, fontWeight: 700 }}
-            />
-          </div>
-          <button
-            className="btn btn-blue"
-            type="button"
-            onClick={async () => {
-              if (!user) return;
-              const result = await claimLicense(licenseKey, user.email);
-              if (!result.ok) {
-                alert(result.error);
-                return;
-              }
-              const lic = result.license;
-              const { resolveBrandingImageUrl } = await import('../../lib/clientBrandingSync');
-              const imageUrl = await resolveBrandingImageUrl(
-                lic.eaImage || resolveProfileImage(lic.eaImage, lic.customMedia) || '',
-              );
-              activateWithLicense(lic.key, {
-                name: lic.eaName,
-                displayName: lic.eaName,
-                mainText: lic.mainText,
-                imageUrl,
-                symbols: lic.symbols,
-                customMedia: lic.customMedia,
-              });
-              setLicenseOpen(false);
-            }}
-          >
-            Connect License
-          </button>
-        </Modal>
       ) : null}
 
       {eaInfoOpen ? (
@@ -624,34 +574,5 @@ export function HomePage() {
         }}
       />
     </div>
-  );
-}
-
-function Modal({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  if (typeof document === 'undefined') return null;
-  return createPortal(
-    <div className="sheet-backdrop smooth-fade" onClick={onClose}>
-      <div
-        className="glow-card sheet-panel smooth-sheet"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-          <strong>{title}</strong>
-          <button type="button" onClick={onClose} style={{ background: 'transparent', color: 'var(--muted)' }}>
-            ✕
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>,
-    document.body,
   );
 }
