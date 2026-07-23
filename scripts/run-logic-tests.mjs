@@ -216,5 +216,26 @@ assert('missing domain rejected', !isRegistrationEmail('user@'));
 assert('whitespace rejected', !isRegistrationEmail('user @example.com'));
 assert('name split from email', splitNameFromEmail('john.doe@mail.com').firstName === 'john');
 
+const { mergeClientRecord } = await import('../api/_lib/clientMerge.mjs');
+const clearedPayment = mergeClientRecord(
+  {
+    email: 'paid@test.com',
+    status: 'approved',
+    paymentClaimed: true,
+    paymentClaimedAt: '2026-01-01',
+  },
+  {
+    email: 'paid@test.com',
+    paymentClaimed: false,
+    paymentClaimedAt: undefined,
+    licenseReleasedAt: '2026-07-23T12:00:00.000Z',
+  },
+);
+assert('license delete clears paymentClaimed', clearedPayment.paymentClaimed === false);
+assert(
+  'license delete keeps approval status',
+  clearedPayment.status === 'approved' && clearedPayment.licenseReleasedAt,
+);
+
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===\n`);
 process.exit(failed > 0 ? 1 : 0);

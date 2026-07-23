@@ -40,8 +40,18 @@ export function mergeClientRecord(prev, incoming) {
     ...incoming,
     email,
     status: pickClientStatus(prev.status, incoming.status),
-    paymentClaimed: Boolean(prev.paymentClaimed || incoming.paymentClaimed),
-    paymentClaimedAt: prev.paymentClaimedAt || incoming.paymentClaimedAt,
+    paymentClaimed:
+      'paymentClaimed' in incoming
+        ? Boolean(incoming.paymentClaimed)
+        : Boolean(prev.paymentClaimed),
+    paymentClaimedAt:
+      'paymentClaimedAt' in incoming
+        ? incoming.paymentClaimedAt || undefined
+        : prev.paymentClaimedAt,
+    licenseReleasedAt:
+      'licenseReleasedAt' in incoming
+        ? incoming.licenseReleasedAt || undefined
+        : prev.licenseReleasedAt,
   };
 }
 

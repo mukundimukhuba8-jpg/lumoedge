@@ -69,7 +69,7 @@ function RouteFallback() {
 }
 
 function ClientAppGate({ children }: { children: React.ReactNode }) {
-  const { user, accessStatus, bot, isPaused } = useApp();
+  const { user, accessStatus, bot, isPaused, requiresRepayment } = useApp();
   const location = useLocation();
   const [prefs, setPrefs] = useState(() => loadInterfacePrefs());
   const licensed = accessStatus === 'licensed' || Boolean(bot.licenseKey?.trim());
@@ -83,7 +83,7 @@ function ClientAppGate({ children }: { children: React.ReactNode }) {
   if (!user) return <Navigate to="/" replace />;
   // License key already entered — stay in the app, never bounce to payment
   if (!licensed && accessStatus === 'pending') return <Navigate to="/waiting" replace />;
-  if (!licensed && (accessStatus === 'approved' || accessStatus === 'paid')) {
+  if (!licensed && (accessStatus === 'approved' || accessStatus === 'paid') && !requiresRepayment) {
     return <Navigate to="/activate" replace />;
   }
   if (!licensed) return <Navigate to="/" replace />;
@@ -141,12 +141,12 @@ function SuperOnly({ children }: { children: React.ReactNode }) {
 }
 
 function HomeRedirect() {
-  const { user, accessStatus, bot } = useApp();
+  const { user, accessStatus, bot, requiresRepayment } = useApp();
   if (!user) return <RegisterPage />;
   if (accessStatus === 'licensed' || bot.licenseKey?.trim()) {
     return <Navigate to="/app" replace />;
   }
-  if (accessStatus === 'approved' || accessStatus === 'paid') {
+  if ((accessStatus === 'approved' || accessStatus === 'paid') && !requiresRepayment) {
     return <Navigate to="/activate" replace />;
   }
   return <Navigate to="/waiting" replace />;
