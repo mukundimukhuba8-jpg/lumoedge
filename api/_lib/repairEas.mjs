@@ -14,13 +14,40 @@ function mergeEasById(existing = [], incoming = []) {
   return [...byId.values()];
 }
 
+function licenseSources(workspace, ownerAdminId = '', vaultEntries = []) {
+  const wsLicenses = toArray(workspace?.licenses).filter((l) => l?.status !== 'deleted');
+  const vaultLicenses = toArray(vaultEntries)
+    .filter(
+      (v) =>
+        v?.eaId &&
+        v.status !== 'deleted' &&
+        (!ownerAdminId || !v.ownerAdminId || v.ownerAdminId === ownerAdminId),
+    )
+    .map((v) => ({
+      eaId: v.eaId,
+      eaName: v.eaName,
+      symbols: v.symbols,
+      eaImage: v.eaImage,
+      ownerAdminId: v.ownerAdminId,
+      status: v.status,
+    }));
+  const byEaId = new Map();
+  for (const lic of [...wsLicenses, ...vaultLicenses]) {
+    const eaId = String(lic?.eaId || '').trim();
+    if (!eaId) continue;
+    const prev = byEaId.get(eaId);
+    byEaId.set(eaId, prev ? { ...prev, ...lic } : lic);
+  }
+  return [...byEaId.values()];
+}
+
 /** Rebuild missing EA rows from license + vault metadata — never delete existing EAs. */
-export function repairWorkspaceEas(workspace, ownerAdminId = '') {
+export function repairWorkspaceEas(workspace, ownerAdminId = '', vaultEntries = []) {
   const ws = workspace && typeof workspace === 'object' ? { ...workspace } : {};
   const tombstones = new Set(toArray(ws.deletedEaIds).map(String));
   const eas = mergeEasById(ws.eas, []);
   const easById = new Map(eas.map((ea) => [ea.id, ea]));
-  const licenses = toArray(ws.licenses).filter((l) => l?.status !== 'deleted');
+  const licenses = licenseSources(ws, ownerAdminId, vaultEntries);
   let restored = 0;
 
   for (const lic of licenses) {
@@ -48,12 +75,15 @@ export function repairWorkspaceEas(workspace, ownerAdminId = '') {
   };
 }
 
-export function repairAllWorkspaces(workspaces = {}) {
+export function repairAllWorkspaces(workspaces = {}, vault = []) {
   const out = {};
   let totalRestored = 0;
   let workspacesTouched = 0;
   for (const [id, ws] of Object.entries(workspaces || {})) {
-    const { workspace, restored } = repairWorkspaceEas(ws, id);
+    const vaultForOwner = toArray(vault).filter(
+      (v) => v?.ownerAdminId === id || !v?.ownerAdminId,
+    );
+    const { workspace, restored } = repairWorkspaceEas(ws, id, vaultForOwner);
     out[id] = workspace;
     if (restored > 0) workspacesTouched += 1;
     totalRestored += restored;

@@ -334,7 +334,7 @@ function mergeWorkspaces(existing = {}, incoming = {}) {
     const a = existing?.[id] || {};
     const b = incoming?.[id] || {};
     const licenseMap = new Map();
-    for (const l of [...(a.licenses || []), ...(b.licenses || [])]) {
+    for (const l of [...toArray(a.licenses), ...toArray(b.licenses)]) {
       if (!l) continue;
       const key = String(l.key || '')
         .trim()
@@ -346,21 +346,27 @@ function mergeWorkspaces(existing = {}, incoming = {}) {
       if (!prev || (l.status === 'active' && prev.status !== 'active')) licenseMap.set(k, l);
       else licenseMap.set(k, { ...prev, ...l });
     }
+    const easA = toArray(a.eas);
+    const easB = toArray(b.eas);
     out[id] = {
       ...a,
       ...b,
-      eas: [...(a.eas || []), ...(b.eas || [])].filter(
-        (e, i, arr) => e?.id && arr.findIndex((x) => x.id === e.id) === i,
-      ),
+      deletedEaIds: [...new Set([...toArray(a.deletedEaIds), ...toArray(b.deletedEaIds)])],
+      eas:
+        easB.length === 0 && easA.length
+          ? easA.filter((e, i, arr) => e?.id && arr.findIndex((x) => x.id === e.id) === i)
+          : [...easA, ...easB].filter(
+              (e, i, arr) => e?.id && arr.findIndex((x) => x.id === e.id) === i,
+            ),
       licenses: [...licenseMap.values()],
-      clientRequests: mergeClients(a.clientRequests || [], b.clientRequests || []),
+      clientRequests: mergeClients(toArray(a.clientRequests), toArray(b.clientRequests)),
       profile: { ...(a.profile || {}), ...(b.profile || {}) },
       mt5: { ...(a.mt5 || {}), ...(b.mt5 || {}) },
-      orders: [...(b.orders || []), ...(a.orders || [])].filter(
+      orders: [...toArray(b.orders), ...toArray(a.orders)].filter(
         (o, i, arr) => o?.id && arr.findIndex((x) => x.id === o.id) === i,
       ),
       revokedKeys: [
-        ...new Set([...(a.revokedKeys || []), ...(b.revokedKeys || [])]),
+        ...new Set([...toArray(a.revokedKeys), ...toArray(b.revokedKeys)]),
       ],
     };
   }
@@ -711,7 +717,9 @@ export default async function handler(req, res) {
         clientEmail: assigned.email || assigned.clientEmail || email,
       };
       const ownerWs = ownerId
-        ? (await firebaseRead(`lumo/store/workspaces/${ownerId}`)) || nextWorkspaces[ownerId] || {}
+        ? (await firebaseRead(`lumo/store/workspaces/${ownerId}`)) ||
+          nextWorkspaces[ownerId] ||
+          null
         : null;
       const ownerLicenses = ownerWs ? dbList(ownerWs.licenses) : [];
       const nextOwnerLicenses = ownerWs
@@ -725,14 +733,17 @@ export default async function handler(req, res) {
             )
           : [licenseRow, ...ownerLicenses]
         : [];
+      const mergedOwnerWs =
+        ownerId && ownerWs
+          ? mergeWorkspaces({ [ownerId]: ownerWs }, { [ownerId]: { licenses: nextOwnerLicenses } })[
+              ownerId
+            ]
+          : null;
 
       const writeResults = await Promise.all([
         firebaseWrite('lumo/vault', nextVault),
-        ownerId
-          ? firebaseWrite(`lumo/store/workspaces/${ownerId}`, {
-              ...ownerWs,
-              licenses: nextOwnerLicenses,
-            })
+        ownerId && mergedOwnerWs
+          ? firebaseWrite(`lumo/store/workspaces/${ownerId}`, mergedOwnerWs)
           : Promise.resolve(true),
       ]);
       const vaultOk = writeResults[0];
@@ -820,7 +831,14 @@ export default async function handler(req, res) {
       await firebaseWrite('lumo/vault', nextVault);
 
       if (ownerId) {
-        const ws = (await firebaseRead(`lumo/store/workspaces/${ownerId}`)) || workspaces[ownerId] || {};
+        const ws =
+          (await firebaseRead(`lumo/store/workspaces/${ownerId}`)) ||
+          workspaces[ownerId] ||
+          null;
+        if (!ws) {
+          send(res, 503, { error: 'Workspace unavailable.' });
+          return;
+        }
         const licenses = dbList(ws.licenses);
         const licenseRow = {
           ...nextEntry,
@@ -835,10 +853,11 @@ export default async function handler(req, res) {
                 : l,
             )
           : [licenseRow, ...licenses];
-        await firebaseWrite(`lumo/store/workspaces/${ownerId}`, {
-          ...ws,
-          licenses: nextLicenses,
-        });
+        const mergedOwnerWs = mergeWorkspaces(
+          { [ownerId]: ws },
+          { [ownerId]: { licenses: nextLicenses } },
+        )[ownerId];
+        await firebaseWrite(`lumo/store/workspaces/${ownerId}`, mergedOwnerWs);
       }
 
       // Reset payment so client must pay again — keep admin approval when present
@@ -1125,10 +1144,17 @@ export default async function handler(req, res) {
 
     if (pathname === '/api/workspaces/repair-eas' && req.method === 'POST') {
       const { repairAllWorkspaces } = await import('./_lib/repairEas.mjs');
-      const rawWorkspaces = await firebaseRead('lumo/store/workspaces');
+      const [rawWorkspaces, rawVault] = await Promise.all([
+        firebaseRead('lumo/store/workspaces'),
+        firebaseRead('lumo/vault'),
+      ]);
       const workspacesObj =
         rawWorkspaces && typeof rawWorkspaces === 'object' ? rawWorkspaces : {};
-      const { workspaces, totalRestored, workspacesTouched } = repairAllWorkspaces(workspacesObj);
+      const vault = toArray(rawVault);
+      const { workspaces, totalRestored, workspacesTouched } = repairAllWorkspaces(
+        workspacesObj,
+        vault,
+      );
       let easCount = 0;
       for (const ws of Object.values(workspaces)) {
         easCount += toArray(ws?.eas).length;
