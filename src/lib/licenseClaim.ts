@@ -8,6 +8,7 @@ import {
   type VaultLicense,
 } from './storage';
 import { isPlaceholderMentorImage, looksLikeVideoUrl } from './mentorMedia';
+import { imagePublicUrl } from './storage';
 
 /** Single client-facing message for any failed activation. */
 export const INVALID_KEY_MESSAGE = 'Invalid key';
@@ -178,12 +179,13 @@ export function resolveLicenseBrandingSync(
         resolvedImage = embedded;
         break;
       }
-      continue;
+      resolvedImage = imagePublicUrl(id);
+      break;
     }
     if (v.startsWith('/api/images/')) {
       const imgKey = decodeURIComponent(v.replace('/api/images/', '').split('?')[0]);
       const embedded = remoteImages[imgKey] || getEaImage(imgKey);
-      if (embedded && embedded.startsWith('data:')) {
+      if (embedded && (embedded.startsWith('data:') || embedded.startsWith('http'))) {
         resolvedImage = embedded;
         break;
       }
@@ -191,7 +193,8 @@ export function resolveLicenseBrandingSync(
         resolvedImage = remoteImages[imgKey];
         break;
       }
-      continue;
+      resolvedImage = v;
+      break;
     }
     if (v.startsWith('data:') || v.startsWith('http') || v.startsWith('/')) {
       resolvedImage = v;

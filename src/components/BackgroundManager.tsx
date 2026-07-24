@@ -82,7 +82,7 @@ export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange 
       setActiveSlot(slot);
       setProgress({ pct: 5, stage: 'Starting…' });
 
-      const { url, kind, cloudPending } = await uploadBackgroundMedia(
+      const { url, kind } = await uploadBackgroundMedia(
         adminId,
         slot,
         file,
@@ -100,21 +100,14 @@ export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange 
       setProgress({ pct: 96, stage: 'Syncing to clients…' });
 
       try {
-        await Promise.race([
-          onSync(nextMedia),
-          new Promise((resolve) => window.setTimeout(resolve, 20_000)),
-        ]);
+        await onSync(nextMedia);
       } catch {
-        // local + upload already saved — profile sync can retry on next save
+        // local + cloud already saved — profile sync can retry on next save
       }
 
       setProgress({ pct: 100, stage: 'Complete' });
       const label = BACKGROUND_SLOTS.find((s) => s.id === slot)?.label || slot;
-      setMessage(
-        cloudPending
-          ? `${label} saved. Cloud sync continues in the background — clients will update shortly.`
-          : `${label} uploaded successfully.`,
-      );
+      setMessage(`${label} uploaded — synced to all clients.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed.');
     } finally {

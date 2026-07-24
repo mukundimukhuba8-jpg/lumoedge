@@ -2,7 +2,7 @@
 
 import type { LicenseSync } from '../context/AppContext';
 import { dbList, firebaseFetchImage } from './firebaseDb';
-import { isPlaceholderMentorImage, normalizeCustomMedia } from './mentorMedia';
+import { isPlaceholderMentorImage, isGenericLumoLabel, normalizeCustomMedia } from './mentorMedia';
 import { fetchDb } from './remote';
 import {
   findInVault,
@@ -46,13 +46,47 @@ function findLicenseEntry(db: NonNullable<Awaited<ReturnType<typeof fetchDb>>>, 
 }
 
 function brandingFromVault(vaultHit: VaultLicense, imageUrl: string): LicenseSync {
+  const eaName = isGenericLumoLabel(vaultHit.eaName) ? '' : String(vaultHit.eaName || '');
   return {
-    name: vaultHit.eaName || 'Lumo Edge',
-    displayName: vaultHit.eaName || 'Lumo Edge',
-    mainText: vaultHit.mainText || '',
+    name: eaName || 'Lumo Edge',
+    displayName: eaName || 'Lumo Edge',
+    mainText: String(vaultHit.mainText || ''),
     symbols: vaultHit.symbols?.length ? vaultHit.symbols : ['XAUUSD'],
     customMedia: normalizeCustomMedia(vaultHit.customMedia),
     imageUrl,
+  };
+}
+
+function enrichBrandingFromWorkspace(
+  base: LicenseSync,
+  raw: (VaultLike & { _ws?: { profile?: Record<string, unknown>; eas?: Array<{ id: string; name?: string; symbols?: string[] }> } }) | null,
+): LicenseSync {
+  if (!raw) return base;
+  const ws = raw._ws;
+  const ownerEa = ws?.eas?.find((e) => e.id === raw.eaId);
+  const eaName = isGenericLumoLabel(base.displayName)
+    ? String(raw.eaName || ownerEa?.name || ws?.profile?.eaDisplayName || '')
+    : String(base.displayName || '');
+  const mainText = base.mainText || String(raw.mainText || ws?.profile?.mainText || '');
+  const customMedia = base.customMedia?.some((m) => m.url)
+    ? base.customMedia
+    : normalizeCustomMedia(
+        (Array.isArray(raw.customMedia) ? raw.customMedia : ws?.profile?.customMedia) as [],
+      );
+  return {
+    ...base,
+    name: eaName || base.name,
+    displayName: eaName || base.displayName,
+    mainText,
+    symbols:
+      base.symbols?.length && base.symbols[0] !== 'XAUUSD'
+        ? base.symbols
+        : Array.isArray(raw.symbols) && raw.symbols.length
+          ? raw.symbols
+          : ownerEa?.symbols?.length
+            ? ownerEa.symbols
+            : base.symbols,
+    customMedia,
   };
 }
 
@@ -97,21 +131,10 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
   const vaultHit = findInVault(normalizedKey);
   if (vaultHit && vaultHit.ownerAdminId) {
     const imageUrl = await resolveMentorImage(vaultHit.ownerAdminId, localImages);
-    let customMedia = normalizeCustomMedia(vaultHit.customMedia);
-    if (!customMedia.some((m) => m.url)) {
-      const db = await fetchDb();
-      const raw = db ? findLicenseEntry(db, normalizedKey) : null;
-      const ws = (raw as { _ws?: { profile?: Record<string, unknown> } } | null)?._ws;
-      customMedia = normalizeCustomMedia(
-        (Array.isArray((raw as VaultLike | null)?.customMedia)
-          ? (raw as VaultLike).customMedia
-          : ws?.profile?.customMedia) as [],
-      );
-    }
-    return {
-      ...brandingFromVault(vaultHit, imageUrl),
-      customMedia,
-    };
+    const db = await fetchDb();
+    const raw = db ? findLicenseEntry(db, normalizedKey) : null;
+    const base = brandingFromVault(vaultHit, imageUrl);
+    return enrichBrandingFromWorkspace(base, raw);
   }
 
   const db = await fetchDb();
@@ -154,8 +177,8 @@ export async function resolveBrandingImageUrl(imageUrl: string): Promise<string>
   if (raw.startsWith('data:') || raw.startsWith('blob:') || isStreamableMediaUrl(raw)) {
     return raw;
   }
-  if (raw.startsWith('img:')) {
-    const { resolveDisplayImage } = await import('./storage');
+  const { resolveDisplayImage } = await import('./storage');
+  if (raw.startsWith('img:') || raw.startsWith('/api/images/')) {
     return resolveDisplayImage(raw);
   }
   return raw;

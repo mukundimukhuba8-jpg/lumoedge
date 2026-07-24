@@ -49,6 +49,7 @@ import {
   makeLicenseKey,
   normalizeLicenseKey,
   publishEaImage,
+  publishMentorMediaImage,
   pruneClientDeviceStorage,
   revokeLicenseKey,
   saveEaImage,
@@ -63,7 +64,6 @@ import {
 } from '../lib/storage';
 import {
   firebaseSaveImage,
-  firebaseUploadDataUrl,
   mergeAdmins,
   dbList,
 } from '../lib/firebaseDb';
@@ -372,10 +372,17 @@ async function syncPortalBrandingToClients(
           {}) as Record<string, unknown>;
         const key = String(bot.licenseKey || '');
         if (!key || !keysMatch(key, lic.key)) continue;
-        const clientImage =
-          displayImage && displayImage.startsWith('http')
-            ? displayImage
-            : `/api/images/profile-${encodeURIComponent(adminId)}`;
+        const clientImage = (() => {
+          if (displayImage?.startsWith('data:') || displayImage?.startsWith('http')) {
+            return displayImage;
+          }
+          const ref = imageRef || (displayImage ? `img:profile-${adminId}` : '');
+          if (ref.startsWith('img:')) {
+            return `/api/images/${encodeURIComponent(ref.slice(4))}`;
+          }
+          if (ref.startsWith('/api/images/')) return ref;
+          return `/api/images/${encodeURIComponent(`profile-${adminId}`)}`;
+        })();
         sessions[email] = {
           ...prev,
           bot: {
@@ -2868,36 +2875,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
               }
               if (item.url.startsWith('data:')) {
                 const mediaKeyId = `${adminId}-${item.slot}`;
-                saveEaImage(mediaKeyId, item.url);
-                let published = item.url;
-                try {
-                  const hosted = await withTimeout(
-                    firebaseUploadDataUrl(`media/${mediaKeyId}`, item.url),
-                    12_000,
-                    null,
-                  );
-                  if (hosted) {
-                    saveEaImage(mediaKeyId, hosted);
-                    published = hosted;
-                  } else {
-                    const { imagePublicUrl } = await import('../lib/storage');
-                    const apiUrl = imagePublicUrl(mediaKeyId);
-                    const res = await withTimeout(
-                      fetch(apiUrl, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ dataUrl: item.url }),
-                      }),
-                      12_000,
-                      null as Response | null,
-                    );
-                    published = res?.ok ? apiUrl : apiUrl;
-                  }
-                } catch {
-                  const { imagePublicUrl } = await import('../lib/storage');
-                  published = imagePublicUrl(mediaKeyId);
-                }
-                nextMedia.push({ ...item, url: published });
+                const published = await withTimeout(
+                  publishMentorMediaImage(mediaKeyId, item.url),
+                  20_000,
+                  `img:${mediaKeyId}`,
+                );
+                nextMedia.push({
+                  ...item,
+                  url:
+                    published.startsWith('http') || published.startsWith('/')
+                      ? published
+                      : published.startsWith('img:')
+                        ? published
+                        : `img:${mediaKeyId}`,
+                });
               } else {
                 nextMedia.push(item);
               }
