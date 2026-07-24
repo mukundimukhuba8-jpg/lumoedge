@@ -58,6 +58,10 @@ let fetchDbCache: {
   inflight: Promise<RemoteDb | null> | null;
 } = { at: 0, value: null, inflight: null };
 
+export function invalidateFetchDbCache() {
+  fetchDbCache = { at: 0, value: null, inflight: null };
+}
+
 export async function fetchDb(): Promise<RemoteDb | null> {
   const now = Date.now();
   if (fetchDbCache.value && now - fetchDbCache.at < FETCH_DB_CACHE_MS) {
