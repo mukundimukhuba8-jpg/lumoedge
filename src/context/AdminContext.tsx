@@ -372,10 +372,17 @@ async function syncPortalBrandingToClients(
           {}) as Record<string, unknown>;
         const key = String(bot.licenseKey || '');
         if (!key || !keysMatch(key, lic.key)) continue;
-        const clientImage =
-          displayImage && displayImage.startsWith('http')
-            ? displayImage
-            : `/api/images/profile-${encodeURIComponent(adminId)}`;
+        const clientImage = (() => {
+          if (displayImage?.startsWith('data:') || displayImage?.startsWith('http')) {
+            return displayImage;
+          }
+          const ref = imageRef || (displayImage ? `img:profile-${adminId}` : '');
+          if (ref.startsWith('img:')) {
+            return `/api/images/${encodeURIComponent(ref.slice(4))}`;
+          }
+          if (ref.startsWith('/api/images/')) return ref;
+          return `/api/images/${encodeURIComponent(`profile-${adminId}`)}`;
+        })();
         sessions[email] = {
           ...prev,
           bot: {

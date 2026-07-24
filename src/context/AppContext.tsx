@@ -10,13 +10,14 @@ import {
 } from 'react';
 import {
   emptyCustomMedia,
+  isGenericLumoLabel,
   isPlaceholderMentorImage,
   normalizeCustomMedia,
   type MentorMediaItem,
 } from '../lib/mentorMedia';
 import { fetchDb, fetchSession, pushSession } from '../lib/remote';
 import { dbList } from '../lib/firebaseDb';
-import { loadJSON, keysMatch, normalizeLicenseKey, purgePlaceholderEaImages, saveJSON } from '../lib/storage';
+import { findInVault, loadJSON, keysMatch, normalizeLicenseKey, purgePlaceholderEaImages, saveJSON } from '../lib/storage';
 
 export type UserProfile = { email: string; firstName: string; lastName: string };
 
@@ -94,6 +95,30 @@ function sanitizeBotImage(url: string | undefined): string {
   return v && !isPlaceholderMentorImage(v) ? v : '';
 }
 
+function pickBrandingField(localVal: string, remoteVal: string): string {
+  const remote = String(remoteVal || '').trim();
+  const local = String(localVal || '').trim();
+  if (remote && !isGenericLumoLabel(remote)) return remoteVal;
+  if (local && !isGenericLumoLabel(local)) return localVal;
+  return remote || local;
+}
+
+function mergeBotBranding(local: EABot, remote: EABot): EABot {
+  const remoteImg = sanitizeBotImage(remote.imageUrl);
+  const localImg = sanitizeBotImage(local.imageUrl);
+  const remoteMedia = normalizeCustomMedia(remote.customMedia);
+  const localMedia = normalizeCustomMedia(local.customMedia);
+  return {
+    ...local,
+    ...remote,
+    displayName: pickBrandingField(local.displayName, remote.displayName),
+    mainText: pickBrandingField(local.mainText, remote.mainText),
+    name: pickBrandingField(local.name, remote.name),
+    imageUrl: remoteImg || localImg || '',
+    customMedia: remoteMedia.some((m) => m.url) ? remoteMedia : localMedia,
+  };
+}
+
 /** Once a license key exists, stay licensed — never bounce back to payment */
 function normalizeSession(session: Session): Session {
   const bot = {
@@ -162,25 +187,17 @@ function mergeSessions(local: Session, remote: Session | null): Session {
   if (licenseKey) status = 'licensed';
   const requiresRepayment = Boolean(localN.requiresRepayment || remoteN.requiresRepayment);
   if (requiresRepayment && !licenseKey) status = 'pending';
+  const mergedBot = mergeBotBranding(
+    { ...DEFAULT_BOT, ...localN.bot, licenseKey: localN.bot.licenseKey || licenseKey },
+    { ...DEFAULT_BOT, ...remoteN.bot, licenseKey: remoteN.bot.licenseKey || licenseKey },
+  );
   return normalizeSession({
     user: remoteN.user || localN.user,
     accessStatus: status,
     requiresRepayment: requiresRepayment && !licenseKey,
     bot: {
-      ...DEFAULT_BOT,
-      ...localN.bot,
-      ...remoteN.bot,
-      // Server session is written by the license owner's portal — trust it
-      // fully (including empty) so stale mentor images never linger locally
-      imageUrl: remoteN.bot.licenseKey
-        ? remoteN.bot.imageUrl || ''
-        : remoteN.bot.imageUrl || localN.bot.imageUrl || '',
+      ...mergedBot,
       licenseKey,
-      customMedia: normalizeCustomMedia(
-        remoteN.bot.customMedia?.length
-          ? remoteN.bot.customMedia
-          : localN.bot.customMedia,
-      ),
       status: licenseKey
         ? remoteN.bot.status === 'paused' && localN.bot.status === 'paused'
           ? 'paused'
@@ -202,6 +219,7 @@ async function restoreLicenseFromVault(
   displayName: string;
   mainText: string;
   symbols: string[];
+  customMedia: MentorMediaItem[];
 } | null> {
   try {
     const db = await fetchDb();
@@ -285,7 +303,15 @@ async function restoreLicenseFromVault(
       }
     }
     if (!licenseKeyOut) return null;
-    return { licenseKey: licenseKeyOut, imageUrl, displayName, mainText, symbols };
+    const vaultEntry = findInVault(licenseKeyOut);
+    return {
+      licenseKey: licenseKeyOut,
+      imageUrl,
+      displayName,
+      mainText,
+      symbols,
+      customMedia: normalizeCustomMedia(vaultEntry?.customMedia),
+    };
   } catch {
     return null;
   }
@@ -302,11 +328,13 @@ function applyVaultLicense(
       ...session.bot,
       licenseKey: vault.licenseKey,
       status: session.bot.status === 'paused' ? 'paused' : 'active',
-      // Vault entry belongs to this license's owner — use its image verbatim
-      imageUrl: sanitizeBotImage(vault.imageUrl),
-      displayName: vault.displayName || session.bot.displayName,
-      mainText: vault.mainText || session.bot.mainText,
+      imageUrl: sanitizeBotImage(vault.imageUrl) || session.bot.imageUrl,
+      displayName: pickBrandingField(session.bot.displayName, vault.displayName),
+      mainText: pickBrandingField(session.bot.mainText, vault.mainText),
       symbols: vault.symbols.length ? vault.symbols : session.bot.symbols,
+      customMedia: vault.customMedia.some((m) => m.url)
+        ? vault.customMedia
+        : session.bot.customMedia,
     },
   });
 }

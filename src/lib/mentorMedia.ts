@@ -265,6 +265,13 @@ export function isPlaceholderMentorImage(url?: string): boolean {
   );
 }
 
+/** Stock Lumo labels — not mentor-configured EA branding. */
+export function isGenericLumoLabel(text?: string): boolean {
+  const v = String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!v) return true;
+  return v === 'lumo edge' || v === 'lumoedge';
+}
+
 export function isMentorProfileImage(url?: string): boolean {
   return !isPlaceholderMentorImage(url);
 }
