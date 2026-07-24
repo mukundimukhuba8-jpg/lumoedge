@@ -85,7 +85,12 @@ import {
   normalizeAdminRole,
 } from '../lib/adminQueue';
 import { MENTOR_AUTH_MSG } from '../lib/mentorAuthUi';
-import { countClientQueue, normalizeClientStatus, pickClientStatus } from '../lib/clientQueue';
+import {
+  countClientQueue,
+  mergeClientsLive,
+  normalizeClientStatus,
+  pickClientStatus,
+} from '../lib/clientQueue';
 import {
   isRegistrationEmail,
   normalizeRegistrationEmail,
@@ -1153,10 +1158,8 @@ function mergeSubscriberQueue(
   remoteList: ClientRequest[] | null | undefined,
   remoteDeleted?: Iterable<string>,
 ): ClientRequest[] {
-  return withoutDeleted(
-    mergeClientLists(prepaidAsClientRequests(), prev, remoteList || []),
-    remoteDeleted,
-  );
+  const backup = mergeClientLists(prepaidAsClientRequests(), prev);
+  return withoutDeleted(mergeClientsLive(remoteList || [], backup), remoteDeleted);
 }
 
 const AdminContext = createContext<Ctx | null>(null);
@@ -1871,6 +1874,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             email,
             firstName: upgraded.firstName,
             lastName: upgraded.lastName,
+            status: asPaid ? 'approved' : 'pending',
+            paymentClaimed: asPaid,
+            paymentClaimedAt: upgraded.paymentClaimedAt,
           })
             .then(async (serverEntry) => {
               if (!serverEntry) return;
@@ -1941,6 +1947,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           email,
           firstName: entry.firstName,
           lastName: entry.lastName,
+          status: entry.status,
+          paymentClaimed: entry.paymentClaimed,
+          paymentClaimedAt: entry.paymentClaimedAt,
         })
           .then(async (serverEntry) => {
             if (!serverEntry) return;

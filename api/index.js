@@ -202,10 +202,11 @@ function mergeVault(existing = [], incoming = []) {
 
 /** Live Firebase registrations merged with durable GitHub backup — never drop pending. */
 async function loadMergedClients() {
+  const { mergeClientsLive } = await import('./_lib/clientMerge.mjs');
   const { db } = await loadDb();
   const githubClients = toArray(db.clients);
   const fbClients = toArray(await firebaseRead('lumo/clients'));
-  return mergeClients(githubClients, fbClients);
+  return mergeClientsLive(fbClients, githubClients);
 }
 
 async function firebaseRead(path) {

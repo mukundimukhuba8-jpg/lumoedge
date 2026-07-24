@@ -22,6 +22,47 @@ export function pickClientStatus(
   return 'rejected';
 }
 
+/** Live Firebase queue wins for pending — stale GitHub approved must not hide new registrations. */
+export function pickClientStatusLive(
+  live: unknown,
+  backup: unknown,
+): ClientApprovalStatus {
+  const l = normalizeClientStatus(live);
+  const b = normalizeClientStatus(backup);
+  if (l === 'rejected') return 'rejected';
+  if (l === 'approved') return 'approved';
+  if (l === 'pending') return 'pending';
+  return b;
+}
+
+export function mergeClientsLive<
+  T extends ClientPaymentFields & { email?: string },
+>(live: T[], backup: T[]): T[] {
+  const byEmail = new Map<string, T>();
+  for (const item of backup) {
+    const email = String(item.email || '').trim().toLowerCase();
+    if (!email) continue;
+    byEmail.set(email, { ...item, email } as T);
+  }
+  for (const item of live) {
+    const email = String(item.email || '').trim().toLowerCase();
+    if (!email) continue;
+    const prev = byEmail.get(email);
+    if (!prev) {
+      byEmail.set(email, { ...item, email } as T);
+      continue;
+    }
+    byEmail.set(email, {
+      ...prev,
+      ...item,
+      email,
+      status: pickClientStatusLive(item.status, prev.status),
+      ...mergeClientPaymentFields(prev, item),
+    });
+  }
+  return [...byEmail.values()];
+}
+
 export function countClientQueue<
   T extends { status?: unknown },
 >(list: T[]) {
