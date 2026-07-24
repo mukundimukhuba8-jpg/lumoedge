@@ -414,6 +414,31 @@ export async function publishEaImage(id: string, dataUrl: string): Promise<strin
   return dataUrl;
 }
 
+/** Same cloud sync path as profile EA image — used for backgrounds and custom media. */
+export async function publishMentorMediaImage(
+  id: string,
+  dataUrl: string,
+  timeoutMs = 20_000,
+): Promise<string> {
+  if (!id || !dataUrl) return '';
+  saveEaImage(id, dataUrl);
+  saveEaImage(`img:${id}`, dataUrl);
+
+  await Promise.race([
+    firebaseSaveImage(id, dataUrl),
+    new Promise<void>((resolve) => window.setTimeout(resolve, 12_000)),
+  ]).catch(() => undefined);
+
+  const published = await Promise.race([
+    publishEaImage(id, dataUrl),
+    new Promise<string>((resolve) => window.setTimeout(() => resolve(`img:${id}`), timeoutMs)),
+  ]);
+
+  if (published.startsWith('img:')) return published;
+  if (published.startsWith('http') || published.startsWith('/')) return published;
+  return `img:${id}`;
+}
+
 async function pushDbImages(id: string, dataUrl: string) {
   try {
     await fetch('/api/db', {
