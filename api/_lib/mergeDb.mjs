@@ -39,7 +39,7 @@ function mergeWorkspaces(existing = {}, incoming = {}) {
     const a = existing?.[id] || {};
     const b = incoming?.[id] || {};
     const licenseMap = new Map();
-    for (const l of [...(a.licenses || []), ...(b.licenses || [])]) {
+    for (const l of [...toArray(a.licenses), ...toArray(b.licenses)]) {
       if (!l) continue;
       const key = String(l.key || '')
         .trim()
@@ -51,24 +51,26 @@ function mergeWorkspaces(existing = {}, incoming = {}) {
       if (!prev || (l.status === 'active' && prev.status !== 'active')) licenseMap.set(k, l);
       else licenseMap.set(k, { ...prev, ...l });
     }
+    const easA = toArray(a.eas);
+    const easB = toArray(b.eas);
     out[id] = {
       ...a,
       ...b,
-      deletedEaIds: [...new Set([...(a.deletedEaIds || []), ...(b.deletedEaIds || [])])],
+      deletedEaIds: [...new Set([...toArray(a.deletedEaIds), ...toArray(b.deletedEaIds)])],
       eas:
-        (b.eas || []).length === 0 && (a.eas || []).length
-          ? [...(a.eas || [])]
-          : [...(a.eas || []), ...(b.eas || [])].filter(
+        easB.length === 0 && easA.length
+          ? easA.filter((e, i, arr) => e?.id && arr.findIndex((x) => x.id === e.id) === i)
+          : [...easA, ...easB].filter(
               (e, i, arr) => e?.id && arr.findIndex((x) => x.id === e.id) === i,
             ),
       licenses: [...licenseMap.values()],
-      clientRequests: mergeClients(a.clientRequests || [], b.clientRequests || []),
+      clientRequests: mergeClients(toArray(a.clientRequests), toArray(b.clientRequests)),
       profile: { ...(a.profile || {}), ...(b.profile || {}) },
       mt5: { ...(a.mt5 || {}), ...(b.mt5 || {}) },
-      orders: [...(b.orders || []), ...(a.orders || [])].filter(
+      orders: [...toArray(b.orders), ...toArray(a.orders)].filter(
         (o, i, arr) => o?.id && arr.findIndex((x) => x.id === o.id) === i,
       ),
-      revokedKeys: [...new Set([...(a.revokedKeys || []), ...(b.revokedKeys || [])])],
+      revokedKeys: [...new Set([...toArray(a.revokedKeys), ...toArray(b.revokedKeys)])],
     };
   }
   return out;

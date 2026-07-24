@@ -225,20 +225,20 @@ function mergeWorkspace(
   const a = current && typeof current === 'object' ? current : {};
   const b = incoming && typeof incoming === 'object' ? incoming : {};
   const deletedEaIds = Array.from(
-    new Set([
-      ...((Array.isArray(a.deletedEaIds) ? a.deletedEaIds : []) as string[]),
-      ...((Array.isArray(b.deletedEaIds) ? b.deletedEaIds : []) as string[]),
-    ]),
+    new Set([...dbList<string>(a.deletedEaIds), ...dbList<string>(b.deletedEaIds)]),
   );
   const tombstones = new Set(deletedEaIds);
-  const eas = mergeById(
-    (Array.isArray(a.eas) ? a.eas : []) as Record<string, unknown>[],
-    (Array.isArray(b.eas) ? b.eas : []) as Record<string, unknown>[],
-    (e) => String(e.id || e.name || ''),
-  ).filter((e) => !tombstones.has(String(e.id || '')));
+  const easA = dbList<Record<string, unknown>>(a.eas);
+  const easB = dbList<Record<string, unknown>>(b.eas);
+  const eas =
+    easB.length === 0 && easA.length
+      ? easA.filter((e) => !tombstones.has(String(e.id || '')))
+      : mergeById(easA, easB, (e) => String(e.id || e.name || '')).filter(
+          (e) => !tombstones.has(String(e.id || '')),
+        );
   const licenses = mergeById(
-    (Array.isArray(a.licenses) ? a.licenses : []) as Record<string, unknown>[],
-    (Array.isArray(b.licenses) ? b.licenses : []) as Record<string, unknown>[],
+    dbList<Record<string, unknown>>(a.licenses),
+    dbList<Record<string, unknown>>(b.licenses),
     (l) => String(l.id || l.key || ''),
   );
   // Never drop a license just because the other side omitted it
@@ -263,18 +263,15 @@ function mergeWorkspace(
     licenses,
     profile,
     clientRequests: mergeClients(
-      (Array.isArray(a.clientRequests) ? a.clientRequests : []) as Record<string, unknown>[],
-      (Array.isArray(b.clientRequests) ? b.clientRequests : []) as Record<string, unknown>[],
+      dbList<Record<string, unknown>>(a.clientRequests),
+      dbList<Record<string, unknown>>(b.clientRequests),
     ),
     revokedKeys: Array.from(
-      new Set([
-        ...((Array.isArray(a.revokedKeys) ? a.revokedKeys : []) as string[]),
-        ...((Array.isArray(b.revokedKeys) ? b.revokedKeys : []) as string[]),
-      ]),
+      new Set([...dbList<string>(a.revokedKeys), ...dbList<string>(b.revokedKeys)]),
     ),
     orders: mergeById(
-      (Array.isArray(a.orders) ? a.orders : []) as Record<string, unknown>[],
-      (Array.isArray(b.orders) ? b.orders : []) as Record<string, unknown>[],
+      dbList<Record<string, unknown>>(a.orders),
+      dbList<Record<string, unknown>>(b.orders),
       (o) => String(o.id || ''),
     ).sort((x, y) => {
       const xi = Number(String(x.id || '').replace(/^ord-/, '')) || 0;

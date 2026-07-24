@@ -535,13 +535,13 @@ function normalizeWorkspace(
 ): AdminWorkspace {
   const base = createEmptyWorkspace(seed);
   if (!ws) return base;
-  const tombstones = new Set(ws.deletedEaIds ?? []);
+  const tombstones = new Set(dbList<string>(ws.deletedEaIds));
   return {
     ...base,
     ...ws,
     deletedEaIds: [...tombstones],
-    eas: (ws.eas ?? []).filter((e) => !tombstones.has(e.id)),
-    licenses: (ws.licenses ?? [])
+    eas: dbList<ManagedEA>(ws.eas).filter((e) => e?.id && !tombstones.has(e.id)),
+    licenses: dbList<LicenseRecord>(ws.licenses)
       .filter((l) => l.status !== 'deleted')
       .filter((l) => !isLicenseRevoked(l.key, ws.revokedKeys ?? []))
       .map((l) => ({
@@ -549,9 +549,9 @@ function normalizeWorkspace(
         ownerAdminId: l.ownerAdminId || seed?.id || '',
         customMedia: normalizeCustomMedia(l.customMedia),
       })),
-    clientRequests: ws.clientRequests ?? [],
-    orders: ws.orders ?? [],
-    revokedKeys: ws.revokedKeys ?? [],
+    clientRequests: dbList<ClientRequest>(ws.clientRequests),
+    orders: dbList<CopyOrder>(ws.orders),
+    revokedKeys: dbList<string>(ws.revokedKeys),
     profile: {
       ...base.profile,
       ...(ws.profile ?? {}),
@@ -571,14 +571,14 @@ function mergeWorkspaceKeepAll(a: AdminWorkspace, b: AdminWorkspace): AdminWorks
     ...(b.deletedEaIds || []),
   ]);
   const easById = new Map<string, ManagedEA>();
-  for (const ea of [...(a.eas || []), ...(b.eas || [])]) {
+  for (const ea of [...dbList<ManagedEA>(a.eas), ...dbList<ManagedEA>(b.eas)]) {
     if (!ea?.id || deletedEaIds.has(ea.id)) continue;
     const prev = easById.get(ea.id);
     easById.set(ea.id, prev ? { ...prev, ...ea, imageUrl: ea.imageUrl || prev.imageUrl || '' } : ea);
   }
   const licByKey = new Map<string, LicenseRecord>();
   const wsRevoked = [...new Set([...(a.revokedKeys || []), ...(b.revokedKeys || [])])];
-  for (const lic of [...(a.licenses || []), ...(b.licenses || [])]) {
+  for (const lic of [...dbList<LicenseRecord>(a.licenses), ...dbList<LicenseRecord>(b.licenses)]) {
     if (!lic?.key || isLicenseRevoked(lic.key, wsRevoked)) continue;
     const mergeKey = keyFingerprint(lic.key) || lic.id || lic.key;
     const prev = licByKey.get(mergeKey);
@@ -1234,12 +1234,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       const adminSession = isAdminPortalSession();
       if (adminSession && db.vault) {
         const revoked = loadRevokedKeys();
-        const vault = dbList<VaultLicense>(db.vault).filter(
-          (v) =>
-            v.status !== 'deleted' &&
-            !revoked.some((k) => keysMatch(k, v.key)),
+        const localVault = loadVault();
+        saveVaultLocal(
+          mergeVaultKeepAll(
+            localVault,
+            dbList<VaultLicense>(db.vault).filter(
+              (v) =>
+                v.status !== 'deleted' &&
+                !revoked.some((k) => keysMatch(k, v.key)),
+            ),
+          ),
         );
-        saveVaultLocal(vault);
       }
       if (adminSession && db.store?.workspaces && typeof db.store.workspaces === 'object') {
         const remoteWs: StoreState['workspaces'] = {};
@@ -1418,6 +1423,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ),
         );
       }
+      let backfillWs: AdminWorkspace | null = null;
       setStore((prev) => {
         const localWs = prev.workspaces[mentorId];
         if (!localWs) {
@@ -1434,6 +1440,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           mentorId,
           merged.revokedKeys,
         );
+        if (merged.eas.length > remoteWs.eas.length) {
+          backfillWs = merged;
+        }
         if (
           JSON.stringify(merged.profile) === JSON.stringify(localWs.profile) &&
           JSON.stringify(merged.licenses) === JSON.stringify(localWs.licenses) &&
@@ -1448,6 +1457,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         saveJSON(STORE_KEY, next);
         return next;
       });
+      if (backfillWs) {
+        void pushDb({ store: { workspaces: { [mentorId]: backfillWs } } });
+      }
     };
     void syncWorkspace();
     const useFirebaseWatch = isFirebaseConfigured();
@@ -2419,39 +2431,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       },
       updateEA: (id, patch) => {
         if (!adminId) return;
+        patchWorkspace(adminId, (ws) => ({
+          ...ws,
+          eas: ws.eas.map((ea) => (ea.id === id ? { ...ea, ...patch } : ea)),
+        }));
         void (async () => {
-          const current = normalizeWorkspace(
-            store.workspaces[adminId],
+          const ws = normalizeWorkspace(
+            loadJSON<StoreState>(STORE_KEY, { workspaces: {} }).workspaces[adminId],
             auth.admin ?? { id: adminId },
           );
-          const branded: AdminWorkspace = {
-            ...current,
-            eas: current.eas.map((ea) =>
-              ea.id === id ? { ...ea, ...patch } : ea,
-            ),
-          };
-          setStore((prev) => {
-            const next = {
-              ...prev,
-              workspaces: { ...prev.workspaces, [adminId]: branded },
-            };
-            saveJSON(STORE_KEY, next);
-            return next;
-          });
-          const licenses = await syncPortalBrandingToClients(adminId, branded);
-          setStore((prev) => {
-            const cur = normalizeWorkspace(
-              prev.workspaces[adminId],
-              auth.admin ?? { id: adminId },
-            );
-            const merged: AdminWorkspace = { ...cur, ...branded, licenses };
-            const next = {
-              ...prev,
-              workspaces: { ...prev.workspaces, [adminId]: merged },
-            };
-            saveJSON(STORE_KEY, next);
-            return next;
-          });
+          const licenses = await syncPortalBrandingToClients(adminId, ws);
+          if (!licenses) return;
+          patchWorkspace(adminId, (cur) => ({ ...cur, licenses }));
         })();
       },
       deleteEA: (id) => {

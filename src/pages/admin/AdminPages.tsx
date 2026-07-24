@@ -343,7 +343,18 @@ export function ManageEAsPage() {
             </p>
           ) : null}
         </div>
-      ) : null}
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={restoring}
+            onClick={() => void onRestoreFromCloud()}
+          >
+            {restoring ? 'Syncing…' : 'Sync EAs from cloud'}
+          </button>
+        </div>
+      )}
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>Create New EA</h3>
         <div className="field"><label>EA Name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter EA name" /></div>
