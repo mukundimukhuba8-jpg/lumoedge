@@ -1,0 +1,62 @@
+function toArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') return Object.values(value);
+  return [];
+}
+
+function mergeEasById(existing = [], incoming = []) {
+  const byId = new Map();
+  for (const ea of [...toArray(existing), ...toArray(incoming)]) {
+    if (!ea?.id) continue;
+    const prev = byId.get(ea.id);
+    byId.set(ea.id, prev ? { ...prev, ...ea } : ea);
+  }
+  return [...byId.values()];
+}
+
+/** Rebuild missing EA rows from license + vault metadata — never delete existing EAs. */
+export function repairWorkspaceEas(workspace, ownerAdminId = '') {
+  const ws = workspace && typeof workspace === 'object' ? { ...workspace } : {};
+  const tombstones = new Set(toArray(ws.deletedEaIds).map(String));
+  const eas = mergeEasById(ws.eas, []);
+  const easById = new Map(eas.map((ea) => [ea.id, ea]));
+  const licenses = toArray(ws.licenses).filter((l) => l?.status !== 'deleted');
+  let restored = 0;
+
+  for (const lic of licenses) {
+    const eaId = String(lic?.eaId || '').trim();
+    if (!eaId || tombstones.has(eaId) || easById.has(eaId)) continue;
+    const rebuilt = {
+      id: eaId,
+      name: String(lic.eaName || lic.name || 'EA').trim() || 'EA',
+      symbols: Array.isArray(lic.symbols) && lic.symbols.length ? lic.symbols : ['XAUUSD'],
+      lotSize: 0.01,
+      direction: 'both',
+      imageUrl: String(lic.eaImage || '').trim(),
+      ownerAdminId: String(lic.ownerAdminId || ownerAdminId || '').trim() || undefined,
+    };
+    easById.set(eaId, rebuilt);
+    restored += 1;
+  }
+
+  return {
+    workspace: {
+      ...ws,
+      eas: [...easById.values()].filter((ea) => !tombstones.has(String(ea.id))),
+    },
+    restored,
+  };
+}
+
+export function repairAllWorkspaces(workspaces = {}) {
+  const out = {};
+  let totalRestored = 0;
+  let workspacesTouched = 0;
+  for (const [id, ws] of Object.entries(workspaces || {})) {
+    const { workspace, restored } = repairWorkspaceEas(ws, id);
+    out[id] = workspace;
+    if (restored > 0) workspacesTouched += 1;
+    totalRestored += restored;
+  }
+  return { workspaces: out, totalRestored, workspacesTouched };
+}

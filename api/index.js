@@ -710,7 +710,9 @@ export default async function handler(req, res) {
         ...assigned,
         clientEmail: assigned.email || assigned.clientEmail || email,
       };
-      const ownerWs = ownerId ? nextWorkspaces[ownerId] || {} : null;
+      const ownerWs = ownerId
+        ? (await firebaseRead(`lumo/store/workspaces/${ownerId}`)) || nextWorkspaces[ownerId] || {}
+        : null;
       const ownerLicenses = ownerWs ? dbList(ownerWs.licenses) : [];
       const nextOwnerLicenses = ownerWs
         ? ownerLicenses.some(
@@ -818,7 +820,7 @@ export default async function handler(req, res) {
       await firebaseWrite('lumo/vault', nextVault);
 
       if (ownerId) {
-        const ws = workspaces[ownerId] || {};
+        const ws = (await firebaseRead(`lumo/store/workspaces/${ownerId}`)) || workspaces[ownerId] || {};
         const licenses = dbList(ws.licenses);
         const licenseRow = {
           ...nextEntry,
@@ -1118,6 +1120,31 @@ export default async function handler(req, res) {
         pending: merged.filter((c) => c?.status === 'pending').length,
         approved: merged.filter((c) => c?.status === 'approved').length,
       });
+      return;
+    }
+
+    if (pathname === '/api/workspaces/repair-eas' && req.method === 'POST') {
+      const { repairAllWorkspaces } = await import('./_lib/repairEas.mjs');
+      const rawWorkspaces = await firebaseRead('lumo/store/workspaces');
+      const workspacesObj =
+        rawWorkspaces && typeof rawWorkspaces === 'object' ? rawWorkspaces : {};
+      const { workspaces, totalRestored, workspacesTouched } = repairAllWorkspaces(workspacesObj);
+      let easCount = 0;
+      for (const ws of Object.values(workspaces)) {
+        easCount += toArray(ws?.eas).length;
+      }
+      for (const [id, ws] of Object.entries(workspaces)) {
+        await firebaseWrite(`lumo/store/workspaces/${id}`, ws);
+      }
+      await firebaseWrite('lumo/updatedAt', new Date().toISOString()).catch(() => false);
+      try {
+        const { db, sha } = await loadDb();
+        const merged = mergeDatabases(db, { store: { workspaces } });
+        await saveDb(merged, sha);
+      } catch {
+        // Firebase is source of truth — GitHub mirror is best-effort
+      }
+      send(res, 200, { ok: true, totalRestored, workspacesTouched, easCount });
       return;
     }
 

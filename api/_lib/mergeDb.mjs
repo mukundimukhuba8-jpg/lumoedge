@@ -54,9 +54,13 @@ function mergeWorkspaces(existing = {}, incoming = {}) {
     out[id] = {
       ...a,
       ...b,
-      eas: [...(a.eas || []), ...(b.eas || [])].filter(
-        (e, i, arr) => e?.id && arr.findIndex((x) => x.id === e.id) === i,
-      ),
+      deletedEaIds: [...new Set([...(a.deletedEaIds || []), ...(b.deletedEaIds || [])])],
+      eas:
+        (b.eas || []).length === 0 && (a.eas || []).length
+          ? [...(a.eas || [])]
+          : [...(a.eas || []), ...(b.eas || [])].filter(
+              (e, i, arr) => e?.id && arr.findIndex((x) => x.id === e.id) === i,
+            ),
       licenses: [...licenseMap.values()],
       clientRequests: mergeClients(a.clientRequests || [], b.clientRequests || []),
       profile: { ...(a.profile || {}), ...(b.profile || {}) },
