@@ -236,11 +236,12 @@ function mergeWorkspace(
       : mergeById(easA, easB, (e) => String(e.id || e.name || '')).filter(
           (e) => !tombstones.has(String(e.id || '')),
         );
-  const licenses = mergeById(
-    dbList<Record<string, unknown>>(a.licenses),
-    dbList<Record<string, unknown>>(b.licenses),
-    (l) => String(l.id || l.key || ''),
-  );
+  const licA = dbList<Record<string, unknown>>(a.licenses);
+  const licB = dbList<Record<string, unknown>>(b.licenses);
+  const licenses =
+    licB.length === 0 && licA.length
+      ? licA
+      : mergeById(licA, licB, (l) => String(l.id || l.key || ''));
   // Never drop a license just because the other side omitted it
   const profileA = (a.profile && typeof a.profile === 'object' ? a.profile : {}) as Record<
     string,

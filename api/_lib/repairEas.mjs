@@ -1,3 +1,7 @@
+import { healLicensesFromVault, vaultEntryToLicense } from './repairLicenses';
+
+export { healLicensesFromVault, vaultEntryToLicense };
+
 function toArray(value) {
   if (Array.isArray(value)) return value;
   if (value && typeof value === 'object') return Object.values(value);
@@ -75,18 +79,41 @@ export function repairWorkspaceEas(workspace, ownerAdminId = '', vaultEntries = 
   };
 }
 
+export function repairWorkspace(workspace, ownerAdminId = '', vaultEntries = []) {
+  const licenseHeal = healLicensesFromVault(workspace, ownerAdminId, vaultEntries);
+  const withLicenses = { ...workspace, licenses: licenseHeal.licenses };
+  const eaHeal = repairWorkspaceEas(withLicenses, ownerAdminId, vaultEntries);
+  return {
+    workspace: eaHeal.workspace,
+    restoredEas: eaHeal.restored,
+    restoredLicenses: licenseHeal.restored,
+  };
+}
+
 export function repairAllWorkspaces(workspaces = {}, vault = []) {
   const out = {};
-  let totalRestored = 0;
+  let totalRestoredEas = 0;
+  let totalRestoredLicenses = 0;
   let workspacesTouched = 0;
   for (const [id, ws] of Object.entries(workspaces || {})) {
     const vaultForOwner = toArray(vault).filter(
-      (v) => v?.ownerAdminId === id || !v?.ownerAdminId,
+      (v) => !v?.ownerAdminId || v.ownerAdminId === id,
     );
-    const { workspace, restored } = repairWorkspaceEas(ws, id, vaultForOwner);
+    const { workspace, restoredEas, restoredLicenses } = repairWorkspace(
+      ws,
+      id,
+      vaultForOwner,
+    );
     out[id] = workspace;
-    if (restored > 0) workspacesTouched += 1;
-    totalRestored += restored;
+    if (restoredEas > 0 || restoredLicenses > 0) workspacesTouched += 1;
+    totalRestoredEas += restoredEas;
+    totalRestoredLicenses += restoredLicenses;
   }
-  return { workspaces: out, totalRestored, workspacesTouched };
+  return {
+    workspaces: out,
+    totalRestored: totalRestoredEas + totalRestoredLicenses,
+    totalRestoredEas,
+    totalRestoredLicenses,
+    workspacesTouched,
+  };
 }

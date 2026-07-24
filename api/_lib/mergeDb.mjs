@@ -53,6 +53,8 @@ function mergeWorkspaces(existing = {}, incoming = {}) {
     }
     const easA = toArray(a.eas);
     const easB = toArray(b.eas);
+    const licA = toArray(a.licenses);
+    const licB = toArray(b.licenses);
     out[id] = {
       ...a,
       ...b,
@@ -63,7 +65,10 @@ function mergeWorkspaces(existing = {}, incoming = {}) {
           : [...easA, ...easB].filter(
               (e, i, arr) => e?.id && arr.findIndex((x) => x.id === e.id) === i,
             ),
-      licenses: [...licenseMap.values()],
+      licenses:
+        licB.length === 0 && licA.length
+          ? licA.filter((l) => l?.key)
+          : [...licenseMap.values()],
       clientRequests: mergeClients(toArray(a.clientRequests), toArray(b.clientRequests)),
       profile: { ...(a.profile || {}), ...(b.profile || {}) },
       mt5: { ...(a.mt5 || {}), ...(b.mt5 || {}) },

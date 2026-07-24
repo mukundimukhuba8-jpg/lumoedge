@@ -348,6 +348,8 @@ function mergeWorkspaces(existing = {}, incoming = {}) {
     }
     const easA = toArray(a.eas);
     const easB = toArray(b.eas);
+    const licA = toArray(a.licenses);
+    const licB = toArray(b.licenses);
     out[id] = {
       ...a,
       ...b,
@@ -358,7 +360,10 @@ function mergeWorkspaces(existing = {}, incoming = {}) {
           : [...easA, ...easB].filter(
               (e, i, arr) => e?.id && arr.findIndex((x) => x.id === e.id) === i,
             ),
-      licenses: [...licenseMap.values()],
+      licenses:
+        licB.length === 0 && licA.length
+          ? licA.filter((l) => l?.key)
+          : [...licenseMap.values()],
       clientRequests: mergeClients(toArray(a.clientRequests), toArray(b.clientRequests)),
       profile: { ...(a.profile || {}), ...(b.profile || {}) },
       mt5: { ...(a.mt5 || {}), ...(b.mt5 || {}) },
@@ -1151,10 +1156,8 @@ export default async function handler(req, res) {
       const workspacesObj =
         rawWorkspaces && typeof rawWorkspaces === 'object' ? rawWorkspaces : {};
       const vault = toArray(rawVault);
-      const { workspaces, totalRestored, workspacesTouched } = repairAllWorkspaces(
-        workspacesObj,
-        vault,
-      );
+      const { workspaces, totalRestored, totalRestoredEas, totalRestoredLicenses, workspacesTouched } =
+        repairAllWorkspaces(workspacesObj, vault);
       let easCount = 0;
       for (const ws of Object.values(workspaces)) {
         easCount += toArray(ws?.eas).length;
@@ -1170,7 +1173,14 @@ export default async function handler(req, res) {
       } catch {
         // Firebase is source of truth — GitHub mirror is best-effort
       }
-      send(res, 200, { ok: true, totalRestored, workspacesTouched, easCount });
+      send(res, 200, {
+        ok: true,
+        totalRestored,
+        totalRestoredEas,
+        totalRestoredLicenses,
+        workspacesTouched,
+        easCount,
+      });
       return;
     }
 
