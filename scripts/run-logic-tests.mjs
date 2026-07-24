@@ -94,6 +94,41 @@ function pickClientStatus(a, b) {
   return 'rejected';
 }
 
+function pickClientStatusLive(live, backup) {
+  const l = normalizeClientStatus(live);
+  const b = normalizeClientStatus(backup);
+  if (l === 'rejected') return 'rejected';
+  if (l === 'approved') return 'approved';
+  if (l === 'pending') return 'pending';
+  return b;
+}
+
+function mergeClientsLive(liveList, backupList) {
+  const byEmail = new Map();
+  for (const item of backupList || []) {
+    const email = String(item?.email || '').trim().toLowerCase();
+    if (!email) continue;
+    byEmail.set(email, { ...item, email });
+  }
+  for (const item of liveList || []) {
+    const email = String(item?.email || '').trim().toLowerCase();
+    if (!email) continue;
+    const prev = byEmail.get(email);
+    byEmail.set(
+      email,
+      prev
+        ? {
+            ...prev,
+            ...item,
+            email,
+            status: pickClientStatusLive(item.status, prev.status),
+          }
+        : { ...item, email },
+    );
+  }
+  return [...byEmail.values()];
+}
+
 let passed = 0;
 let failed = 0;
 
@@ -150,6 +185,39 @@ console.log('\n=== Client status merge tests ===');
 assert('approved wins pending', pickClientStatus('pending', 'approved') === 'approved');
 assert('pending wins rejected', pickClientStatus('rejected', 'pending') === 'pending');
 assert('rejected only when both rejected', pickClientStatus('rejected', 'rejected') === 'rejected');
+
+assert(
+  'live pending beats stale backup approved',
+  pickClientStatusLive('pending', 'approved') === 'pending',
+);
+assert(
+  'live approved wins over backup pending',
+  pickClientStatusLive('approved', 'pending') === 'approved',
+);
+
+const clientMerge = mergeClientsLive(
+  [{ email: 'new@test.com', status: 'pending', id: 'live-1' }],
+  [{ email: 'new@test.com', status: 'approved', id: 'backup-1' }],
+);
+assert(
+  'mergeClientsLive keeps firebase pending over github approved',
+  clientMerge.length === 1 &&
+    clientMerge[0].status === 'pending' &&
+    clientMerge[0].id === 'live-1',
+);
+
+const prepaidBackup = mergeClientsLive(
+  [],
+  [{ email: 'legacy@test.com', status: 'approved', id: 'prepaid-1' }],
+);
+const queueMerge = mergeClientsLive(
+  [{ email: 'legacy@test.com', status: 'pending', id: 'reg-1' }],
+  prepaidBackup,
+);
+assert(
+  'new registration pending beats prepaid default approved',
+  queueMerge.find((c) => c.email === 'legacy@test.com')?.status === 'pending',
+);
 
 console.log('\n=== mergeDatabases (PUT /api/db safety) ===');
 

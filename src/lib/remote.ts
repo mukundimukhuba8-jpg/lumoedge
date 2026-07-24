@@ -13,12 +13,11 @@ import {
   firebasePushDb,
   firebasePushSession,
   mergeAdminsLive,
-  mergeClients,
   type RemoteDb,
 } from './firebaseDb';
 import { isFirebaseConfigured } from './firebase';
 import { approvalError, approvalLog, approvalWarn } from './approvalLog';
-import { normalizeClientStatus } from './clientQueue';
+import { mergeClientsLive, normalizeClientStatus } from './clientQueue';
 
 export type { RemoteDb };
 
@@ -243,9 +242,10 @@ export async function fetchClients() {
       api = null;
     }
 
-    const merged = mergeClients(
-      (api || []) as Parameters<typeof mergeClients>[0],
-      (fb || []) as Parameters<typeof mergeClients>[1],
+    // Firebase is live; API may include GitHub backup — pending must not be hidden by stale approved.
+    const merged = mergeClientsLive(
+      (fb || []) as Parameters<typeof mergeClientsLive>[0],
+      (api || []) as Parameters<typeof mergeClientsLive>[1],
     );
     if (!merged.length && fb === null && api === null) return null;
     return merged as RemoteDb['clients'];

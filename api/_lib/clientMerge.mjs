@@ -33,6 +33,54 @@ export function pickClientStatus(a, b) {
   return 'rejected';
 }
 
+/** Live Firebase queue wins for pending — stale GitHub approved must not hide new registrations. */
+export function pickClientStatusLive(live, backup) {
+  const l = normalizeClientStatus(live);
+  const b = normalizeClientStatus(backup);
+  if (l === 'rejected') return 'rejected';
+  if (l === 'approved') return 'approved';
+  if (l === 'pending') return 'pending';
+  return b;
+}
+
+export function mergeClientRecordLive(backup, live) {
+  const email = String(live.email || backup.email || '').toLowerCase();
+  return {
+    ...backup,
+    ...live,
+    email,
+    status: pickClientStatusLive(live.status, backup.status),
+    paymentClaimed:
+      'paymentClaimed' in live
+        ? Boolean(live.paymentClaimed)
+        : Boolean(backup.paymentClaimed),
+    paymentClaimedAt:
+      'paymentClaimedAt' in live
+        ? live.paymentClaimedAt || undefined
+        : backup.paymentClaimedAt,
+    licenseReleasedAt:
+      'licenseReleasedAt' in live
+        ? live.licenseReleasedAt || undefined
+        : backup.licenseReleasedAt,
+  };
+}
+
+export function mergeClientsLive(liveList, backupList) {
+  const byEmail = new Map();
+  for (const item of toArray(backupList)) {
+    const email = String(item?.email || '').trim().toLowerCase();
+    if (!email) continue;
+    byEmail.set(email, { ...item, email });
+  }
+  for (const item of toArray(liveList)) {
+    const email = String(item?.email || '').trim().toLowerCase();
+    if (!email) continue;
+    const prev = byEmail.get(email);
+    byEmail.set(email, prev ? mergeClientRecordLive(prev, item) : { ...item, email });
+  }
+  return [...byEmail.values()];
+}
+
 export function mergeClientRecord(prev, incoming) {
   const email = String(incoming.email || prev.email || '').toLowerCase();
   return {
@@ -97,7 +145,7 @@ export async function loadMergedClients(loadDb) {
   const { db } = await loadDb();
   const githubClients = toArray(db.clients);
   const fbClients = toArray(await firebaseRead('lumo/clients'));
-  return mergeClients(githubClients, fbClients);
+  return mergeClientsLive(fbClients, githubClients);
 }
 
 export function mirrorClientToSuperWorkspace(workspaces, entry) {
