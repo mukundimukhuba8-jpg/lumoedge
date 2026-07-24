@@ -6,23 +6,18 @@ import {
   type MentorMediaKind,
   type MentorMediaSlotId,
 } from './mentorMedia';
-import { imagePublicUrl, saveEaImage } from './storage';
-import { firebaseUploadDataUrl } from './firebaseDb';
-import { isFirebaseConfigured } from './firebase';
+import { publishMentorMediaImage, saveEaImage } from './storage';
 
 export type UploadProgress = { pct: number; stage: string };
 
 export type BackgroundUploadResult = {
   url: string;
   kind: MentorMediaKind;
-  /** True when saved on device but cloud sync is still running or failed */
-  cloudPending?: boolean;
 };
 
 export const MAX_BACKGROUNDS = 3;
 
 const STEP_TIMEOUT_MS = 25_000;
-const CLOUD_STEP_TIMEOUT_MS = 30_000;
 const VIDEO_TIMEOUT_MS = 90_000;
 /** Keep under api MAX_DATA_URL_CHARS (8M) with JSON overhead */
 const TARGET_DATA_URL_CHARS = 6_500_000;
@@ -35,51 +30,6 @@ function timeoutPromise<T>(ms: number, message: string): Promise<T> {
 
 function raceTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return Promise.race([promise, timeoutPromise<T>(ms, message)]);
-}
-
-async function tryApiImageUpload(key: string, dataUrl: string): Promise<string | null> {
-  try {
-    const res = await fetch(imagePublicUrl(key), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataUrl }),
-    });
-    if (res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { url?: string };
-      return body.url || imagePublicUrl(key);
-    }
-  } catch {
-    // try alternate endpoint
-  }
-
-  try {
-    const res = await fetch('/api/media', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, dataUrl }),
-    });
-    if (res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { url?: string };
-      return body.url || imagePublicUrl(key);
-    }
-  } catch {
-    // ignore
-  }
-
-  return null;
-}
-
-async function tryFirebaseUpload(key: string, dataUrl: string): Promise<string | null> {
-  if (!isFirebaseConfigured()) return null;
-  try {
-    return await raceTimeout(
-      firebaseUploadDataUrl(`media/${key}`, dataUrl),
-      CLOUD_STEP_TIMEOUT_MS,
-      'Firebase upload timed out',
-    );
-  } catch {
-    return null;
-  }
 }
 
 async function compressForBackground(file: File): Promise<string> {
@@ -105,31 +55,7 @@ async function compressForBackground(file: File): Promise<string> {
   );
 }
 
-/** Upload background bytes to cloud — returns displayable URL (data URL if cloud slow). */
-async function syncBackgroundToCloud(key: string, dataUrl: string): Promise<string> {
-  try {
-    const apiUrl = await raceTimeout(
-      tryApiImageUpload(key, dataUrl),
-      CLOUD_STEP_TIMEOUT_MS,
-      'Cloud upload slow',
-    ).catch(() => null);
-    if (apiUrl) {
-      saveEaImage(key, dataUrl);
-      return imagePublicUrl(key);
-    }
-
-    const hosted = await tryFirebaseUpload(key, dataUrl);
-    if (hosted) {
-      saveEaImage(key, dataUrl);
-      return hosted.startsWith('data:') || hosted.startsWith('http') ? hosted : imagePublicUrl(key);
-    }
-  } catch {
-    // local copy already saved
-  }
-  return dataUrl;
-}
-
-/** Background upload — local save first, cloud sync in background (never hangs). */
+/** Background upload — same publish path as profile EA image. */
 export async function uploadBackgroundMedia(
   adminId: string,
   slot: MentorMediaSlotId,
@@ -155,12 +81,15 @@ export async function uploadBackgroundMedia(
       throw err instanceof Error ? err : new Error('Video upload failed.');
     }
     saveEaImage(key, result.url);
-    onProgress?.({ pct: 92, stage: 'Finalizing…' });
+    onProgress?.({ pct: 100, stage: 'Complete' });
     return { url: result.url, kind: 'video' };
   }
 
   onProgress?.({ pct: 22, stage: 'Optimizing image…' });
   const isGif = file.type === 'image/gif';
+  if (isGif && file.size > 6 * 1024 * 1024) {
+    throw new Error('GIF too large — keep it under 6 MB.');
+  }
   const dataUrl = isGif
     ? await raceTimeout(
         fileToDataUrl(file),
@@ -169,16 +98,13 @@ export async function uploadBackgroundMedia(
       )
     : await compressForBackground(file);
 
-  onProgress?.({ pct: 48, stage: 'Saving locally…' });
-  saveEaImage(key, dataUrl);
+  onProgress?.({ pct: 48, stage: 'Saving…' });
+  onProgress?.({ pct: 62, stage: 'Syncing to cloud…' });
+  const publishedRef = await publishMentorMediaImage(key, dataUrl);
 
-  onProgress?.({ pct: 62, stage: 'Uploading to cloud…' });
-  const displayUrl = await syncBackgroundToCloud(key, dataUrl);
-
-  onProgress?.({ pct: 92, stage: 'Finalizing…' });
+  onProgress?.({ pct: 100, stage: 'Complete' });
   return {
-    url: displayUrl.startsWith('data:') ? displayUrl : imagePublicUrl(key),
+    url: publishedRef,
     kind: 'image',
-    cloudPending: displayUrl.startsWith('data:'),
   };
 }
