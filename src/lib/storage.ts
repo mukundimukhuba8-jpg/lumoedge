@@ -6,7 +6,7 @@ import {
   firebaseUploadDataUrl,
   isFirebaseImageRef,
 } from './firebaseDb';
-import { isPlaceholderMentorImage, looksLikeVideoUrl } from './mentorMedia';
+import { isPlaceholderMentorImage, looksLikeVideoUrl, normalizeCustomMedia } from './mentorMedia';
 import { pushDb } from './remote';
 
 export function loadJSON<T>(key: string, fallback: T): T {
@@ -119,10 +119,21 @@ export function stripVaultEntryForLocal(entry: VaultLicense): VaultLicense {
           ? `img:profile-${entry.ownerAdminId}`
           : '';
   }
+  const ownerId = String(entry.ownerAdminId || '').trim();
+  const customMedia = normalizeCustomMedia(entry.customMedia)
+    .filter((item) => item.url && !item.url.startsWith('blob:'))
+    .map((item) => {
+      let url = item.url;
+      if (url.startsWith('data:')) {
+        url = ownerId ? imagePublicUrl(`${ownerId}-${item.slot}`) : '';
+      }
+      return url ? { ...item, url } : null;
+    })
+    .filter((item): item is MentorMediaItem => Boolean(item));
   return {
     ...entry,
     eaImage: safeImage,
-    customMedia: [],
+    customMedia,
   };
 }
 
@@ -309,6 +320,37 @@ export function imagePublicUrl(id: string) {
   return `/api/images/${encodeURIComponent(id)}`;
 }
 
+/** Extract storage key from `/api/images/{key}` public URLs. */
+export function imageKeyFromPublicUrl(url: string): string {
+  const u = String(url || '').trim();
+  if (!u.startsWith('/api/images/')) return '';
+  try {
+    return decodeURIComponent(u.slice('/api/images/'.length));
+  } catch {
+    return u.slice('/api/images/'.length);
+  }
+}
+
+/** Resolve mentor media refs to a displayable URL — local cache first. */
+export function resolveStoredMediaUrl(url: string): string {
+  const u = String(url || '').trim();
+  if (!u || isPlaceholderMentorImage(u)) return '';
+  if (u.startsWith('data:') || u.startsWith('blob:') || u.startsWith('http')) return u;
+  if (u.startsWith('img:')) {
+    const id = u.replace(/^img:/, '');
+    return getEaImage(id) || getEaImage(u) || imagePublicUrl(id);
+  }
+  if (u.startsWith('/api/images/')) {
+    const key = imageKeyFromPublicUrl(u);
+    const local = key ? getEaImage(key) : '';
+    if (local && (local.startsWith('data:') || local.startsWith('blob:') || local.startsWith('http'))) {
+      return local;
+    }
+    return u;
+  }
+  return u.startsWith('/') ? u : '';
+}
+
 /** Keep EA images outside huge JSON blobs so they survive reliably */
 export function saveEaImage(id: string, dataUrl: string) {
   if (!id || !dataUrl) return;
@@ -441,6 +483,9 @@ export async function resolveDisplayImage(value: string): Promise<string> {
       }
     });
     return apiUrl;
+  }
+  if (v.startsWith('/api/images/')) {
+    return resolveStoredMediaUrl(v);
   }
   return v.startsWith('/') ? v : '';
 }

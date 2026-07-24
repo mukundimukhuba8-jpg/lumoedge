@@ -97,7 +97,21 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
   const vaultHit = findInVault(normalizedKey);
   if (vaultHit && vaultHit.ownerAdminId) {
     const imageUrl = await resolveMentorImage(vaultHit.ownerAdminId, localImages);
-    return brandingFromVault(vaultHit, imageUrl);
+    let customMedia = normalizeCustomMedia(vaultHit.customMedia);
+    if (!customMedia.some((m) => m.url)) {
+      const db = await fetchDb();
+      const raw = db ? findLicenseEntry(db, normalizedKey) : null;
+      const ws = (raw as { _ws?: { profile?: Record<string, unknown> } } | null)?._ws;
+      customMedia = normalizeCustomMedia(
+        (Array.isArray((raw as VaultLike | null)?.customMedia)
+          ? (raw as VaultLike).customMedia
+          : ws?.profile?.customMedia) as [],
+      );
+    }
+    return {
+      ...brandingFromVault(vaultHit, imageUrl),
+      customMedia,
+    };
   }
 
   const db = await fetchDb();

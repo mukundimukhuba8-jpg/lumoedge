@@ -31,6 +31,7 @@ import {
   isPlaceholderMentorImage,
   type MentorMediaItem,
 } from '../../lib/mentorMedia';
+import { resolveStoredMediaUrl } from '../../lib/storage';
 
 type Props = {
   open: boolean;
@@ -335,6 +336,7 @@ export function InterfaceStyleModal({
                 {uploaded.map((slot) => {
                   const active = prefs.customBg === slot.id;
                   const item = slot.item!;
+                  const previewUrl = resolveStoredMediaUrl(item.url) || item.url;
                   return (
                     <button
                       key={slot.id}
@@ -344,11 +346,11 @@ export function InterfaceStyleModal({
                     >
                       <div className="iface-custom-preview">
                         {item.kind === 'video' ? (
-                          <video src={item.url} muted playsInline />
+                          <video src={previewUrl} muted playsInline />
                         ) : (
                           <span
                             className="iface-custom-preview-img"
-                            style={{ backgroundImage: `url(${item.url})` }}
+                            style={{ backgroundImage: `url(${previewUrl})` }}
                           />
                         )}
                       </div>

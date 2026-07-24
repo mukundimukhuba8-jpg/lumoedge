@@ -105,26 +105,28 @@ async function compressForBackground(file: File): Promise<string> {
   );
 }
 
-/** Best-effort cloud sync — never blocks the UI or throws to the caller. */
-function syncBackgroundToCloud(key: string, dataUrl: string): void {
-  void (async () => {
-    try {
-      const apiUrl = await raceTimeout(
-        tryApiImageUpload(key, dataUrl),
-        CLOUD_STEP_TIMEOUT_MS,
-        'Cloud upload slow',
-      ).catch(() => null);
-      if (apiUrl) {
-        saveEaImage(key, apiUrl.startsWith('data:') ? dataUrl : apiUrl);
-        return;
-      }
-
-      const hosted = await tryFirebaseUpload(key, dataUrl);
-      if (hosted) saveEaImage(key, hosted);
-    } catch {
-      // local copy already saved
+/** Upload background bytes to cloud — returns displayable URL (data URL if cloud slow). */
+async function syncBackgroundToCloud(key: string, dataUrl: string): Promise<string> {
+  try {
+    const apiUrl = await raceTimeout(
+      tryApiImageUpload(key, dataUrl),
+      CLOUD_STEP_TIMEOUT_MS,
+      'Cloud upload slow',
+    ).catch(() => null);
+    if (apiUrl) {
+      saveEaImage(key, dataUrl);
+      return imagePublicUrl(key);
     }
-  })();
+
+    const hosted = await tryFirebaseUpload(key, dataUrl);
+    if (hosted) {
+      saveEaImage(key, dataUrl);
+      return hosted.startsWith('data:') || hosted.startsWith('http') ? hosted : imagePublicUrl(key);
+    }
+  } catch {
+    // local copy already saved
+  }
+  return dataUrl;
 }
 
 /** Background upload — local save first, cloud sync in background (never hangs). */
@@ -171,12 +173,12 @@ export async function uploadBackgroundMedia(
   saveEaImage(key, dataUrl);
 
   onProgress?.({ pct: 62, stage: 'Uploading to cloud…' });
-  syncBackgroundToCloud(key, dataUrl);
+  const displayUrl = await syncBackgroundToCloud(key, dataUrl);
 
   onProgress?.({ pct: 92, stage: 'Finalizing…' });
   return {
-    url: imagePublicUrl(key),
+    url: displayUrl.startsWith('data:') ? displayUrl : imagePublicUrl(key),
     kind: 'image',
-    cloudPending: true,
+    cloudPending: displayUrl.startsWith('data:'),
   };
 }
