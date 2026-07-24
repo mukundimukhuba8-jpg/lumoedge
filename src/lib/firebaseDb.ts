@@ -652,12 +652,14 @@ export async function firebasePostClient(input: {
       );
       const existing = curClients.find((c) => c.email.toLowerCase() === email);
       if (existing) {
-        const remoteWs =
-          (await getPath<Record<string, unknown>>(`${ROOT}/store/workspaces`)) || {};
-        await update(ref(getFirebaseDb(), ROOT), {
-          'store/workspaces': mirrorClientToSuperWorkspace(remoteWs, existing),
-          updatedAt: new Date().toISOString(),
-        }).catch(() => undefined);
+      const remoteWs =
+        (await getPath<Record<string, unknown>>(`${ROOT}/store/workspaces`)) || {};
+      const superId = 'LM-004821';
+      const mirrored = mirrorClientToSuperWorkspace(remoteWs, existing);
+      await update(ref(getFirebaseDb(), ROOT), {
+        [`store/workspaces/${superId}`]: mirrored[superId],
+        updatedAt: new Date().toISOString(),
+      }).catch(() => undefined);
         return existing;
       }
       const entry: RemoteDb['clients'][number] = {
@@ -673,10 +675,12 @@ export async function firebasePostClient(input: {
         dbList<string>(await getPath<string[]>(`${ROOT}/deletedClients`)) || [];
       const remoteWs =
         (await getPath<Record<string, unknown>>(`${ROOT}/store/workspaces`)) || {};
+      const superId = 'LM-004821';
+      const mirrored = mirrorClientToSuperWorkspace(remoteWs, entry);
       await update(ref(getFirebaseDb(), ROOT), {
         clients: [entry, ...curClients],
         deletedClients: deleted.filter((e) => e.toLowerCase() !== email),
-        'store/workspaces': mirrorClientToSuperWorkspace(remoteWs, entry),
+        [`store/workspaces/${superId}`]: mirrored[superId],
         updatedAt: new Date().toISOString(),
       });
       return entry;
@@ -717,9 +721,11 @@ export async function firebasePatchClient(
       });
       const remoteWs =
         (await getPath<Record<string, unknown>>(`${ROOT}/store/workspaces`)) || {};
+      const superId = 'LM-004821';
+      const mirrored = mirrorClientToSuperWorkspace(remoteWs, curClients[idx]);
       await update(ref(getFirebaseDb(), ROOT), {
         clients: curClients,
-        'store/workspaces': mirrorClientToSuperWorkspace(remoteWs, curClients[idx]),
+        [`store/workspaces/${superId}`]: mirrored[superId],
         updatedAt: new Date().toISOString(),
       });
       return curClients[idx];

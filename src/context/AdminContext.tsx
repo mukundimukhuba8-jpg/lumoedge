@@ -101,8 +101,8 @@ import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
 
 /** Blocks destructive vault sync while a publish is in flight. */
 let licensePublishInFlight = 0;
-function hydrateLicenseRemote(remote: RemoteDb | null) {
-  if (!remote) return;
+function hydrateLicenseRemote(remote: RemoteDb | null): StoreState | null {
+  if (!remote) return null;
   const adminSession = isAdminPortalSession();
   if (Array.isArray(remote.revokedKeys)) {
     saveRevokedKeysLocal([
@@ -112,11 +112,15 @@ function hydrateLicenseRemote(remote: RemoteDb | null) {
   }
   if (adminSession && remote.vault) {
     const revoked = loadRevokedKeys();
+    const localVault = loadVault();
     saveVaultLocal(
-      dbList<VaultLicense>(remote.vault).filter(
-        (v) =>
-          v.status !== 'deleted' &&
-          !revoked.some((k) => keysMatch(k, v.key)),
+      mergeVaultKeepAll(
+        localVault,
+        dbList<VaultLicense>(remote.vault).filter(
+          (v) =>
+            v.status !== 'deleted' &&
+            !revoked.some((k) => keysMatch(k, v.key)),
+        ),
       ),
     );
   }
@@ -126,16 +130,19 @@ function hydrateLicenseRemote(remote: RemoteDb | null) {
       ...remote.images,
     });
   }
-  if (adminSession && remote.store?.workspaces) {
-    const workspaces = { ...(remote.store.workspaces as StoreState['workspaces']) };
-    for (const [id, ws] of Object.entries(workspaces)) {
-      workspaces[id] = {
-        ...ws,
-        licenses: (ws.licenses || []).filter((l) => l.status !== 'deleted'),
-      };
+  if (adminSession && remote.store?.workspaces && typeof remote.store.workspaces === 'object') {
+    const local = loadJSON<StoreState>(STORE_KEY, { workspaces: {} });
+    const remoteWs: StoreState['workspaces'] = {};
+    for (const [id, ws] of Object.entries(
+      remote.store.workspaces as StoreState['workspaces'],
+    )) {
+      remoteWs[id] = normalizeWorkspace(ws, { id } as AdminUser);
     }
-    saveJSON(STORE_KEY, { workspaces });
+    const merged = mergeStoresKeepAll(local, { workspaces: remoteWs });
+    saveJSON(STORE_KEY, merged);
+    return merged;
   }
+  return null;
 }
 
 function licenseRecordToVault(
@@ -962,6 +969,7 @@ type Ctx = {
   resyncLicenses: () => void;
   /** Pull license vault from cloud so activation can read keys instantly. */
   warmLicenseCache: () => void;
+  restoreEAsFromCloud: () => Promise<{ ok: boolean; restored?: number; eas?: number; error?: string }>;
   saveMt5: (mt5: Mt5Connection) => void;
   updateProfile: (patch: Partial<AdminProfile>) => Promise<void>;
   executeOrder: (order: Omit<CopyOrder, 'id' | 'copiedTo'>) => CopyOrder;
@@ -1550,9 +1558,39 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const warmLicenseCache = useCallback(() => {
     pruneClientDeviceStorage();
     if (isAdminPortalSession()) {
-      void fetchDb().then((remote) => hydrateLicenseRemote(remote));
+      void fetchDb().then((remote) => {
+        const merged = hydrateLicenseRemote(remote);
+        if (merged) setStore(merged);
+      });
     }
   }, []);
+
+  const restoreEAsFromCloud = useCallback(async () => {
+    const adminId = auth.admin?.id;
+    if (!adminId) return { ok: false as const, error: 'Not logged in' };
+    try {
+      const res = await fetch('/api/workspaces/repair-eas', { method: 'POST' });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        totalRestored?: number;
+        easCount?: number;
+        error?: string;
+      };
+      if (!res.ok || !body.ok) {
+        return { ok: false as const, error: body.error || 'Could not restore EAs from cloud' };
+      }
+      const db = await fetchDb();
+      const merged = hydrateLicenseRemote(db);
+      if (merged) setStore(merged);
+      return {
+        ok: true as const,
+        restored: body.totalRestored ?? 0,
+        eas: body.easCount,
+      };
+    } catch {
+      return { ok: false as const, error: 'Network error while restoring EAs' };
+    }
+  }, [auth.admin?.id]);
 
   const resyncLicenses = useCallback(() => {
     const mentorId = auth.admin?.id ?? '';
@@ -2740,7 +2778,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             fetchDb(),
             new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 2500)),
           ]);
-          if (remote) hydrateLicenseRemote(remote);
+          if (remote) {
+            const merged = hydrateLicenseRemote(remote);
+            if (merged) setStore(merged);
+          }
           localHit = resolveLocal();
         }
 
@@ -2778,6 +2819,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       },
       resyncLicenses,
       warmLicenseCache,
+      restoreEAsFromCloud,
       findLicense: (key) => {
         const vault = findInVault(key);
         if (vault) {
@@ -3037,7 +3079,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         approvedClients: isSuper ? countClientQueue(clients).approved : 0,
       },
     };
-  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, approveMentorByIds, resyncLicenses, warmLicenseCache]);
+  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, approveMentorByIds, resyncLicenses, warmLicenseCache, restoreEAsFromCloud]);
 
   return (
     <AdminContext.Provider value={value}>
