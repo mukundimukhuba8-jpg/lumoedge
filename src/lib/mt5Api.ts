@@ -106,6 +106,9 @@ export type Mt5OpenedOrder = {
 /** Turn raw broker API failures into honest, readable messages */
 function brokerError(status: number, data: unknown, fallback: string): Error {
   const text = typeof data === 'string' ? data : '';
+  if (/not found in database/i.test(text)) {
+    return new Error('MT5 session expired — open MetaTrader and connect again.');
+  }
   if (status === 503 || /service is unavailable/i.test(text)) {
     return new Error(
       'The broker service is temporarily offline (server maintenance). This is not your internet — try again in a few minutes.',
@@ -239,7 +242,11 @@ export async function fetchBrokerSymbols(id: string): Promise<string[]> {
   const res = await mt5Fetch(`/Symbols?id=${encodeURIComponent(id)}`);
   const data = await readBody(res);
   if (!res.ok) {
-    throw new Error(typeof data === 'string' ? data : 'Symbols list unavailable');
+    throw brokerError(
+      res.status,
+      data,
+      typeof data === 'string' ? data : 'Symbols list unavailable',
+    );
   }
   if (!Array.isArray(data)) return [];
   return data

@@ -43,7 +43,7 @@ import {
   type TradeEngineSnapshot,
 } from '../../lib/tradeEngine';
 import { RAZOR_MARKETS } from '../../lib/mt5Api';
-import { getMt5Token } from '../../lib/mt5Session';
+import { ensureMt5Token } from '../../lib/mt5Session';
 import { loadJSON } from '../../lib/storage';
 
 type RevealPhase = 'idle' | 'scanning' | 'symbol' | 'direction' | 'accuracy';
@@ -56,17 +56,6 @@ type ClientMt5Saved = {
   token?: string;
   broker?: string;
 };
-
-function loadClientMt5Token(email: string | undefined): string {
-  if (!email) return '';
-  // Prefer live keep-alive session token (auto-reconnect refreshes it)
-  const live = getMt5Token(email);
-  if (live) return live;
-  const all = loadJSON<Record<string, ClientMt5Saved>>(MT5_KEY, {});
-  const saved = all[email.toLowerCase()];
-  if (!saved?.connected) return '';
-  return String(saved.token || '').trim();
-}
 
 function loadClientMt5Broker(email: string | undefined): string {
   if (!email) return RAZOR_MARKETS.broker;
@@ -124,7 +113,7 @@ export function ChartScannerPage() {
     item: ScanHistoryItem,
     startFromStep?: number,
   ) => {
-    const token = loadClientMt5Token(user?.email);
+    const token = await ensureMt5Token(user?.email);
     const broker = loadClientMt5Broker(user?.email);
     const payload = {
       ...item,
