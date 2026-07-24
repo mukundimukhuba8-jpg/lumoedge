@@ -283,78 +283,16 @@ function Stat({
 }
 
 export function ManageEAsPage() {
-  const { eas, createEA, updateEA, deleteEA, restoreEAsFromCloud } = useAdmin();
+  const { eas, createEA, updateEA, deleteEA } = useAdmin();
   const [name, setName] = useState('');
   const [draft, setDraft] = useState('');
   const [symbols, setSymbols] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [editSymbols, setEditSymbols] = useState<string[]>([]);
-  const [restoreMsg, setRestoreMsg] = useState('');
-  const [restoring, setRestoring] = useState(false);
-
-  const onRestoreFromCloud = async () => {
-    setRestoreMsg('');
-    setRestoring(true);
-    try {
-      const result = await restoreEAsFromCloud();
-      if (result.ok) {
-        setRestoreMsg(
-          result.restored
-            ? `Restored ${result.restored} EA(s) from cloud (${result.eas ?? eas.length} total).`
-            : `Synced ${result.eas ?? eas.length} EA(s) from cloud.`,
-        );
-      } else {
-        setRestoreMsg(result.error || 'Restore failed.');
-      }
-    } finally {
-      setRestoring(false);
-    }
-  };
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
-      {eas.length === 0 ? (
-        <div className="glow-card" style={{ borderColor: 'rgba(245,158,11,0.4)' }}>
-          <strong style={{ color: 'var(--orange)' }}>Your EAs are missing from this device</strong>
-          <p className="muted" style={{ marginBottom: 10 }}>
-            They are still saved in the cloud. Tap restore to pull them back into your portal.
-          </p>
-          <button
-            type="button"
-            className="btn btn-blue"
-            disabled={restoring}
-            onClick={() => void onRestoreFromCloud()}
-          >
-            {restoring ? 'Restoring…' : 'Restore EAs from cloud'}
-          </button>
-          {restoreMsg ? (
-            <p
-              style={{
-                marginTop: 10,
-                marginBottom: 0,
-                color: restoreMsg.includes('failed') || restoreMsg.includes('Network')
-                  ? '#f87171'
-                  : 'var(--green)',
-                fontWeight: 700,
-              }}
-            >
-              {restoreMsg}
-            </p>
-          ) : null}
-        </div>
-      ) : (
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            disabled={restoring}
-            onClick={() => void onRestoreFromCloud()}
-          >
-            {restoring ? 'Syncing…' : 'Sync EAs from cloud'}
-          </button>
-        </div>
-      )}
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>Create New EA</h3>
         <div className="field"><label>EA Name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter EA name" /></div>

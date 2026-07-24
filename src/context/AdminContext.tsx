@@ -98,9 +98,42 @@ import {
   splitNameFromEmail,
 } from '../lib/registrationEmail';
 import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
+import { countExpectedEas, repairWorkspaceEas } from '../lib/repairEas';
 
 /** Blocks destructive vault sync while a publish is in flight. */
 let licensePublishInFlight = 0;
+const lastServerEasRepair = new Map<string, number>();
+const SERVER_EAS_REPAIR_COOLDOWN_MS = 45_000;
+
+function healWorkspaceEas(
+  ws: Partial<AdminWorkspace> | undefined,
+  ownerAdminId = '',
+  vault: VaultLicense[] = loadVault(),
+): { workspace: AdminWorkspace; restored: number } {
+  const seed = ownerAdminId ? ({ id: ownerAdminId } as AdminUser) : undefined;
+  const normalized = normalizeWorkspaceCore(ws, seed);
+  const { workspace: repaired, restored } = repairWorkspaceEas(
+    normalized as unknown as Record<string, unknown>,
+    ownerAdminId,
+    vault,
+  );
+  return {
+    workspace: normalizeWorkspaceCore(repaired as Partial<AdminWorkspace>, seed),
+    restored,
+  };
+}
+
+async function maybeRepairEasOnServer(mentorId: string): Promise<boolean> {
+  const last = lastServerEasRepair.get(mentorId) || 0;
+  if (Date.now() - last < SERVER_EAS_REPAIR_COOLDOWN_MS) return false;
+  lastServerEasRepair.set(mentorId, Date.now());
+  try {
+    const res = await fetch('/api/workspaces/repair-eas', { method: 'POST' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 function hydrateLicenseRemote(remote: RemoteDb | null): StoreState | null {
   if (!remote) return null;
   const adminSession = isAdminPortalSession();
@@ -136,7 +169,7 @@ function hydrateLicenseRemote(remote: RemoteDb | null): StoreState | null {
     for (const [id, ws] of Object.entries(
       remote.store.workspaces as StoreState['workspaces'],
     )) {
-      remoteWs[id] = normalizeWorkspace(ws, { id } as AdminUser);
+      remoteWs[id] = healWorkspaceEas(ws, id, loadVault()).workspace;
     }
     const merged = mergeStoresKeepAll(local, { workspaces: remoteWs });
     saveJSON(STORE_KEY, merged);
@@ -521,7 +554,7 @@ export function createEmptyWorkspace(seed?: {
   };
 }
 
-function normalizeWorkspace(
+function normalizeWorkspaceCore(
   ws: Partial<AdminWorkspace> | undefined,
   seed?: {
     id?: string;
@@ -562,6 +595,21 @@ function normalizeWorkspace(
     },
     mt5: { ...base.mt5, ...(ws.mt5 ?? {}) },
   };
+}
+
+function normalizeWorkspace(
+  ws: Partial<AdminWorkspace> | undefined,
+  seed?: {
+    id?: string;
+    email?: string;
+    fullName?: string;
+    mentorName?: string;
+    eaName?: string;
+    phone?: string;
+    mainText?: string;
+  },
+): AdminWorkspace {
+  return healWorkspaceEas(ws, seed?.id || '', loadVault()).workspace;
 }
 
 /** Merge two workspaces — keep every EA and license from either side. */
@@ -1251,7 +1299,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         for (const [id, ws] of Object.entries(
           db.store.workspaces as StoreState['workspaces'],
         )) {
-          remoteWs[id] = normalizeWorkspace(ws, { id } as AdminUser);
+          remoteWs[id] = healWorkspaceEas(ws, id, loadVault()).workspace;
         }
         // Merge — never let a thinner remote wipe local EAs / license keys
         setStore((local) => {
@@ -1396,6 +1444,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const syncWorkspace = async () => {
       const db = await fetchDb();
       if (!db) return;
+      const vaultEntries = dbList<VaultLicense>(db.vault);
       if (db.images && typeof db.images === 'object') {
         saveJSON(IMAGE_STORE, {
           ...loadJSON<Record<string, string>>(IMAGE_STORE, {}),
@@ -1403,10 +1452,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         });
       }
       if (!db?.store?.workspaces?.[mentorId]) return;
-      const remoteWs = normalizeWorkspace(
-        db.store.workspaces[mentorId] as AdminWorkspace,
-        auth.admin ?? { id: mentorId },
-      );
+      const remoteRaw = db.store.workspaces[mentorId] as AdminWorkspace;
+      const remoteWs = healWorkspaceEas(remoteRaw, mentorId, vaultEntries).workspace;
       remoteWs.licenses = filterOwnLicenses(
         remoteWs.licenses,
         mentorId,
@@ -1416,14 +1463,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         const revoked = loadRevokedKeys();
         saveMergedVaultForMentor(
           mentorId,
-          dbList<VaultLicense>(db.vault).filter(
+          vaultEntries.filter(
             (v) =>
               v.status !== 'deleted' &&
               !revoked.some((k) => keysMatch(k, v.key)),
           ),
         );
       }
-      let backfillWs: AdminWorkspace | null = null;
+      let pushWs: AdminWorkspace | null = null;
       setStore((prev) => {
         const localWs = prev.workspaces[mentorId];
         if (!localWs) {
@@ -1432,16 +1479,19 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             workspaces: { ...prev.workspaces, [mentorId]: remoteWs },
           };
           saveJSON(STORE_KEY, next);
+          if (remoteWs.eas.length > 0) pushWs = remoteWs;
           return next;
         }
-        const merged = mergeWorkspaceKeepAll(localWs, remoteWs);
+        let merged = mergeWorkspaceKeepAll(localWs, remoteWs);
+        const healed = healWorkspaceEas(merged, mentorId, vaultEntries);
+        merged = healed.workspace;
         merged.licenses = filterOwnLicenses(
           merged.licenses,
           mentorId,
           merged.revokedKeys,
         );
-        if (merged.eas.length > remoteWs.eas.length) {
-          backfillWs = merged;
+        if (healed.restored > 0 || merged.eas.length > remoteWs.eas.length) {
+          pushWs = merged;
         }
         if (
           JSON.stringify(merged.profile) === JSON.stringify(localWs.profile) &&
@@ -1457,8 +1507,47 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         saveJSON(STORE_KEY, next);
         return next;
       });
-      if (backfillWs) {
-        void pushDb({ store: { workspaces: { [mentorId]: backfillWs } } });
+      if (pushWs) {
+        void pushDb({ store: { workspaces: { [mentorId]: pushWs } } });
+      }
+
+      const currentWs = loadJSON<StoreState>(STORE_KEY, { workspaces: {} }).workspaces[mentorId];
+      const expected = countExpectedEas(
+        currentWs as unknown as Record<string, unknown>,
+        mentorId,
+        vaultEntries,
+      );
+      const actual = currentWs?.eas?.length ?? 0;
+      if (expected > actual) {
+        const repaired = await maybeRepairEasOnServer(mentorId);
+        if (repaired) {
+          const fresh = await fetchDb();
+          if (fresh?.store?.workspaces?.[mentorId]) {
+            const freshWs = healWorkspaceEas(
+              fresh.store.workspaces[mentorId] as AdminWorkspace,
+              mentorId,
+              dbList<VaultLicense>(fresh.vault),
+            ).workspace;
+            freshWs.licenses = filterOwnLicenses(
+              freshWs.licenses,
+              mentorId,
+              freshWs.revokedKeys,
+            );
+            setStore((prev) => {
+              const localWs = prev.workspaces[mentorId];
+              const merged = localWs
+                ? mergeWorkspaceKeepAll(localWs, freshWs)
+                : freshWs;
+              const healed = healWorkspaceEas(merged, mentorId, dbList<VaultLicense>(fresh.vault));
+              const next = {
+                ...prev,
+                workspaces: { ...prev.workspaces, [mentorId]: healed.workspace },
+              };
+              saveJSON(STORE_KEY, next);
+              return next;
+            });
+          }
+        }
       }
     };
     void syncWorkspace();
@@ -1570,39 +1659,42 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const warmLicenseCache = useCallback(() => {
     pruneClientDeviceStorage();
     if (isAdminPortalSession()) {
-      void fetchDb().then((remote) => {
+      void (async () => {
+        const remote = await fetchDb();
         const merged = hydrateLicenseRemote(remote);
         if (merged) setStore(merged);
-      });
+        const adminId = auth.admin?.id;
+        if (!adminId) return;
+        const ws = merged?.workspaces[adminId] ?? loadJSON<StoreState>(STORE_KEY, { workspaces: {} }).workspaces[adminId];
+        const expected = countExpectedEas(
+          ws as unknown as Record<string, unknown>,
+          adminId,
+          loadVault(),
+        );
+        if ((ws?.eas?.length ?? 0) < expected) {
+          await maybeRepairEasOnServer(adminId);
+          const fresh = hydrateLicenseRemote(await fetchDb());
+          if (fresh) setStore(fresh);
+        }
+      })();
     }
-  }, []);
+  }, [auth.admin?.id]);
 
   const restoreEAsFromCloud = useCallback(async () => {
     const adminId = auth.admin?.id;
     if (!adminId) return { ok: false as const, error: 'Not logged in' };
     try {
-      const res = await fetch('/api/workspaces/repair-eas', { method: 'POST' });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        totalRestored?: number;
-        easCount?: number;
-        error?: string;
-      };
-      if (!res.ok || !body.ok) {
-        return { ok: false as const, error: body.error || 'Could not restore EAs from cloud' };
-      }
+      await maybeRepairEasOnServer(adminId);
       const db = await fetchDb();
       const merged = hydrateLicenseRemote(db);
       if (merged) setStore(merged);
-      return {
-        ok: true as const,
-        restored: body.totalRestored ?? 0,
-        eas: body.easCount,
-      };
+      const ws = merged?.workspaces[adminId] ?? store.workspaces[adminId];
+      const eas = ws?.eas?.length ?? 0;
+      return { ok: true as const, restored: eas, eas };
     } catch {
       return { ok: false as const, error: 'Network error while restoring EAs' };
     }
-  }, [auth.admin?.id]);
+  }, [auth.admin?.id, store.workspaces]);
 
   const resyncLicenses = useCallback(() => {
     const mentorId = auth.admin?.id ?? '';

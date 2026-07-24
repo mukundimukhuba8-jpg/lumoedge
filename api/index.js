@@ -1144,10 +1144,17 @@ export default async function handler(req, res) {
 
     if (pathname === '/api/workspaces/repair-eas' && req.method === 'POST') {
       const { repairAllWorkspaces } = await import('./_lib/repairEas.mjs');
-      const rawWorkspaces = await firebaseRead('lumo/store/workspaces');
+      const [rawWorkspaces, rawVault] = await Promise.all([
+        firebaseRead('lumo/store/workspaces'),
+        firebaseRead('lumo/vault'),
+      ]);
       const workspacesObj =
         rawWorkspaces && typeof rawWorkspaces === 'object' ? rawWorkspaces : {};
-      const { workspaces, totalRestored, workspacesTouched } = repairAllWorkspaces(workspacesObj);
+      const vault = toArray(rawVault);
+      const { workspaces, totalRestored, workspacesTouched } = repairAllWorkspaces(
+        workspacesObj,
+        vault,
+      );
       let easCount = 0;
       for (const ws of Object.values(workspaces)) {
         easCount += toArray(ws?.eas).length;
