@@ -432,6 +432,46 @@ function scheduleNext(key: string) {
   }, delay);
 }
 
+const LEGACY_MT5_KEY = 'ub-web/client-mt5-v1';
+
+async function waitForVerify(key: string): Promise<void> {
+  const s = ensureLive(key);
+  if (!s.checking) return;
+  await new Promise<void>((resolve) => {
+    const tick = () => {
+      if (!s.checking) resolve();
+      else window.setTimeout(tick, 40);
+    };
+    tick();
+  });
+}
+
+/**
+ * Verify the broker session (auto-reconnect when credentials exist) and return
+ * a live token. Use before trade/symbol calls — avoids stale session ids.
+ */
+export async function ensureMt5Token(email?: string): Promise<string> {
+  const key = emailKey(email);
+  if (!key) return '';
+
+  if (shouldKeepAlive(key)) {
+    ensureLive(key);
+    await waitForVerify(key);
+    await verifyOrReconnect(key);
+    const s = sessions.get(key);
+    if (s?.info.state === 'connected' && s.info.token) return s.info.token;
+    return '';
+  }
+
+  const legacy = loadJSON<
+    Record<string, { connected?: boolean; token?: string }>
+  >(LEGACY_MT5_KEY, {})[key];
+  const token = String(legacy?.token || '').trim();
+  if (!legacy?.connected || !token) return '';
+  const alive = await checkConnect(token).catch(() => false);
+  return alive ? token : '';
+}
+
 /** Start (or resume) keep-alive for this user. Safe to call repeatedly. */
 export function startMt5KeepAlive(email?: string) {
   const key = emailKey(email);
