@@ -39,6 +39,7 @@ import {
 import {
   findInVault,
   getEaImage,
+  imageKeyFromPublicUrl,
   isRevokedKey,
   keyFingerprint,
   keysMatch,
@@ -2979,12 +2980,26 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                   workspaces: { ...prev.workspaces, [adminId]: merged },
                 };
                 saveJSON(STORE_KEY, next);
+                const imagePayload: Record<string, string> = {};
+                if (displayBytes) {
+                  imagePayload[`profile-${adminId}`] = displayBytes;
+                }
+                for (const item of nextProfile.customMedia) {
+                  if (!item.url) continue;
+                  const mediaKeyId = `${adminId}-${item.slot}`;
+                  const bytes =
+                    item.url.startsWith('data:')
+                      ? item.url
+                      : getEaImage(mediaKeyId) ||
+                        getEaImage(imageKeyFromPublicUrl(item.url));
+                  if (bytes && bytes.startsWith('data:')) {
+                    imagePayload[mediaKeyId] = bytes;
+                  }
+                }
                 void pushDb({
                   store: { workspaces: { [adminId]: merged } },
                   vault: loadVault(),
-                  ...(displayBytes
-                    ? { images: { [`profile-${adminId}`]: displayBytes } }
-                    : {}),
+                  ...(Object.keys(imagePayload).length ? { images: imagePayload } : {}),
                 }).catch(() => undefined);
                 return next;
               });

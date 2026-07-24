@@ -6,8 +6,8 @@ import { normalizeClientStatus } from '../../lib/clientQueue';
 import { MENTOR_AUTH_MSG } from '../../lib/mentorAuthUi';
 import { isRegistrationEmail } from '../../lib/registrationEmail';
 import { useAdmin, type ClientRequest } from '../../context/AdminContext';
-import { resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
-import { compressImageFile, getEaImage, blobUrlToDataUrl } from '../../lib/storage';
+import { resolveProfileImage, isPlaceholderMentorImage, normalizeCustomMedia } from '../../lib/mentorMedia';
+import { compressImageFile, blobUrlToDataUrl, resolveStoredMediaUrl } from '../../lib/storage';
 import { pushScanAdminReset } from '../../lib/chartScan';
 import { Placeholder } from './AdminShell';
 
@@ -22,11 +22,7 @@ function isRealImage(url?: string): boolean {
 function displayImageSrc(url?: string): string {
   const u = String(url || '').trim();
   if (!u || isPlaceholderMentorImage(u) || u.startsWith('blob:')) return '';
-  if (u.startsWith('img:')) {
-    const id = u.replace(/^img:/, '');
-    return getEaImage(id) || getEaImage(u) || '';
-  }
-  return u;
+  return resolveStoredMediaUrl(u) || u;
 }
 
 function ClientEmailMenu({
@@ -919,7 +915,13 @@ export function ProfilePage() {
         eaImage: keepPreview ? prev.eaImage : resolved || prev.eaImage || '',
       };
     });
-    setCustomMedia(profile.customMedia);
+    setCustomMedia((prev) => {
+      const incoming = normalizeCustomMedia(profile.customMedia);
+      const prevFilled = prev.filter((m) => m.url).length;
+      const incomingFilled = incoming.filter((m) => m.url).length;
+      if (prevFilled > incomingFilled) return prev;
+      return incoming;
+    });
   }, [profile]);
 
   const onPickImage = async (file: File | null) => {
@@ -1043,7 +1045,7 @@ export function ProfilePage() {
             {imageSavedMsg}
           </p>
         ) : null}
-        {form.eaImage && (form.eaImage.startsWith('data:') || form.eaImage.startsWith('http') || form.eaImage.startsWith('blob:') || displayImageSrc(form.eaImage)) ? (
+        {form.eaImage && (isRealImage(form.eaImage) || displayImageSrc(form.eaImage)) ? (
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 10 }}>
             <img
               key={form.eaImage}
@@ -1057,9 +1059,6 @@ export function ProfilePage() {
                 border: '1px solid rgba(59,130,246,0.5)',
                 background: '#0e1220',
                 flexShrink: 0,
-              }}
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
               }}
             />
             <div>

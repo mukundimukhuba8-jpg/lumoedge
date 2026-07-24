@@ -14,6 +14,7 @@ import {
   uploadBackgroundMedia,
   type UploadProgress,
 } from '../lib/mediaUploadClient';
+import { resolveStoredMediaUrl } from '../lib/storage';
 
 type Props = {
   adminId: string;
@@ -23,21 +24,7 @@ type Props = {
 };
 
 function resolvePreviewUrl(url: string): string {
-  const u = String(url || '').trim();
-  if (!u) return '';
-  if (u.startsWith('data:') || u.startsWith('blob:') || u.startsWith('http')) return u;
-  if (u.startsWith('img:')) {
-    try {
-      const key = u.replace(/^img:/, '');
-      const all = JSON.parse(
-        localStorage.getItem('ub-web/ea-images-v1') || '{}',
-      ) as Record<string, string>;
-      return all[u] || all[key] || all[`img:${key}`] || u;
-    } catch {
-      return u;
-    }
-  }
-  return u;
+  return resolveStoredMediaUrl(url) || String(url || '').trim();
 }
 
 export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange }: Props) {

@@ -2,7 +2,7 @@
 
 import { firebaseUploadDataUrl, firebaseUploadFile, firebaseSaveImage } from './firebaseDb';
 import { isFirebaseConfigured } from './firebase';
-import { saveEaImage } from './storage';
+import { resolveStoredMediaUrl, saveEaImage } from './storage';
 
 export type MentorMediaSlotId =
   | 'profile-1'
@@ -320,18 +320,20 @@ export function resolveCustomBackdrop(
 ): { src: string; kind: MentorMediaKind } | null {
   if (!customBg || customBg === 'default') return null;
   if (customBg === 'interface-1') {
-    return eaImage
+    const resolvedEa = resolveStoredMediaUrl(eaImage) || eaImage;
+    return resolvedEa
       ? {
-          src: eaImage,
-          kind: looksLikeVideoUrl(eaImage) ? 'video' : 'image',
+          src: resolvedEa,
+          kind: looksLikeVideoUrl(resolvedEa) ? 'video' : 'image',
         }
       : null;
   }
   const hit = getMediaSlot(media, customBg as MentorMediaSlotId);
   if (hit?.url) {
+    const src = resolveStoredMediaUrl(hit.url) || hit.url;
     const kind =
-      hit.kind === 'video' || looksLikeVideoUrl(hit.url) ? 'video' : 'image';
-    return { src: hit.url, kind };
+      hit.kind === 'video' || looksLikeVideoUrl(src) ? 'video' : 'image';
+    return { src, kind };
   }
   return null;
 }
