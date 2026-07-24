@@ -10,7 +10,7 @@ import {
   saveInterfacePrefs,
   type InterfacePrefs,
 } from '../../lib/interfaceStyle';
-import { resolveCustomBackdrop, resolveProfileImage, isPlaceholderMentorImage } from '../../lib/mentorMedia';
+import { resolveCustomBackdrop, resolveProfileImage, isPlaceholderMentorImage, isGenericLumoLabel } from '../../lib/mentorMedia';
 import { clearMt5Session, getMt5Token } from '../../lib/mt5Session';
 import { getEaImage, isStreamableMediaUrl, loadJSON, saveJSON } from '../../lib/storage';
 import { FocusLayout, TerminalLayout, VortexLayout } from './HomeLayouts';
@@ -105,7 +105,10 @@ export function HomePage() {
     originY: number;
   } | null>(null);
   const floatRef = useRef<HTMLButtonElement | null>(null);
-  const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
+  const eaTitle =
+    (bot.displayName && !isGenericLumoLabel(bot.displayName) ? bot.displayName : '') ||
+    (bot.name && !isGenericLumoLabel(bot.name) ? bot.name : '') ||
+    'Lumo Edge';
   const accent = accentHex(stylePrefs.accent);
   const accentRgb = hexToRgb(accent);
   const customResolved = resolveCustomBackdrop(
@@ -127,9 +130,19 @@ export function HomePage() {
         async ({ fetchClientBranding, resolveBrandingImageUrl }) => {
           const branding = await fetchClientBranding(bot.licenseKey);
           if (!branding) return;
-          const imageUrl = await resolveBrandingImageUrl(branding.imageUrl || '');
+          const imageUrl = branding.imageUrl
+            ? await resolveBrandingImageUrl(branding.imageUrl)
+            : '';
           refreshBranding({
             ...branding,
+            displayName:
+              branding.displayName && !isGenericLumoLabel(branding.displayName)
+                ? branding.displayName
+                : undefined,
+            mainText:
+              branding.mainText && !isGenericLumoLabel(branding.mainText)
+                ? branding.mainText
+                : undefined,
             ...(imageUrl ? { imageUrl } : {}),
           });
         },
@@ -352,7 +365,9 @@ export function HomePage() {
               backgroundPosition: 'center',
             }}
           >
-            <h2 className="home-main-text">{bot.mainText}</h2>
+            <h2 className="home-main-text">
+              {bot.mainText && !isGenericLumoLabel(bot.mainText) ? bot.mainText : eaTitle}
+            </h2>
 
             <div
               className="home-hero-box"
