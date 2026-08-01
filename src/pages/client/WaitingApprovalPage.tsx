@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { CreditCard } from 'lucide-react';
 import { SubscriptionPaymentInfo } from '../../components/SubscriptionPaymentInfo';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
@@ -123,6 +124,21 @@ export function WaitingApprovalPage() {
   return (
     <div className="page cyber-page" style={{ paddingTop: 36, paddingBottom: 28 }}>
       <div style={{ textAlign: 'center' }}>
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            margin: '0 auto 14px',
+            borderRadius: 16,
+            border: '1.5px solid rgba(59,130,246,0.85)',
+            display: 'grid',
+            placeItems: 'center',
+            boxShadow: '0 0 28px rgba(59,130,246,0.45)',
+            background: '#121218',
+          }}
+        >
+          <CreditCard color="#3b82f6" size={28} />
+        </div>
         <h1
           className="title-blue"
           style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em', margin: 0 }}
@@ -159,7 +175,7 @@ export function WaitingApprovalPage() {
         </div>
       </div>
 
-      <SubscriptionPaymentInfo />
+      <SubscriptionPaymentInfo referenceEmail={user?.email} />
 
       {message || paidPending ? (
         <div

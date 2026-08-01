@@ -1,92 +1,219 @@
-import { CreditCard, ExternalLink } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, Check, Copy, CreditCard } from 'lucide-react';
 
-export const CHECKOUT_URL = 'https://capepaulse.lovable.app/';
+const BANK = 'TymeBank';
+const ACCOUNT_NAME = 'Lumo Edge';
+const ACCOUNT_NO = '51126773184';
+const AMOUNT = 'R600';
+const PROOF_EMAIL = 'lumoedge08@gmail.com';
 
-export function SubscriptionPaymentInfo() {
-  const openCheckout = () => {
-    window.open(CHECKOUT_URL, '_blank', 'noopener,noreferrer');
-  };
-
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
   return (
-    <div
-      className="glow-card"
+    <button
+      type="button"
+      aria-label="Copy"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(value);
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1400);
+        } catch {
+          /* ignore */
+        }
+      }}
       style={{
-        marginTop: 20,
-        textAlign: 'center',
-        borderColor: 'rgba(59,130,246,0.55)',
-        boxShadow: '0 0 32px rgba(59,130,246,0.24)',
-        padding: '22px 18px 20px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 28,
+        height: 28,
+        borderRadius: 8,
+        background: 'rgba(59,130,246,0.12)',
+        border: '1px solid rgba(59,130,246,0.35)',
+        color: 'var(--electric)',
+        flexShrink: 0,
+        padding: 0,
       }}
     >
+      {copied ? <Check size={14} /> : <Copy size={14} />}
+    </button>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+  accent,
+  copyValue,
+  last,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  copyValue?: string;
+  last?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        padding: '11px 0',
+        borderBottom: last ? 'none' : '1px solid rgba(148,190,255,0.12)',
+      }}
+    >
+      <span className="muted" style={{ fontSize: 12, fontWeight: 500 }}>
+        {label}
+      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <strong
+          style={{
+            color: accent ? 'var(--electric)' : 'var(--text)',
+            fontWeight: 700,
+            fontSize: 13,
+            textAlign: 'right',
+            wordBreak: 'break-all',
+          }}
+        >
+          {value}
+        </strong>
+        {copyValue ? <CopyButton value={copyValue} /> : null}
+      </div>
+    </div>
+  );
+}
+
+export function SubscriptionPaymentInfo({ referenceEmail }: { referenceEmail?: string }) {
+  const reference = referenceEmail?.trim() || 'your registered email';
+  const steps = [
+    `Make an EFT of ${AMOUNT} to the TymeBank account above`,
+    'Use your email address as the payment reference',
+    `Screenshot your proof of payment and email it to ${PROOF_EMAIL}`,
+    "Tap \"I've Paid\" below once you've sent proof",
+  ];
+
+  return (
+    <div style={{ textAlign: 'left', marginTop: 8 }}>
       <div
         style={{
-          width: 56,
-          height: 56,
-          margin: '0 auto 14px',
-          borderRadius: '50%',
-          border: '1.5px solid rgba(59,130,246,0.85)',
-          display: 'grid',
-          placeItems: 'center',
-          boxShadow: '0 0 24px rgba(59,130,246,0.35)',
-          background: '#121218',
+          marginTop: 18,
+          borderRadius: 14,
+          padding: '12px 14px',
+          display: 'flex',
+          gap: 10,
+          alignItems: 'flex-start',
+          background: 'rgba(245,158,11,0.12)',
+          border: '1px solid rgba(245,158,11,0.35)',
+          color: '#fbbf24',
         }}
       >
-        <CreditCard color="#3b82f6" size={24} />
+        <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, fontWeight: 600 }}>
+          Lumo Edge subscriptions are currently down. Subscription fee is{' '}
+          <strong style={{ color: '#fde68a' }}>{AMOUNT}</strong>.
+        </p>
       </div>
 
-      <h2
+      <div
+        className="glow-card"
         style={{
-          margin: '0 0 8px',
-          fontSize: 22,
-          fontWeight: 800,
-          letterSpacing: '-0.02em',
-          color: 'var(--text)',
+          marginTop: 16,
+          borderColor: 'rgba(59,130,246,0.55)',
+          boxShadow: '0 0 28px rgba(59,130,246,0.22)',
+          padding: '14px 14px 4px',
         }}
       >
-        Almost there
-      </h2>
+        <div
+          className="muted"
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            marginBottom: 2,
+          }}
+        >
+          PAYMENT DETAILS
+        </div>
+        <DetailRow label="Bank" value={BANK} />
+        <DetailRow label="Account Name" value={ACCOUNT_NAME} />
+        <DetailRow label="Account No." value={ACCOUNT_NO} accent copyValue={ACCOUNT_NO} />
+        <DetailRow label="Amount" value={AMOUNT} accent />
+        <DetailRow
+          label="Reference"
+          value={reference}
+          accent
+          copyValue={referenceEmail}
+          last
+        />
+      </div>
 
-      <p className="muted" style={{ margin: '0 0 14px', fontSize: 13, lineHeight: 1.5 }}>
-        You&apos;re being redirected to our payment gateway.
-      </p>
-
-      <p
+      <div
+        className="glow-card"
         style={{
-          margin: '0 0 18px',
-          fontSize: 13,
-          lineHeight: 1.55,
-          color: 'var(--muted)',
-          maxWidth: 320,
-          marginLeft: 'auto',
-          marginRight: 'auto',
+          marginTop: 14,
+          padding: '14px 14px 12px',
+          borderColor: 'rgba(148,190,255,0.18)',
+          boxShadow: 'none',
         }}
       >
-        You&apos;ll need to sign up on{' '}
-        <strong style={{ color: 'var(--electric)' }}>Swagstack</strong> to complete your payment.
-        Once it&apos;s done, your{' '}
-        <strong style={{ color: 'var(--text)' }}>LumoEdge</strong> access will be activated
-        automatically.
-      </p>
+        <div
+          className="muted"
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            marginBottom: 10,
+          }}
+        >
+          HOW IT WORKS
+        </div>
+        <ol style={{ margin: 0, paddingLeft: 18, color: 'var(--muted)' }}>
+          {steps.map((step) => (
+            <li
+              key={step}
+              style={{
+                marginBottom: 8,
+                fontSize: 12.5,
+                lineHeight: 1.5,
+                fontWeight: 500,
+              }}
+            >
+              {step.includes(PROOF_EMAIL) ? (
+                <>
+                  Screenshot your proof of payment and email it to{' '}
+                  <a
+                    href={`mailto:${PROOF_EMAIL}`}
+                    style={{ color: 'var(--electric)', fontWeight: 700 }}
+                  >
+                    {PROOF_EMAIL}
+                  </a>
+                </>
+              ) : (
+                step
+              )}
+            </li>
+          ))}
+        </ol>
+      </div>
 
-      <button
-        type="button"
-        className="btn btn-blue"
+      <div
         style={{
-          width: '100%',
-          borderRadius: 999,
-          padding: '13px 16px',
-          fontSize: 14,
-          fontWeight: 700,
-          display: 'inline-flex',
+          marginTop: 12,
+          display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
           gap: 8,
+          color: 'var(--orange)',
+          fontWeight: 800,
+          fontSize: 12,
+          letterSpacing: '0.04em',
         }}
-        onClick={openCheckout}
       >
-        Continue to Payment
-        <ExternalLink size={16} />
-      </button>
+        <CreditCard size={15} />
+        PLEASE MAKE IMMEDIATE PAYMENT
+      </div>
     </div>
   );
 }
