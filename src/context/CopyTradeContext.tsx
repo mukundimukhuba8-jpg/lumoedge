@@ -21,6 +21,7 @@ import {
 import { getSastDayKey } from '../lib/chartScan';
 import { firebaseWatchMentorOrders } from '../lib/firebaseDb';
 import { getMt5Token } from '../lib/mt5Session';
+import { COPY_TRADE_MODE } from '../lib/vpsCopyTrade';
 import { loadJSON, saveJSON } from '../lib/storage';
 
 export type EngineSignal = 'idle' | 'active';
@@ -74,7 +75,7 @@ export function CopyTradeProvider({
   ownerAdminId?: string;
   children: ReactNode;
 }) {
-  const mt5Linked = Boolean(getMt5Token(email));
+  const mt5Linked = COPY_TRADE_MODE === 'vps' ? true : Boolean(getMt5Token(email));
   const [engineSignal, setEngineSignal] = useState<EngineSignal>('idle');
   const [statusLabel, setStatusLabel] = useState('Waiting for Signal');
   const [statusDetail, setStatusDetail] = useState('Listening for trade signals…');
@@ -96,10 +97,15 @@ export function CopyTradeProvider({
   useEffect(() => {
     if (!email || !licenseKey || isPaused) {
       setEngineSignal('idle');
-      setStatusLabel(mt5Linked ? 'Waiting for Signal' : 'Connect MT5');
-      setStatusDetail(
-        mt5Linked ? 'Listening for trade signals…' : 'Connect MetaTrader to receive trades.',
-      );
+      if (COPY_TRADE_MODE === 'vps') {
+        setStatusLabel('VPS Mode');
+        setStatusDetail('Complete VPS Setup — trades run on your MT5 terminal 24/7.');
+      } else {
+        setStatusLabel(mt5Linked ? 'Waiting for Signal' : 'Connect MT5');
+        setStatusDetail(
+          mt5Linked ? 'Listening for trade signals…' : 'Connect MetaTrader to receive trades.',
+        );
+      }
       return;
     }
 
@@ -111,6 +117,48 @@ export function CopyTradeProvider({
     }
 
     rememberLicenseOwner(licenseKey, mentorId);
+
+    if (COPY_TRADE_MODE === 'vps') {
+      setEngineSignal('idle');
+      setStatusLabel('VPS Mode Active');
+      setStatusDetail('Listening via LumoEdgeCopy.mq5 on your VPS — browser execution is off.');
+      let primed = false;
+
+      const handleOrders = (rawOrders: Array<Record<string, unknown>>) => {
+        const orders = sortCopyOrders(rawOrders);
+        const latest = orders[0];
+        if (!latest?.id) return;
+        const orderId = String(latest.id);
+
+        if (!primed) {
+          primed = true;
+          for (const row of orders.slice(1)) {
+            const id = String(row.id || '');
+            if (id && !isCopyOrderProcessed(mentorId, id)) {
+              markProcessed(mentorId, id);
+            }
+          }
+        }
+
+        if (isCopyOrderProcessed(mentorId, orderId)) return;
+        const sideLabel = String(latest.side || 'buy') === 'sell' ? 'SELL' : 'BUY';
+        setEngineSignal('active');
+        setStatusLabel('Signal Queued');
+        setStatusDetail(
+          `${sideLabel} ${String(latest.symbol || 'XAUUSD')} queued — your VPS script will execute it.`,
+        );
+        markProcessed(mentorId, orderId);
+        window.setTimeout(() => {
+          setEngineSignal('idle');
+          setStatusLabel('VPS Mode Active');
+          setStatusDetail('Listening via LumoEdgeCopy.mq5 on your VPS — browser execution is off.');
+        }, 4000);
+      };
+
+      const unsub = firebaseWatchMentorOrders(mentorId, handleOrders);
+      return () => unsub();
+    }
+
     let primed = false;
 
     const handleOrders = (rawOrders: Array<Record<string, unknown>>) => {

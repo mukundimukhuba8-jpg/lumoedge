@@ -1610,6 +1610,50 @@ export default async function handler(req, res) {
       return;
     }
 
+    if (pathname.startsWith('/api/copy/')) {
+      const {
+        ackCopyOrder,
+        formatPollText,
+        pollCopyOrder,
+        registerTerminal,
+      } = await import('./_lib/copyPoll.mjs');
+
+      if (pathname === '/api/copy/register' && req.method === 'POST') {
+        const body = await readBody(req);
+        const result = await registerTerminal(firebaseRead, firebaseWrite, body);
+        send(res, result.ok ? 200 : 400, result);
+        return;
+      }
+
+      if (pathname === '/api/copy/ack' && req.method === 'POST') {
+        const body = await readBody(req);
+        const result = await ackCopyOrder(firebaseRead, firebaseWrite, body);
+        send(res, result.ok ? 200 : 400, result);
+        return;
+      }
+
+      if (pathname === '/api/copy/poll' && req.method === 'GET') {
+        const copyEaId = String(url.searchParams.get('copyEaId') || '').trim();
+        const licenseKey = String(url.searchParams.get('licenseKey') || '').trim();
+        const email = String(url.searchParams.get('email') || '').trim();
+        const format = String(url.searchParams.get('format') || 'json').trim().toLowerCase();
+        const result = await pollCopyOrder(firebaseRead, firebaseWrite, {
+          copyEaId,
+          licenseKey,
+          email,
+        });
+        if (format === 'text') {
+          res.statusCode = result.ok ? 200 : 400;
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.end(formatPollText(result));
+          return;
+        }
+        send(res, result.ok ? 200 : 400, result);
+        return;
+      }
+    }
+
     // Backend broker connect — resolves web terminal host from server name
     if (pathname === '/api/mt5/connect') {
       if (req.method === 'OPTIONS') {

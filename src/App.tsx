@@ -57,8 +57,11 @@ const GenerateLicensePage = lazy(() =>
 const ManageEAsPage = lazy(() =>
   import('./pages/admin/AdminPages').then((m) => ({ default: m.ManageEAsPage })),
 );
-const ComingSoonPage = lazy(() =>
-  import('./pages/admin/AdminPages').then((m) => ({ default: m.ComingSoonPage })),
+const SetupMethodsPage = lazy(() =>
+  import('./pages/admin/SetupMethodsPage').then((m) => ({ default: m.SetupMethodsPage })),
+);
+const VpsSetupPage = lazy(() =>
+  import('./pages/client/VpsSetupPage').then((m) => ({ default: m.VpsSetupPage })),
 );
 const ProfilePage = lazy(() =>
   import('./pages/admin/AdminPages').then((m) => ({ default: m.ProfilePage })),
@@ -188,6 +191,15 @@ export default function App() {
         />
 
         <Route
+          path="/app/setup"
+          element={
+            <ClientAppGate>
+              <VpsSetupPage />
+            </ClientAppGate>
+          }
+        />
+
+        <Route
           path="/app/symbols"
           element={
             <ClientAppGate>
@@ -239,7 +251,7 @@ export default function App() {
             path="setup"
             element={
               <SuperOnly>
-                <ComingSoonPage title="Setup Methods" />
+                <SetupMethodsPage />
               </SuperOnly>
             }
           />

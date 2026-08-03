@@ -367,6 +367,35 @@ export function ManageEAsPage() {
                   <div style={{ flex: 1 }}>
                     <strong>{ea.name}</strong>
                     <div className="muted">{ea.symbols.length} symbols · lot {ea.lotSize} · {ea.direction}</div>
+                    <div
+                      className="muted"
+                      style={{
+                        marginTop: 6,
+                        fontSize: 11,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      EA ID:{' '}
+                      <code style={{ color: 'var(--electric)', fontWeight: 700 }}>{ea.id}</code>
+                      <button
+                        type="button"
+                        aria-label="Copy EA ID"
+                        onClick={() => void navigator.clipboard.writeText(ea.id)}
+                        style={{
+                          background: 'rgba(59,130,246,0.12)',
+                          border: '1px solid rgba(59,130,246,0.35)',
+                          borderRadius: 6,
+                          padding: '2px 6px',
+                          color: 'var(--electric)',
+                          fontSize: 10,
+                        }}
+                      >
+                        Copy
+                      </button>
+                    </div>
                     {!isEditing ? (
                       <div style={{ marginTop: 6 }}>
                         {ea.symbols.map((s) => (
@@ -796,7 +825,7 @@ export function OpenOrdersPage() {
     });
     alert(
       copy
-        ? `Copy trade queued for ${order.copiedTo} licensed client${order.copiedTo === 1 ? '' : 's'}. Clients must have MetaTrader connected in the app.`
+        ? `Copy trade queued for ${order.copiedTo} licensed client${order.copiedTo === 1 ? '' : 's'}. Clients receive trades via VPS + LumoEdgeCopy.mq5 (see Setup Methods).`
         : `Order saved: ${order.side.toUpperCase()} ${order.symbol}`,
     );
   };
