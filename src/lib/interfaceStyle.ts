@@ -69,7 +69,22 @@ export type ThemeId =
   | 'midnight-black'
   | 'gold-elite';
 
-export type StyleTab = 'themes' | 'layouts' | 'effects' | 'colours' | 'custom' | 'settings';
+export type StyleTab =
+  | 'themes'
+  | 'layouts'
+  | 'fonts'
+  | 'effects'
+  | 'colours'
+  | 'custom'
+  | 'settings';
+
+export type FontId =
+  | 'space'
+  | 'orbitron'
+  | 'sora'
+  | 'inter'
+  | 'jetbrains'
+  | 'manrope';
 
 export type InterfacePrefs = {
   layout: LayoutId;
@@ -77,6 +92,7 @@ export type InterfacePrefs = {
   accent: AccentId;
   customBg: CustomBgId;
   theme: ThemeId;
+  font: FontId;
   animations: boolean;
 };
 
@@ -103,8 +119,60 @@ export const DEFAULT_PREFS: InterfacePrefs = {
   accent: 'cyan',
   customBg: 'default',
   theme: 'cyber-blue',
+  font: 'space',
   animations: true,
 };
+
+export const FONTS: {
+  id: FontId;
+  label: string;
+  description: string;
+  display: string;
+  body: string;
+}[] = [
+  {
+    id: 'space',
+    label: 'Space Grotesk',
+    description: 'Clean modern OS default',
+    display: "'Space Grotesk', system-ui, sans-serif",
+    body: "'Space Grotesk', system-ui, sans-serif",
+  },
+  {
+    id: 'orbitron',
+    label: 'Orbitron',
+    description: 'Futuristic HUD display',
+    display: "'Orbitron', 'Space Grotesk', sans-serif",
+    body: "'Space Grotesk', system-ui, sans-serif",
+  },
+  {
+    id: 'sora',
+    label: 'Sora',
+    description: 'Soft premium geometric',
+    display: "'Sora', 'Space Grotesk', sans-serif",
+    body: "'Sora', 'Space Grotesk', sans-serif",
+  },
+  {
+    id: 'inter',
+    label: 'Inter',
+    description: 'Neutral product UI',
+    display: "'Inter', system-ui, sans-serif",
+    body: "'Inter', system-ui, sans-serif",
+  },
+  {
+    id: 'jetbrains',
+    label: 'JetBrains Mono',
+    description: 'Terminal / lab console',
+    display: "'JetBrains Mono', ui-monospace, monospace",
+    body: "'JetBrains Mono', ui-monospace, monospace",
+  },
+  {
+    id: 'manrope',
+    label: 'Manrope',
+    description: 'Elegant minimal luxury',
+    display: "'Manrope', 'Space Grotesk', sans-serif",
+    body: "'Manrope', 'Space Grotesk', sans-serif",
+  },
+];
 
 export const THEMES: {
   id: ThemeId;
@@ -345,6 +413,7 @@ export function applyLayoutPreset(presetId: LayoutPresetId, base?: InterfacePref
     layout: preset.layout,
     effect: preset.effect,
     accent: preset.accent,
+    font: current.font,
   };
 }
 
@@ -399,6 +468,7 @@ export function loadInterfacePrefs(): InterfacePrefs {
     accent: ACCENTS.some((a) => a.id === raw.accent) ? (raw.accent as AccentId) : DEFAULT_PREFS.accent,
     customBg: isCustomBgId(raw.customBg) ? raw.customBg : DEFAULT_PREFS.customBg,
     theme: THEMES.some((t) => t.id === raw.theme) ? (raw.theme as ThemeId) : DEFAULT_PREFS.theme,
+    font: FONTS.some((f) => f.id === raw.font) ? (raw.font as FontId) : DEFAULT_PREFS.font,
     animations: typeof raw.animations === 'boolean' ? raw.animations : DEFAULT_PREFS.animations,
   };
 }
@@ -442,6 +512,14 @@ export function applyInterfaceTheme(prefs: InterfacePrefs = loadInterfacePrefs()
   root.dataset.animations = prefs.animations ? 'on' : 'off';
   root.dataset.effect = prefs.effect;
   root.dataset.layout = prefs.layout;
+  root.dataset.font = prefs.font;
+
+  const font = FONTS.find((f) => f.id === prefs.font) ?? FONTS[0];
+  root.style.setProperty('--font-display', font.display);
+  root.style.setProperty('--font-body', font.body);
+  root.style.setProperty('--os-font-display', font.display);
+  root.style.setProperty('--os-font-body', font.body);
+  document.body.style.fontFamily = font.body;
 
   root.style.setProperty('--electric', accent);
   root.style.setProperty('--accent-rgb', accentRgb);

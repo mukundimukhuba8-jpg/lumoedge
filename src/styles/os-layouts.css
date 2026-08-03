@@ -3,12 +3,10 @@
    Functionality unchanged; composition & motion only.
    ═══════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
-
 .os-home-shell,
 .os-layout {
-  --os-font-display: 'Orbitron', 'Space Grotesk', sans-serif;
-  --os-font-body: 'Space Grotesk', system-ui, sans-serif;
+  --os-font-display: var(--font-display, 'Orbitron', 'Space Grotesk', sans-serif);
+  --os-font-body: var(--font-body, 'Space Grotesk', system-ui, sans-serif);
   font-family: var(--os-font-body);
 }
 
@@ -17,14 +15,35 @@
   min-height: 100dvh;
 }
 
+.os-ambient-depth {
+  position: absolute;
+  inset: -8%;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 70% 45% at 50% 12%, rgba(var(--os-accent-rgb), 0.2), transparent 55%),
+    radial-gradient(ellipse 40% 30% at 15% 70%, rgba(255, 255, 255, 0.04), transparent 50%),
+    radial-gradient(ellipse 35% 28% at 88% 40%, rgba(var(--os-accent-rgb), 0.1), transparent 55%);
+  animation: os-ambient-shift 14s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
 .os-layout-bg {
   position: absolute;
-  inset: 0;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 48%;
   background-size: cover;
   background-position: center top;
-  filter: saturate(1.15) contrast(1.05);
-  transform: scale(1.04);
+  filter: saturate(1.08) contrast(1.04);
+  mask-image: linear-gradient(180deg, #000 48%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, #000 48%, transparent 100%);
   z-index: 0;
+  pointer-events: none;
+}
+
+.os-hero-breathe {
+  animation: os-hero-breathe 8s ease-in-out infinite;
+  transform-origin: center top;
 }
 
 .os-layout-wash {
@@ -32,9 +51,92 @@
   inset: 0;
   z-index: 1;
   background:
-    radial-gradient(circle at 50% 18%, rgba(var(--os-accent-rgb), 0.22), transparent 42%),
-    linear-gradient(180deg, rgba(4, 6, 12, 0.28) 0%, rgba(4, 6, 12, 0.72) 100%);
+    radial-gradient(circle at 50% 18%, rgba(var(--os-accent-rgb), 0.18), transparent 42%),
+    linear-gradient(180deg, rgba(3, 5, 10, 0.18) 0%, rgba(3, 5, 10, 0.42) 42%, rgba(3, 5, 10, 0.88) 100%);
   pointer-events: none;
+}
+
+.os-holo-scan {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 6%;
+  height: 42%;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 28px;
+  opacity: 0.55;
+}
+.os-holo-scan::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 18%;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(var(--os-accent-rgb), 0.28),
+    transparent
+  );
+  animation: os-scan-y 4.8s linear infinite;
+  filter: blur(0.5px);
+}
+
+.os-scanlines {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.07;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.08) 0 1px,
+    transparent 1px 4px
+  );
+}
+
+.os-particles {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+.os-particles span {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 8px rgba(var(--os-accent-rgb), 0.65);
+  left: calc(6% + (var(--i) * 5.1%));
+  top: calc(10% + (var(--i) * 3.4%));
+  animation: os-particle 9s ease-in-out infinite;
+  animation-delay: calc(var(--i) * -0.35s);
+  opacity: 0.35;
+}
+
+@keyframes os-ambient-shift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(0, -1.5%, 0) scale(1.03); }
+}
+@keyframes os-hero-breathe {
+  0%, 100% { transform: scale(1.02); filter: saturate(1.05) brightness(1); }
+  50% { transform: scale(1.055); filter: saturate(1.12) brightness(1.05); }
+}
+@keyframes os-scan-y {
+  0% { top: -20%; }
+  100% { top: 110%; }
+}
+@keyframes os-particle {
+  0%, 100% { transform: translate3d(0, 0, 0); opacity: 0.2; }
+  50% { transform: translate3d(8px, -18px, 0); opacity: 0.7; }
+}
+@keyframes os-enter {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .os-layout-content {
@@ -44,6 +146,47 @@
   display: flex;
   flex-direction: column;
   min-height: calc(100dvh - 120px);
+}
+.os-enter {
+  animation: os-enter 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.os-enter > * {
+  animation: os-enter 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.os-enter > *:nth-child(2) { animation-delay: 0.05s; }
+.os-enter > *:nth-child(3) { animation-delay: 0.1s; }
+.os-enter > *:nth-child(4) { animation-delay: 0.15s; }
+
+.os-ctrl {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  z-index: 3;
+  transition: transform 0.18s ease, box-shadow 0.2s ease, border-color 0.2s ease, filter 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.os-ctrl:active {
+  transform: scale(0.96);
+  filter: brightness(1.08);
+}
+.os-ctrl .os-ripple {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.22), transparent 55%);
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  pointer-events: none;
+}
+.os-ctrl:active .os-ripple {
+  opacity: 1;
+  transform: scale(1.15);
+}
+.os-act-ico {
+  transform: scale(1.08);
+}
+.os-act-label {
+  opacity: 0.92;
 }
 
 .os-kicker {
@@ -82,11 +225,35 @@
   border-radius: inherit;
 }
 
-.os-dock.lay-dock {
-  backdrop-filter: blur(22px) saturate(1.3);
-  background: rgba(8, 12, 20, 0.72);
-  border: 1px solid rgba(var(--os-accent-rgb), 0.35);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), 0 0 24px rgba(var(--os-accent-rgb), 0.18);
+.os-dock.lay-dock,
+.os-dock-vision {
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92%, 360px);
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  border-radius: 999px;
+  backdrop-filter: blur(28px) saturate(1.45);
+  -webkit-backdrop-filter: blur(28px) saturate(1.45);
+  background: rgba(12, 16, 24, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  z-index: 40;
+  padding: 8px 10px;
+}
+.os-dock-vision .lay-dock-item {
+  border-radius: 999px;
+  min-height: 52px;
+}
+.os-dock-vision .lay-dock-item.active {
+  background: rgba(var(--os-accent-rgb), 0.16);
+  box-shadow: 0 0 22px rgba(var(--os-accent-rgb), 0.28);
+  color: #fff;
+}
+.os-dock-vision .lay-dock-item.active svg {
+  filter: drop-shadow(0 0 8px rgba(var(--os-accent-rgb), 0.85));
 }
 
 .os-act-ico {
@@ -493,15 +660,28 @@ html[data-animations='off'] .os-layout * {
 }
 
 /* 7 Cinematic */
-.os-cinematic .os-layout-wash {
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.05) 20%, rgba(0, 0, 0, 0.78) 78%);
+.os-cinematic .os-layout-bg {
+  height: 52%;
 }
-.os-cine-hit {
-  position: absolute;
-  inset: 0 0 40% 0;
-  background: transparent;
-  border: 0;
-  z-index: 2;
+.os-cinematic .os-layout-wash {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.02) 18%, rgba(0, 0, 0, 0.78) 78%);
+}
+.os-cine-hero {
+  height: 45dvh;
+  display: grid;
+  place-items: end center;
+  padding-bottom: 8px;
+}
+.os-cine-avatar {
+  width: 120px;
+  height: 120px;
+  border-radius: 32px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 0;
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  animation: os-hero-breathe 8s ease-in-out infinite;
 }
 .os-cine-overlay {
   margin-top: auto;
@@ -511,25 +691,29 @@ html[data-animations='off'] .os-layout * {
 }
 .os-cine-overlay h1 {
   margin: 0;
-  font-size: 32px;
+  font-size: 34px;
   font-family: var(--os-font-display);
   line-height: 1.05;
+  letter-spacing: 0.02em;
 }
 .os-cine-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  position: relative;
+  z-index: 5;
 }
 .os-cine-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 12px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(8, 10, 16, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 12, 18, 0.5);
   color: var(--text);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
 }
 
 /* 8 Neural */

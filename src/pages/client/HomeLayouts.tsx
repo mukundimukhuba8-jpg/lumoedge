@@ -108,7 +108,7 @@ function LayoutBackdrop({
   const isVideo = kind === 'video' && Boolean(img);
   return (
     <div
-      className={`os-layout ${className}`}
+      className={`os-layout os-layout-premium ${className}`}
       style={
         {
           '--os-accent-rgb': accentRgb,
@@ -119,14 +119,15 @@ function LayoutBackdrop({
           overflow: 'hidden',
           background:
             isVideo || !img
-              ? 'radial-gradient(circle at 50% 20%, rgba(var(--os-accent-rgb),0.18), #04060c 55%)'
+              ? 'radial-gradient(circle at 50% 18%, rgba(var(--os-accent-rgb),0.2), #03050a 58%)'
               : undefined,
         } as CSSProperties
       }
     >
+      <div className="os-ambient-depth" aria-hidden />
       {!isVideo && img ? (
         <div
-          className="os-layout-bg"
+          className="os-layout-bg os-hero-breathe"
           style={{ backgroundImage: `url(${img})` }}
           aria-hidden
         />
@@ -142,7 +143,14 @@ function LayoutBackdrop({
         />
       ) : null}
       <div className="os-layout-wash" aria-hidden />
-      <div className="os-layout-content">{children}</div>
+      <div className="os-holo-scan" aria-hidden />
+      <div className="os-scanlines" aria-hidden />
+      <div className="os-particles" aria-hidden>
+        {Array.from({ length: 18 }).map((_, i) => (
+          <span key={i} style={{ '--i': i } as CSSProperties} />
+        ))}
+      </div>
+      <div className="os-layout-content os-enter">{children}</div>
     </div>
   );
 }
@@ -157,17 +165,17 @@ function LayoutDock({
   onMetaTrader: () => void;
 }) {
   return (
-    <nav className="lay-dock os-dock" aria-label="Primary">
-      <button type="button" className="lay-dock-item active" onClick={onHome}>
-        <Home size={20} />
+    <nav className="lay-dock os-dock os-dock-vision" aria-label="Primary">
+      <button type="button" className="lay-dock-item active os-ctrl" onClick={onHome}>
+        <Home size={22} />
         <span>Home</span>
       </button>
-      <button type="button" className="lay-dock-item" onClick={onScanner}>
-        <ScanSearch size={20} />
+      <button type="button" className="lay-dock-item os-ctrl" onClick={onScanner}>
+        <ScanSearch size={22} />
         <span>Scanner</span>
       </button>
-      <button type="button" className="lay-dock-item" onClick={onMetaTrader}>
-        <Monitor size={20} />
+      <button type="button" className="lay-dock-item os-ctrl" onClick={onMetaTrader}>
+        <Monitor size={22} />
         <span>MetaTrader</span>
       </button>
     </nav>
@@ -203,7 +211,10 @@ function ActionButton({
 }) {
   if (action.displayOnly) {
     return (
-      <div className={`${className || ''} is-static${action.danger ? ' danger' : ''}`} aria-hidden>
+      <div
+        className={`os-ctrl ${className || ''} is-static${action.danger ? ' danger' : ''}`}
+        aria-hidden
+      >
         <span className="os-act-ico">{action.icon}</span>
         <span className="os-act-label">{action.label}</span>
       </div>
@@ -212,9 +223,13 @@ function ActionButton({
   return (
     <button
       type="button"
-      className={`${className || ''}${action.danger ? ' danger' : ''}`}
-      onClick={action.onClick}
+      className={`os-ctrl ${className || ''}${action.danger ? ' danger' : ''}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        action.onClick?.();
+      }}
     >
+      <span className="os-ripple" aria-hidden />
       <span className="os-act-ico">{action.icon}</span>
       <span className="os-act-label">{action.label}</span>
     </button>
@@ -300,6 +315,8 @@ function InfiniteCanvasLayout(a: LayoutActions) {
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
 
   const onDown = (e: ReactPointerEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button, a, input, [role="button"]')) return;
     drag.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
@@ -419,7 +436,9 @@ function CinematicLayout(a: LayoutActions) {
   const actions = actionDefs(a);
   return (
     <Shell a={a} className="os-cinematic">
-      <button type="button" className="os-cine-hit" onClick={a.onAvatarTap} aria-label="EA profile" />
+      <div className="os-cine-hero">
+        <AvatarButton a={a} className="os-cine-avatar" />
+      </div>
       <div className="os-cine-overlay">
         <p className="os-kicker">LUMO OS</p>
         <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
