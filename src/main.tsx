@@ -6,6 +6,7 @@ import { AdminProvider } from './context/AdminContext';
 import { AppProvider } from './context/AppContext';
 import './styles/global.css';
 import './styles/os-layouts.css';
+import './styles/ui-polish.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

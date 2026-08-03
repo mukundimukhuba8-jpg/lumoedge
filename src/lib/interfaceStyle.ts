@@ -495,6 +495,8 @@ export function loadInterfacePrefs(): InterfacePrefs {
 
 export function saveInterfacePrefs(prefs: InterfacePrefs) {
   saveJSON(KEY, prefs);
+  // Apply tokens immediately so accent/theme updates feel instant.
+  applyInterfaceTheme(prefs);
   PREF_LISTENERS.forEach((cb) => cb());
 }
 
@@ -533,6 +535,7 @@ export function applyInterfaceTheme(prefs: InterfacePrefs = loadInterfacePrefs()
   root.dataset.effect = prefs.effect;
   root.dataset.layout = prefs.layout;
   root.dataset.font = prefs.font;
+  root.dataset.accent = prefs.accent;
 
   const font = FONTS.find((f) => f.id === prefs.font) ?? FONTS[0];
   root.style.setProperty('--font-display', font.display);
@@ -541,20 +544,37 @@ export function applyInterfaceTheme(prefs: InterfacePrefs = loadInterfacePrefs()
   root.style.setProperty('--os-font-body', font.body);
   document.body.style.fontFamily = font.body;
 
+  // Accent drives chrome identity across the whole OS.
   root.style.setProperty('--electric', accent);
+  root.style.setProperty('--accent', accent);
   root.style.setProperty('--accent-rgb', accentRgb);
-  root.style.setProperty('--cyan', theme.cyan);
+  root.style.setProperty('--accent-soft', `rgba(${accentRgb}, 0.14)`);
+  root.style.setProperty('--accent-soft-2', `rgba(${accentRgb}, 0.22)`);
+  root.style.setProperty('--accent-glow', `rgba(${accentRgb}, 0.42)`);
+  root.style.setProperty('--accent-glow-soft', `rgba(${accentRgb}, 0.22)`);
+  root.style.setProperty('--accent-border', `rgba(${accentRgb}, 0.42)`);
+  root.style.setProperty('--accent-wash', `rgba(${accentRgb}, 0.08)`);
+  root.style.setProperty('--accent-shadow', `0 0 22px rgba(${accentRgb}, 0.35)`);
+  root.style.setProperty('--cyan', accent);
   root.style.setProperty('--theme-purple', theme.purple);
   root.style.setProperty('--theme-magenta', theme.magenta);
   root.style.setProperty('--bg', theme.bg);
   root.style.setProperty('--panel', theme.panel);
   root.style.setProperty('--elevated', theme.elevated);
-  root.style.setProperty('--border', theme.border);
-  root.style.setProperty('--card-border', theme.cardBorder);
-  root.style.setProperty('--glass-border', theme.cardBorder);
-  root.style.setProperty('--theme-glow', theme.glow);
+  root.style.setProperty('--border', `rgba(${accentRgb}, 0.28)`);
+  root.style.setProperty('--card-border', `rgba(${accentRgb}, 0.34)`);
+  root.style.setProperty('--glass-border', `rgba(${accentRgb}, 0.3)`);
+  root.style.setProperty('--theme-glow', `rgba(${accentRgb}, 0.35)`);
   root.style.setProperty('--glass', theme.panel);
   root.style.setProperty('--input', theme.elevated);
+  root.style.setProperty(
+    '--ambient-a',
+    `rgba(${accentRgb}, 0.18)`,
+  );
+  root.style.setProperty(
+    '--ambient-b',
+    `rgba(${accentRgb}, 0.08)`,
+  );
 
   root.style.background = theme.bg;
   document.body.style.background = theme.bg;

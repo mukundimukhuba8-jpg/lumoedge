@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { EaBackdrop } from './components/EaBackdrop';
+import { AmbientEnvironment } from './components/AmbientEnvironment';
 import { ThemeEngine } from './components/ThemeEngine';
 import { mentorIdForLicense } from './lib/copyTrade';
 import { CopyTradeProvider } from './context/CopyTradeContext';
@@ -162,6 +163,7 @@ export default function App() {
   return (
     <div className="app-shell lumo-app">
       <ThemeEngine />
+      <AmbientEnvironment />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
         <Route path="/" element={<HomeRedirect />} />
