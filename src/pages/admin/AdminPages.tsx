@@ -283,13 +283,15 @@ function Stat({
 }
 
 export function ManageEAsPage() {
-  const { eas, createEA, updateEA, deleteEA, profile } = useAdmin();
+  const { eas, createEA, updateEA, deleteEA, profile, restoreEAsFromCloud } = useAdmin();
   const [name, setName] = useState('');
   const [draft, setDraft] = useState('');
   const [symbols, setSymbols] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [editSymbols, setEditSymbols] = useState<string[]>([]);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreMsg, setRestoreMsg] = useState('');
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -383,7 +385,45 @@ export function ManageEAsPage() {
         <p className="muted" style={{ marginTop: 0 }}>
           Edit symbols here — they sync to every license key and licensed client for that EA.
         </p>
-        {eas.length === 0 ? <p className="muted">No EAs yet — create one to generate licenses.</p> : null}
+        {eas.length === 0 ? (
+          <div style={{ display: 'grid', gap: 10 }}>
+            <p className="muted">No EAs yet — create one to generate licenses.</p>
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              On another device? Pull your EAs from the cloud — nothing is deleted unless you tap Delete.
+            </p>
+            <button
+              type="button"
+              className="btn btn-blue"
+              style={{ width: 'fit-content' }}
+              disabled={restoring}
+              onClick={async () => {
+                setRestoreMsg('');
+                setRestoring(true);
+                try {
+                  const result = await restoreEAsFromCloud();
+                  if (result.ok) {
+                    setRestoreMsg(
+                      result.eas
+                        ? `Restored ${result.eas} EA${result.eas === 1 ? '' : 's'} from cloud.`
+                        : 'Sync finished — if still empty, create a new EA below.',
+                    );
+                  } else {
+                    setRestoreMsg(result.error || 'Could not restore EAs.');
+                  }
+                } finally {
+                  setRestoring(false);
+                }
+              }}
+            >
+              {restoring ? 'Restoring…' : 'Restore EAs from cloud'}
+            </button>
+            {restoreMsg ? (
+              <p className="muted" style={{ margin: 0, fontSize: 13, color: 'var(--green)' }}>
+                {restoreMsg}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {eas.map((ea) => {
           const src = displayImageSrc(ea.imageUrl);
           const isEditing = editingId === ea.id;
@@ -530,7 +570,7 @@ export function ManageEAsPage() {
 }
 
 export function GenerateLicensePage() {
-  const { eas, licenses, generateLicense, deleteLicense, profile, resyncLicenses } = useAdmin();
+  const { eas, licenses, generateLicense, deleteLicense, profile } = useAdmin();
   const [eaId, setEaId] = useState('');
   const [clientName, setClientName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
@@ -546,10 +586,6 @@ export function GenerateLicensePage() {
   const [copied, setCopied] = useState(false);
   const effectiveEaId = eaId || eas[0]?.id || '';
   const selected = eas.find((e) => e.id === effectiveEaId) ?? eas[0];
-
-  useEffect(() => {
-    resyncLicenses();
-  }, [resyncLicenses]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -579,7 +615,7 @@ export function GenerateLicensePage() {
             <Loader2 size={34} className="spin" style={{ color: 'var(--electric)' }} />
             <strong style={{ color: 'var(--electric)', marginTop: 12 }}>Generating license key…</strong>
             <span className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-              Saving to cloud — send the key only after this finishes
+              Key saves on this device first — cloud sync continues in the background
             </span>
           </div>
         ) : null}
@@ -1454,6 +1490,7 @@ export function SubscriptionsPage() {
     markClientPaid,
     deleteClient,
     stats,
+    clientsLoading,
   } = useAdmin();
   const [q, setQ] = useState('');
   const [manualEmail, setManualEmail] = useState('');
@@ -1642,9 +1679,19 @@ export function SubscriptionsPage() {
       </div>
 
       <div className="stat-grid admin-stat-grid">
-        <Stat value={String(stats.pendingClients)} label="Awaiting approval" tone="orange" />
-        <Stat value={String(paidPending)} label="Marked I've Paid" tone="blue" />
-        <Stat value={String(stats.approvedClients)} label="Approved clients" tone="green" />
+        {clientsLoading ? (
+          <>
+            <Stat value="…" label="Awaiting approval" tone="orange" />
+            <Stat value="…" label="Marked I've Paid" tone="blue" />
+            <Stat value="…" label="Approved clients" tone="green" />
+          </>
+        ) : (
+          <>
+            <Stat value={String(stats.pendingClients)} label="Awaiting approval" tone="orange" />
+            <Stat value={String(paidPending)} label="Marked I've Paid" tone="blue" />
+            <Stat value={String(stats.approvedClients)} label="Approved clients" tone="green" />
+          </>
+        )}
       </div>
 
       <div className="glow-card" style={{ display: 'grid', gap: 10 }}>
