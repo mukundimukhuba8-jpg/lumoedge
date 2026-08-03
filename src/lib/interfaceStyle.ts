@@ -2,39 +2,59 @@ import { ALL_MEDIA_SLOTS, type MentorMediaSlotId } from './mentorMedia';
 import { loadJSON, saveJSON } from './storage';
 
 export type LayoutId =
-  | 'ai-core'
-  | 'orbital'
-  | 'infinite-canvas'
-  | 'holographic'
-  | 'floating-island'
-  | 'reactor'
-  | 'cinematic'
-  | 'neural'
-  | 'glass-layer'
-  | 'command-center'
-  | 'minimal-luxury'
-  | 'zero-gravity'
-  | 'prism'
-  | 'hex-mesh'
-  | 'pulse-wave'
-  | 'satellite'
-  | 'vault'
-  | 'spectrum'
-  | 'mecha'
-  | 'eclipse';
+  | 'full-poster'
+  | 'magazine'
+  | 'bento'
+  | 'layered'
+  | 'timeline'
+  | 'offset'
+  | 'sidebar'
+  | 'split-canvas'
+  | 'hero-overlay'
+  | 'mosaic'
+  | 'carousel'
+  | 'floating-windows'
+  | 'folded'
+  | 'edge'
+  | 'swiss'
+  | 'rail'
+  | 'editorial'
+  | 'glyph'
+  | 'spatial'
+  | 'console';
 
-/** Map legacy layout IDs from older installs into the OS layout set. */
+/** Map legacy layout IDs into the architecture set. */
 const LEGACY_LAYOUT_MAP: Record<string, LayoutId> = {
-  classic: 'ai-core',
-  bold: 'reactor',
-  minimal: 'minimal-luxury',
-  expanded: 'cinematic',
-  dashboard: 'command-center',
-  terminal: 'mecha',
-  focus: 'holographic',
-  vortex: 'orbital',
-  phantom: 'glass-layer',
-  apex: 'eclipse',
+  classic: 'full-poster',
+  bold: 'mosaic',
+  minimal: 'swiss',
+  expanded: 'hero-overlay',
+  dashboard: 'mosaic',
+  terminal: 'console',
+  focus: 'layered',
+  vortex: 'bento',
+  phantom: 'layered',
+  apex: 'edge',
+  'ai-core': 'full-poster',
+  orbital: 'bento',
+  'infinite-canvas': 'spatial',
+  holographic: 'layered',
+  'floating-island': 'floating-windows',
+  reactor: 'console',
+  cinematic: 'full-poster',
+  neural: 'timeline',
+  'glass-layer': 'layered',
+  'command-center': 'mosaic',
+  'minimal-luxury': 'swiss',
+  'zero-gravity': 'floating-windows',
+  prism: 'folded',
+  'hex-mesh': 'bento',
+  'pulse-wave': 'rail',
+  satellite: 'split-canvas',
+  vault: 'folded',
+  spectrum: 'rail',
+  mecha: 'console',
+  eclipse: 'hero-overlay',
 };
 
 export type EffectId = 'profit-matrix' | 'star-field' | 'fire-mode' | 'trader-night' | 'none';
@@ -114,11 +134,11 @@ const KEY = 'ub-web/interface-style-v1';
 const PREF_LISTENERS = new Set<() => void>();
 
 export const DEFAULT_PREFS: InterfacePrefs = {
-  layout: 'ai-core',
-  effect: 'star-field',
-  accent: 'cyan',
+  layout: 'full-poster',
+  effect: 'none',
+  accent: 'silver',
   customBg: 'default',
-  theme: 'cyber-blue',
+  theme: 'midnight-black',
   font: 'space',
   animations: true,
 };
@@ -329,26 +349,26 @@ export const LAYOUTS: {
   description: string;
   schema: string;
 }[] = [
-  { id: 'ai-core', label: 'AI Core', description: 'Living AI center with orbiting controls', schema: 'ai-core' },
-  { id: 'orbital', label: 'Orbital', description: 'Circular rings of actions around the AI', schema: 'orbital' },
-  { id: 'infinite-canvas', label: 'Infinite Canvas', description: 'Drag a free-form OS canvas', schema: 'infinite-canvas' },
-  { id: 'holographic', label: 'Holographic', description: 'Floating glass panels with glow edges', schema: 'holographic' },
-  { id: 'floating-island', label: 'Floating Island', description: 'Independent islands with premium depth', schema: 'floating-island' },
-  { id: 'reactor', label: 'Reactor', description: 'Energy core command reactor', schema: 'reactor' },
-  { id: 'cinematic', label: 'Cinematic', description: 'Full-bleed AI art with floating controls', schema: 'cinematic' },
-  { id: 'neural', label: 'Neural', description: 'Connected neural-net UI nodes', schema: 'neural' },
-  { id: 'glass-layer', label: 'Glass Layer', description: 'Parallax translucent layers', schema: 'glass-layer' },
-  { id: 'command-center', label: 'Command Center', description: 'Modular control-room panels', schema: 'command-center' },
-  { id: 'minimal-luxury', label: 'Minimal Luxury', description: 'Oversized type, invisible chrome', schema: 'minimal-luxury' },
-  { id: 'zero-gravity', label: 'Zero Gravity', description: 'Cards drifting at different depths', schema: 'zero-gravity' },
-  { id: 'prism', label: 'Prism', description: 'Faceted crystal panels and light splits', schema: 'prism' },
-  { id: 'hex-mesh', label: 'Hex Mesh', description: 'Hexagonal tactical lattice', schema: 'hex-mesh' },
-  { id: 'pulse-wave', label: 'Pulse Wave', description: 'Waveform-driven action rails', schema: 'pulse-wave' },
-  { id: 'satellite', label: 'Satellite', description: 'Telemetry rings and status pods', schema: 'satellite' },
-  { id: 'vault', label: 'Vault', description: 'Secure chamber with stacked vault doors', schema: 'vault' },
-  { id: 'spectrum', label: 'Spectrum', description: 'Spectrum bars and light-band navigation', schema: 'spectrum' },
-  { id: 'mecha', label: 'Mecha', description: 'Armored HUD with industrial modules', schema: 'mecha' },
-  { id: 'eclipse', label: 'Eclipse', description: 'Dark eclipse corona around the AI', schema: 'eclipse' },
+  { id: 'full-poster', label: 'Full Screen Poster', description: '70% hero poster with floating UI', schema: 'full-poster' },
+  { id: 'magazine', label: 'Magazine', description: 'Asymmetric editorial blocks', schema: 'magazine' },
+  { id: 'bento', label: 'Bento Grid', description: 'Uneven Apple-style tiles', schema: 'bento' },
+  { id: 'layered', label: 'Layered', description: 'Overlapping depth layers', schema: 'layered' },
+  { id: 'timeline', label: 'Vertical Timeline', description: 'Journey-style checkpoints', schema: 'timeline' },
+  { id: 'offset', label: 'Offset', description: 'Intentionally unbalanced art layout', schema: 'offset' },
+  { id: 'sidebar', label: 'Sidebar Mobile', description: 'Left rail + content column', schema: 'sidebar' },
+  { id: 'split-canvas', label: 'Split Canvas', description: 'Unequal two-panel split', schema: 'split-canvas' },
+  { id: 'hero-overlay', label: 'Hero Overlay', description: 'Massive art with invisible chrome', schema: 'hero-overlay' },
+  { id: 'mosaic', label: 'Dashboard Mosaic', description: 'Mixed-height dashboard tiles', schema: 'mosaic' },
+  { id: 'carousel', label: 'Carousel', description: 'Horizontal swipe sections', schema: 'carousel' },
+  { id: 'floating-windows', label: 'Floating Windows', description: 'Desktop-like floating panels', schema: 'floating-windows' },
+  { id: 'folded', label: 'Folded', description: 'Overlapping folded sections', schema: 'folded' },
+  { id: 'edge', label: 'Edge', description: 'Content hugging screen edges', schema: 'edge' },
+  { id: 'swiss', label: 'Swiss Minimal', description: 'Huge type and whitespace', schema: 'swiss' },
+  { id: 'rail', label: 'Control Rail', description: 'Bottom action rail + tall hero', schema: 'rail' },
+  { id: 'editorial', label: 'Editorial Strip', description: 'Stripe-like product narrative', schema: 'editorial' },
+  { id: 'glyph', label: 'Glyph Sparse', description: 'Nothing OS sparse glyph grid', schema: 'glyph' },
+  { id: 'spatial', label: 'Spatial Deck', description: 'Arc-like spatial panels', schema: 'spatial' },
+  { id: 'console', label: 'Console Mosaic', description: 'PlayStation / Xbox tile board', schema: 'console' },
 ];
 
 /** @deprecated Presets now mirror LAYOUTS — kept for older callers. */

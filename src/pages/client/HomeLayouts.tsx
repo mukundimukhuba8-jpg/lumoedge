@@ -119,7 +119,7 @@ function LayoutBackdrop({
           overflow: 'hidden',
           background:
             isVideo || !img
-              ? 'radial-gradient(circle at 50% 18%, rgba(var(--os-accent-rgb),0.2), #03050a 58%)'
+              ? 'radial-gradient(circle at 50% 18%, rgba(var(--os-accent-rgb),0.14), #050608 62%)'
               : undefined,
         } as CSSProperties
       }
@@ -143,13 +143,6 @@ function LayoutBackdrop({
         />
       ) : null}
       <div className="os-layout-wash" aria-hidden />
-      <div className="os-holo-scan" aria-hidden />
-      <div className="os-scanlines" aria-hidden />
-      <div className="os-particles" aria-hidden>
-        {Array.from({ length: 18 }).map((_, i) => (
-          <span key={i} style={{ '--i': i } as CSSProperties} />
-        ))}
-      </div>
       <div className="os-layout-content os-enter">{children}</div>
     </div>
   );
@@ -159,23 +152,25 @@ function LayoutDock({
   onHome,
   onScanner,
   onMetaTrader,
+  className,
 }: {
   onHome: () => void;
   onScanner: () => void;
   onMetaTrader: () => void;
+  className?: string;
 }) {
   return (
-    <nav className="lay-dock os-dock os-dock-vision" aria-label="Primary">
+    <nav className={`lay-dock os-dock os-dock-triple ${className || ''}`} aria-label="Primary">
       <button type="button" className="lay-dock-item active os-ctrl" onClick={onHome}>
-        <Home size={22} />
+        <Home size={20} />
         <span>Home</span>
       </button>
       <button type="button" className="lay-dock-item os-ctrl" onClick={onScanner}>
-        <ScanSearch size={22} />
+        <ScanSearch size={20} />
         <span>Scanner</span>
       </button>
       <button type="button" className="lay-dock-item os-ctrl" onClick={onMetaTrader}>
-        <Monitor size={22} />
+        <Monitor size={20} />
         <span>MetaTrader</span>
       </button>
     </nav>
@@ -205,25 +200,26 @@ function AvatarButton({
 function ActionButton({
   action,
   className,
+  iconOnly,
 }: {
   action: ActionDef;
   className?: string;
+  iconOnly?: boolean;
 }) {
+  const cls = `os-ctrl ${className || ''}${action.danger ? ' danger' : ''}${iconOnly ? ' os-icon-only' : ''}`;
   if (action.displayOnly) {
     return (
-      <div
-        className={`os-ctrl ${className || ''} is-static${action.danger ? ' danger' : ''}`}
-        aria-hidden
-      >
+      <div className={`${cls} is-static`} aria-hidden>
         <span className="os-act-ico">{action.icon}</span>
-        <span className="os-act-label">{action.label}</span>
+        {!iconOnly ? <span className="os-act-label">{action.label}</span> : null}
       </div>
     );
   }
   return (
     <button
       type="button"
-      className={`os-ctrl ${className || ''}${action.danger ? ' danger' : ''}`}
+      className={cls}
+      aria-label={action.label}
       onClick={(e) => {
         e.stopPropagation();
         action.onClick?.();
@@ -231,7 +227,7 @@ function ActionButton({
     >
       <span className="os-ripple" aria-hidden />
       <span className="os-act-ico">{action.icon}</span>
-      <span className="os-act-label">{action.label}</span>
+      {!iconOnly ? <span className="os-act-label">{action.label}</span> : null}
     </button>
   );
 }
@@ -240,43 +236,76 @@ function Shell({
   a,
   className,
   children,
+  dock = true,
+  dockClassName,
 }: {
   a: LayoutActions;
   className: string;
   children: ReactNode;
+  dock?: boolean;
+  dockClassName?: string;
 }) {
   const bg = resolveBg(a);
   return (
     <LayoutBackdrop className={className} url={bg.url} kind={bg.kind} accentRgb={a.accentRgb}>
       {children}
-      <LayoutDock
-        onHome={a.onHomeTap}
-        onScanner={a.onScanner}
-        onMetaTrader={a.onMetaTrader}
-      />
+      {dock ? (
+        <LayoutDock
+          onHome={a.onHomeTap}
+          onScanner={a.onScanner}
+          onMetaTrader={a.onMetaTrader}
+          className={dockClassName}
+        />
+      ) : null}
     </LayoutBackdrop>
   );
 }
 
-/* ── 1 AI Core ─────────────────────────────────────────────── */
-function AiCoreLayout(a: LayoutActions) {
+function statusLine(a: LayoutActions) {
+  return a.mainText || (a.isPaused ? 'Systems paused' : 'Systems live');
+}
+
+/* ── 1 Full Screen Poster ──────────────────────────────────── */
+function FullPosterLayout(a: LayoutActions) {
   const actions = actionDefs(a);
   return (
-    <Shell a={a} className="os-ai-core">
-      <div className="os-core-stage">
-        <div className="os-core-rings" aria-hidden />
-        <AvatarButton a={a} className="os-core-avatar" />
-        <div className="os-core-title">
-          <p className="os-kicker">AI CORE ONLINE</p>
+    <Shell a={a} className="arch-poster" dockClassName="arch-poster-dock">
+      <div className="arch-poster-hero">
+        <AvatarButton a={a} className="arch-poster-avatar" />
+        <div className="arch-poster-fade" aria-hidden />
+        <div className="arch-poster-copy">
+          <p className="os-kicker">ONLINE</p>
           <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-          <p className="os-sub">{a.mainText || (a.isPaused ? 'Systems paused' : 'Systems live')}</p>
+          <p className="os-sub">{statusLine(a)}</p>
         </div>
-        <div className="os-core-orbit">
+      </div>
+      <div className="arch-poster-controls">
+        {actions.map((act) => (
+          <ActionButton key={act.key} action={act} className="arch-poster-btn" iconOnly />
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 2 Magazine ────────────────────────────────────────────── */
+function MagazineLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-magazine">
+      <div className="arch-mag-grid">
+        <AvatarButton a={a} className="arch-mag-hero" />
+        <div className="arch-mag-masthead">
+          <p className="os-kicker">ISSUE 01</p>
+          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+          <p className="os-sub">{statusLine(a)}</p>
+        </div>
+        <div className="arch-mag-stack">
           {actions.map((act, i) => (
             <ActionButton
               key={act.key}
               action={act}
-              className={`os-orbit-node os-orbit-${i}`}
+              className={`arch-mag-btn arch-mag-btn-${i}`}
             />
           ))}
         </div>
@@ -285,22 +314,129 @@ function AiCoreLayout(a: LayoutActions) {
   );
 }
 
-/* ── 2 Orbital ─────────────────────────────────────────────── */
-function OrbitalLayout(a: LayoutActions) {
+/* ── 3 Bento Grid ──────────────────────────────────────────── */
+function BentoLayout(a: LayoutActions) {
   const actions = actionDefs(a);
   return (
-    <Shell a={a} className="os-orbital">
-      <div className="os-orbital-stage">
-        <AvatarButton a={a} className="os-orbital-avatar" />
-        <h1 className="os-orbital-title">{a.eaTitle || 'LUMO EDGE'}</h1>
-        <div className="os-ring os-ring-a">
-          {actions.slice(0, 3).map((act) => (
-            <ActionButton key={act.key} action={act} className="os-ring-btn" />
-          ))}
+    <Shell a={a} className="arch-bento">
+      <div className="arch-bento-grid">
+        <AvatarButton a={a} className="arch-bento-hero" />
+        <div className="arch-bento-status">
+          <p className="os-kicker">STATUS</p>
+          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+          <p className="os-sub">{statusLine(a)}</p>
         </div>
-        <div className="os-ring os-ring-b">
-          {actions.slice(3).map((act) => (
-            <ActionButton key={act.key} action={act} className="os-ring-btn" />
+        {actions.map((act, i) => (
+          <ActionButton
+            key={act.key}
+            action={act}
+            className={`arch-bento-tile arch-bento-t${i}`}
+            iconOnly={i !== 0}
+          />
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 4 Layered ─────────────────────────────────────────────── */
+function LayeredLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-layered">
+      <div className="arch-layer arch-layer-bg" aria-hidden />
+      <div className="arch-layer arch-layer-hero">
+        <AvatarButton a={a} className="arch-layer-avatar" />
+      </div>
+      <div className="arch-layer arch-layer-info">
+        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+        <p className="os-sub">{statusLine(a)}</p>
+      </div>
+      <div className="arch-layer arch-layer-controls">
+        {actions.map((act) => (
+          <ActionButton key={act.key} action={act} className="arch-layer-btn" iconOnly />
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 5 Vertical Timeline ───────────────────────────────────── */
+function TimelineLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-timeline">
+      <div className="arch-tl-spine" aria-hidden />
+      <div className="arch-tl-node arch-tl-hero">
+        <AvatarButton a={a} className="arch-tl-avatar" />
+        <div>
+          <p className="os-kicker">ORIGIN</p>
+          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+        </div>
+      </div>
+      <div className="arch-tl-node arch-tl-status">
+        <span className="arch-tl-dot" aria-hidden />
+        <p className="os-sub">{statusLine(a)}</p>
+      </div>
+      {actions.map((act, i) => (
+        <div key={act.key} className={`arch-tl-node arch-tl-check arch-tl-c${i}`}>
+          <span className="arch-tl-dot" aria-hidden />
+          <ActionButton action={act} className="arch-tl-btn" />
+        </div>
+      ))}
+    </Shell>
+  );
+}
+
+/* ── 6 Offset ──────────────────────────────────────────────── */
+function OffsetLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-offset">
+      <AvatarButton a={a} className="arch-off-hero" />
+      <div className="arch-off-title">
+        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+        <p className="os-sub">{statusLine(a)}</p>
+      </div>
+      <div className="arch-off-actions">
+        {actions.map((act, i) => (
+          <ActionButton
+            key={act.key}
+            action={act}
+            className={`arch-off-btn arch-off-b${i}`}
+            iconOnly
+          />
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 7 Sidebar Mobile ──────────────────────────────────────── */
+function SidebarLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-sidebar" dock={false}>
+      <aside className="arch-side-rail" aria-label="Primary">
+        <button type="button" className="arch-side-nav active os-ctrl" onClick={a.onHomeTap} aria-label="Home">
+          <Home size={20} />
+        </button>
+        <button type="button" className="arch-side-nav os-ctrl" onClick={a.onScanner} aria-label="Scanner">
+          <ScanSearch size={20} />
+        </button>
+        <button type="button" className="arch-side-nav os-ctrl" onClick={a.onMetaTrader} aria-label="MetaTrader">
+          <Monitor size={20} />
+        </button>
+      </aside>
+      <div className="arch-side-main">
+        <AvatarButton a={a} className="arch-side-hero" />
+        <div className="arch-side-meta">
+          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+          <p className="os-sub">{statusLine(a)}</p>
+        </div>
+        <div className="arch-side-actions">
+          {actions.map((act) => (
+            <ActionButton key={act.key} action={act} className="arch-side-btn" iconOnly />
           ))}
         </div>
       </div>
@@ -308,8 +444,282 @@ function OrbitalLayout(a: LayoutActions) {
   );
 }
 
-/* ── 3 Infinite Canvas ─────────────────────────────────────── */
-function InfiniteCanvasLayout(a: LayoutActions) {
+/* ── 8 Split Canvas ────────────────────────────────────────── */
+function SplitCanvasLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-split">
+      <div className="arch-split-top">
+        <AvatarButton a={a} className="arch-split-avatar" />
+      </div>
+      <div className="arch-split-bottom">
+        <div className="arch-split-head">
+          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+          <p className="os-sub">{statusLine(a)}</p>
+        </div>
+        <div className="arch-split-actions">
+          {actions.map((act) => (
+            <ActionButton key={act.key} action={act} className="arch-split-btn" />
+          ))}
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 9 Hero Overlay ────────────────────────────────────────── */
+function HeroOverlayLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-overlay">
+      <AvatarButton a={a} className="arch-ov-avatar" />
+      <div className="arch-ov-veil" aria-hidden />
+      <div className="arch-ov-copy">
+        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+        <p className="os-sub">{statusLine(a)}</p>
+      </div>
+      <div className="arch-ov-bar">
+        {actions.map((act) => (
+          <ActionButton key={act.key} action={act} className="arch-ov-btn" iconOnly />
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 10 Dashboard Mosaic ───────────────────────────────────── */
+function MosaicLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-mosaic">
+      <div className="arch-mos-grid">
+        <div className="arch-mos-cell arch-mos-hero">
+          <AvatarButton a={a} className="arch-mos-avatar" />
+        </div>
+        <div className="arch-mos-cell arch-mos-title">
+          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+        </div>
+        <div className="arch-mos-cell arch-mos-status">
+          <p className="os-sub">{statusLine(a)}</p>
+        </div>
+        {actions.map((act, i) => (
+          <ActionButton
+            key={act.key}
+            action={act}
+            className={`arch-mos-cell arch-mos-a${i}`}
+            iconOnly={i > 1}
+          />
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 11 Carousel ───────────────────────────────────────────── */
+function CarouselLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-carousel" dockClassName="arch-carousel-dock">
+      <div className="arch-car-track">
+        <section className="arch-car-panel arch-car-hero">
+          <AvatarButton a={a} className="arch-car-avatar" />
+          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+          <p className="os-sub">{statusLine(a)}</p>
+          <p className="arch-car-hint">Swipe →</p>
+        </section>
+        <section className="arch-car-panel arch-car-controls">
+          <p className="os-kicker">CONTROLS</p>
+          <div className="arch-car-actions">
+            {actions.map((act) => (
+              <ActionButton key={act.key} action={act} className="arch-car-btn" />
+            ))}
+          </div>
+        </section>
+        <section className="arch-car-panel arch-car-nav">
+          <p className="os-kicker">NAVIGATE</p>
+          <button type="button" className="arch-car-navbtn os-ctrl" onClick={a.onHomeTap}>
+            <Home size={22} />
+            <span>Home</span>
+          </button>
+          <button type="button" className="arch-car-navbtn os-ctrl" onClick={a.onScanner}>
+            <ScanSearch size={22} />
+            <span>Scanner</span>
+          </button>
+          <button type="button" className="arch-car-navbtn os-ctrl" onClick={a.onMetaTrader}>
+            <Monitor size={22} />
+            <span>MetaTrader</span>
+          </button>
+        </section>
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 12 Floating Windows ───────────────────────────────────── */
+function FloatingWindowsLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-windows">
+      <div className="arch-win arch-win-hero">
+        <div className="arch-win-chrome">
+          <span />
+          <span />
+          <span />
+        </div>
+        <AvatarButton a={a} className="arch-win-avatar" />
+      </div>
+      <div className="arch-win arch-win-info">
+        <div className="arch-win-chrome">
+          <span />
+          <span />
+          <span />
+        </div>
+        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+        <p className="os-sub">{statusLine(a)}</p>
+      </div>
+      <div className="arch-win arch-win-controls">
+        <div className="arch-win-chrome">
+          <span />
+          <span />
+          <span />
+        </div>
+        <div className="arch-win-actions">
+          {actions.map((act) => (
+            <ActionButton key={act.key} action={act} className="arch-win-btn" iconOnly />
+          ))}
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 13 Folded ─────────────────────────────────────────────── */
+function FoldedLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-folded">
+      <div className="arch-fold arch-fold-a">
+        <AvatarButton a={a} className="arch-fold-avatar" />
+      </div>
+      <div className="arch-fold arch-fold-b">
+        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+        <p className="os-sub">{statusLine(a)}</p>
+      </div>
+      <div className="arch-fold arch-fold-c">
+        {actions.map((act) => (
+          <ActionButton key={act.key} action={act} className="arch-fold-btn" iconOnly />
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 14 Edge ───────────────────────────────────────────────── */
+function EdgeLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-edge">
+      <AvatarButton a={a} className="arch-edge-hero" />
+      <div className="arch-edge-title">
+        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+        <p className="os-sub">{statusLine(a)}</p>
+      </div>
+      <div className="arch-edge-left">
+        {actions.slice(0, 2).map((act) => (
+          <ActionButton key={act.key} action={act} className="arch-edge-btn" iconOnly />
+        ))}
+      </div>
+      <div className="arch-edge-right">
+        {actions.slice(2).map((act) => (
+          <ActionButton key={act.key} action={act} className="arch-edge-btn" iconOnly />
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 15 Swiss Minimal ──────────────────────────────────────── */
+function SwissLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-swiss">
+      <p className="arch-swiss-index">01</p>
+      <h1 className="arch-swiss-title">{a.eaTitle || 'LUMO EDGE'}</h1>
+      <AvatarButton a={a} className="arch-swiss-avatar" />
+      <p className="os-sub arch-swiss-status">{statusLine(a)}</p>
+      <div className="arch-swiss-row">
+        {actions.map((act) => (
+          <ActionButton key={act.key} action={act} className="arch-swiss-btn" iconOnly />
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 16 Control Rail ───────────────────────────────────────── */
+function RailLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-rail">
+      <div className="arch-rail-hero">
+        <AvatarButton a={a} className="arch-rail-avatar" />
+        <div className="arch-rail-copy">
+          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+          <p className="os-sub">{statusLine(a)}</p>
+        </div>
+      </div>
+      <div className="arch-rail-bar">
+        {actions.map((act) => (
+          <ActionButton key={act.key} action={act} className="arch-rail-btn" iconOnly />
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 17 Editorial Strip ────────────────────────────────────── */
+function EditorialLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-editorial">
+      <p className="arch-ed-eyebrow">PRODUCT</p>
+      <h1 className="arch-ed-display">{a.eaTitle || 'LUMO EDGE'}</h1>
+      <div className="arch-ed-band">
+        <AvatarButton a={a} className="arch-ed-avatar" />
+      </div>
+      <p className="arch-ed-lede">{statusLine(a)}</p>
+      <div className="arch-ed-actions">
+        {actions.map((act, i) => (
+          <ActionButton
+            key={act.key}
+            action={act}
+            className={`arch-ed-btn arch-ed-b${i}`}
+          />
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 18 Glyph Sparse ───────────────────────────────────────── */
+function GlyphLayout(a: LayoutActions) {
+  const actions = actionDefs(a);
+  return (
+    <Shell a={a} className="arch-glyph">
+      <AvatarButton a={a} className="arch-glyph-avatar" />
+      <h1 className="arch-glyph-title">{a.eaTitle || 'LUMO EDGE'}</h1>
+      <p className="arch-glyph-status">{statusLine(a)}</p>
+      <div className="arch-glyph-grid">
+        {actions.map((act) => (
+          <ActionButton key={act.key} action={act} className="arch-glyph-btn" iconOnly />
+        ))}
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 19 Spatial Deck ───────────────────────────────────────── */
+function SpatialLayout(a: LayoutActions) {
   const actions = actionDefs(a);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
@@ -323,8 +733,8 @@ function InfiniteCanvasLayout(a: LayoutActions) {
   const onMove = (e: ReactPointerEvent) => {
     if (!drag.current) return;
     setOffset({
-      x: drag.current.ox + (e.clientX - drag.current.x),
-      y: drag.current.oy + (e.clientY - drag.current.y),
+      x: drag.current.ox + (e.clientX - drag.current.x) * 0.35,
+      y: drag.current.oy + (e.clientY - drag.current.y) * 0.35,
     });
   };
   const onUp = () => {
@@ -332,384 +742,59 @@ function InfiniteCanvasLayout(a: LayoutActions) {
   };
 
   return (
-    <Shell a={a} className="os-canvas">
-      <p className="os-canvas-hint">Drag the canvas</p>
+    <Shell a={a} className="arch-spatial">
       <div
-        className="os-canvas-viewport"
+        className="arch-spatial-stage"
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}
       >
         <div
-          className="os-canvas-world"
-          style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
+          className="arch-spatial-deck"
+          style={{ transform: `translate3d(${offset.x}px, ${offset.y}px, 0)` }}
         >
-          <div className="os-canvas-hero">
-            <AvatarButton a={a} className="os-canvas-avatar" />
-            <div>
-              <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-              <p>{a.mainText}</p>
-            </div>
+          <div className="arch-spatial-card arch-spatial-hero">
+            <AvatarButton a={a} className="arch-spatial-avatar" />
           </div>
-          {actions.map((act, i) => (
-            <ActionButton
-              key={act.key}
-              action={act}
-              className={`os-canvas-card os-canvas-card-${i}`}
-            />
-          ))}
-        </div>
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 4 Holographic ─────────────────────────────────────────── */
-function HolographicLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-holo">
-      <div className="os-holo-stack">
-        <div className="os-holo-panel os-holo-main">
-          <AvatarButton a={a} className="os-holo-avatar" />
-          <div>
-            <p className="os-kicker">HOLOGRAM LINK</p>
+          <div className="arch-spatial-card arch-spatial-info">
             <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-            <p className="os-sub">{a.isPaused ? 'PAUSED' : 'ACTIVE'}</p>
+            <p className="os-sub">{statusLine(a)}</p>
           </div>
         </div>
-        <div className="os-holo-grid">
-          {actions.map((act) => (
-            <ActionButton key={act.key} action={act} className="os-holo-tile" />
-          ))}
-        </div>
       </div>
-    </Shell>
-  );
-}
-
-/* ── 5 Floating Island ─────────────────────────────────────── */
-function FloatingIslandLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-island">
-      <div className="os-island-hero os-island-float">
-        <AvatarButton a={a} className="os-island-avatar" />
-        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-        <p>{a.mainText}</p>
-      </div>
-      <div className="os-island-row">
-        {actions.map((act, i) => (
-          <ActionButton
-            key={act.key}
-            action={act}
-            className={`os-island-card os-island-float os-delay-${i}`}
-          />
-        ))}
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 6 Reactor ─────────────────────────────────────────────── */
-function ReactorLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-reactor">
-      <div className="os-reactor-core">
-        <div className="os-reactor-glow" aria-hidden />
-        <AvatarButton a={a} className="os-reactor-avatar" />
-      </div>
-      <h1 className="os-reactor-title">{a.eaTitle || 'LUMO EDGE'}</h1>
-      <div className="os-reactor-console">
+      <div className="arch-spatial-tray">
         {actions.map((act) => (
-          <ActionButton key={act.key} action={act} className="os-reactor-key" />
+          <ActionButton key={act.key} action={act} className="arch-spatial-btn" iconOnly />
         ))}
       </div>
     </Shell>
   );
 }
 
-/* ── 7 Cinematic ───────────────────────────────────────────── */
-function CinematicLayout(a: LayoutActions) {
+/* ── 20 Console Mosaic ─────────────────────────────────────── */
+function ConsoleLayout(a: LayoutActions) {
   const actions = actionDefs(a);
   return (
-    <Shell a={a} className="os-cinematic">
-      <div className="os-cine-hero">
-        <AvatarButton a={a} className="os-cine-avatar" />
-      </div>
-      <div className="os-cine-overlay">
-        <p className="os-kicker">LUMO OS</p>
-        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-        <p className="os-sub">{a.mainText}</p>
-        <div className="os-cine-actions">
-          {actions.map((act) => (
-            <ActionButton key={act.key} action={act} className="os-cine-chip" />
-          ))}
-        </div>
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 8 Neural ──────────────────────────────────────────────── */
-function NeuralLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-neural">
-      <svg className="os-neural-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-        <path d="M50 28 L18 55 M50 28 L50 55 M50 28 L82 55 M50 55 L30 78 M50 55 L70 78" />
-      </svg>
-      <div className="os-neural-node os-neural-core">
-        <AvatarButton a={a} className="os-neural-avatar" />
-        <strong>{a.eaTitle || 'LUMO EDGE'}</strong>
-      </div>
-      <div className="os-neural-nodes">
-        {actions.map((act) => (
-          <ActionButton key={act.key} action={act} className="os-neural-leaf" />
-        ))}
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 9 Glass Layer ─────────────────────────────────────────── */
-function GlassLayerLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-glass">
-      <div className="os-glass-layer os-glass-back" aria-hidden />
-      <div className="os-glass-layer os-glass-mid">
-        <AvatarButton a={a} className="os-glass-avatar" />
-        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-      </div>
-      <div className="os-glass-layer os-glass-front">
-        {actions.map((act) => (
-          <ActionButton key={act.key} action={act} className="os-glass-btn" />
-        ))}
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 10 Command Center ─────────────────────────────────────── */
-function CommandCenterLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-command">
-      <header className="os-command-top">
-        <AvatarButton a={a} className="os-command-avatar" />
-        <div>
-          <p className="os-kicker">COMMAND CENTER</p>
-          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-        </div>
-        <span className={`os-command-badge${a.isPaused ? ' paused' : ''}`}>
-          {a.isPaused ? 'PAUSED' : 'LIVE'}
-        </span>
+    <Shell a={a} className="arch-console">
+      <header className="arch-con-header">
+        <span className="arch-con-dot" aria-hidden />
+        <span>SYS // {a.eaTitle || 'LUMO EDGE'}</span>
+        <span className="arch-con-state">{a.isPaused ? 'PAUSED' : 'LIVE'}</span>
       </header>
-      <div className="os-command-grid">
-        {actions.map((act) => (
-          <ActionButton key={act.key} action={act} className="os-command-module" />
-        ))}
-      </div>
-      <div className="os-command-status">
-        <span>Telemetry</span>
-        <strong>{a.mainText || 'Nominal'}</strong>
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 11 Minimal Luxury ─────────────────────────────────────── */
-function MinimalLuxuryLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-luxury">
-      <AvatarButton a={a} className="os-luxury-avatar" />
-      <h1 className="os-luxury-title">{a.eaTitle || 'LUMO EDGE'}</h1>
-      <p className="os-luxury-copy">{a.mainText || 'Precision trading intelligence'}</p>
-      <div className="os-luxury-list">
-        {actions.map((act) => (
-          <ActionButton key={act.key} action={act} className="os-luxury-row" />
-        ))}
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 12 Zero Gravity ───────────────────────────────────────── */
-function ZeroGravityLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-zero">
-      <div className="os-zero-field">
-        <div className="os-zero-blob os-zero-a">
-          <AvatarButton a={a} className="os-zero-avatar" />
-          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
+      <div className="arch-con-board">
+        <AvatarButton a={a} className="arch-con-avatar" />
+        <div className="arch-con-log">
+          <p>&gt; boot sequence ok</p>
+          <p>&gt; {statusLine(a)}</p>
+          <p>&gt; awaiting command_</p>
         </div>
         {actions.map((act, i) => (
           <ActionButton
             key={act.key}
             action={act}
-            className={`os-zero-blob os-zero-card os-zero-${i}`}
+            className={`arch-con-key arch-con-k${i}`}
           />
-        ))}
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 13 Prism ──────────────────────────────────────────────── */
-function PrismLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-prism">
-      <div className="os-prism-facet os-prism-hero">
-        <AvatarButton a={a} className="os-prism-avatar" />
-        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-      </div>
-      <div className="os-prism-facets">
-        {actions.map((act) => (
-          <ActionButton key={act.key} action={act} className="os-prism-facet" />
-        ))}
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 14 Hex Mesh ───────────────────────────────────────────── */
-function HexMeshLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-hex">
-      <div className="os-hex-mesh" aria-hidden />
-      <AvatarButton a={a} className="os-hex-avatar" />
-      <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-      <div className="os-hex-row">
-        {actions.map((act) => (
-          <ActionButton key={act.key} action={act} className="os-hex-cell" />
-        ))}
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 15 Pulse Wave ─────────────────────────────────────────── */
-function PulseWaveLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-pulse">
-      <div className="os-pulse-wave" aria-hidden />
-      <div className="os-pulse-head">
-        <AvatarButton a={a} className="os-pulse-avatar" />
-        <div>
-          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-          <p>{a.isPaused ? 'Wave idle' : 'Wave syncing'}</p>
-        </div>
-      </div>
-      <div className="os-pulse-rail">
-        {actions.map((act) => (
-          <ActionButton key={act.key} action={act} className="os-pulse-node" />
-        ))}
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 16 Satellite ──────────────────────────────────────────── */
-function SatelliteLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-sat">
-      <div className="os-sat-orbit" aria-hidden />
-      <AvatarButton a={a} className="os-sat-avatar" />
-      <p className="os-kicker">SATELLITE UPLINK</p>
-      <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-      <div className="os-sat-pods">
-        {actions.map((act) => (
-          <ActionButton key={act.key} action={act} className="os-sat-pod" />
-        ))}
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 17 Vault ──────────────────────────────────────────────── */
-function VaultLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-vault">
-      <div className="os-vault-door">
-        <AvatarButton a={a} className="os-vault-avatar" />
-        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-        <p className="os-sub">Secure vault chamber</p>
-      </div>
-      <div className="os-vault-slots">
-        {actions.map((act) => (
-          <ActionButton key={act.key} action={act} className="os-vault-slot" />
-        ))}
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 18 Spectrum ───────────────────────────────────────────── */
-function SpectrumLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-spectrum">
-      <div className="os-spectrum-bars" aria-hidden>
-        {Array.from({ length: 16 }).map((_, i) => (
-          <span key={i} style={{ animationDelay: `${i * 0.08}s` }} />
-        ))}
-      </div>
-      <AvatarButton a={a} className="os-spectrum-avatar" />
-      <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-      <div className="os-spectrum-band">
-        {actions.map((act) => (
-          <ActionButton key={act.key} action={act} className="os-spectrum-chip" />
-        ))}
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 19 Mecha ──────────────────────────────────────────────── */
-function MechaLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-mecha">
-      <div className="os-mecha-frame">
-        <div className="os-mecha-hud">
-          <span>SYS</span>
-          <strong>{a.isPaused ? 'HOLD' : 'ARMED'}</strong>
-          <span>vOS</span>
-        </div>
-        <AvatarButton a={a} className="os-mecha-avatar" />
-        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-        <div className="os-mecha-modules">
-          {actions.map((act) => (
-            <ActionButton key={act.key} action={act} className="os-mecha-mod" />
-          ))}
-        </div>
-      </div>
-    </Shell>
-  );
-}
-
-/* ── 20 Eclipse ────────────────────────────────────────────── */
-function EclipseLayout(a: LayoutActions) {
-  const actions = actionDefs(a);
-  return (
-    <Shell a={a} className="os-eclipse">
-      <div className="os-eclipse-corona" aria-hidden />
-      <AvatarButton a={a} className="os-eclipse-avatar" />
-      <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-      <p className="os-sub">{a.mainText}</p>
-      <div className="os-eclipse-arc">
-        {actions.map((act) => (
-          <ActionButton key={act.key} action={act} className="os-eclipse-btn" />
         ))}
       </div>
     </Shell>
@@ -717,39 +802,37 @@ function EclipseLayout(a: LayoutActions) {
 }
 
 const LAYOUT_MAP: Record<LayoutId, (a: LayoutActions) => ReactNode> = {
-  'ai-core': AiCoreLayout,
-  orbital: OrbitalLayout,
-  'infinite-canvas': InfiniteCanvasLayout,
-  holographic: HolographicLayout,
-  'floating-island': FloatingIslandLayout,
-  reactor: ReactorLayout,
-  cinematic: CinematicLayout,
-  neural: NeuralLayout,
-  'glass-layer': GlassLayerLayout,
-  'command-center': CommandCenterLayout,
-  'minimal-luxury': MinimalLuxuryLayout,
-  'zero-gravity': ZeroGravityLayout,
-  prism: PrismLayout,
-  'hex-mesh': HexMeshLayout,
-  'pulse-wave': PulseWaveLayout,
-  satellite: SatelliteLayout,
-  vault: VaultLayout,
-  spectrum: SpectrumLayout,
-  mecha: MechaLayout,
-  eclipse: EclipseLayout,
+  'full-poster': FullPosterLayout,
+  magazine: MagazineLayout,
+  bento: BentoLayout,
+  layered: LayeredLayout,
+  timeline: TimelineLayout,
+  offset: OffsetLayout,
+  sidebar: SidebarLayout,
+  'split-canvas': SplitCanvasLayout,
+  'hero-overlay': HeroOverlayLayout,
+  mosaic: MosaicLayout,
+  carousel: CarouselLayout,
+  'floating-windows': FloatingWindowsLayout,
+  folded: FoldedLayout,
+  edge: EdgeLayout,
+  swiss: SwissLayout,
+  rail: RailLayout,
+  editorial: EditorialLayout,
+  glyph: GlyphLayout,
+  spatial: SpatialLayout,
+  console: ConsoleLayout,
 };
 
-/** Renders one of the 20 OS home layouts — same actions, different composition. */
+/** Renders one of the 20 architecture layouts — same actions, different composition. */
 export function OsHomeLayout({
   layout,
   ...actions
 }: LayoutActions & { layout: LayoutId }) {
-  const Comp = LAYOUT_MAP[layout] || AiCoreLayout;
+  const Comp = LAYOUT_MAP[layout] || FullPosterLayout;
   return <>{Comp(actions)}</>;
 }
 
-/* Legacy named exports kept for any stray imports */
-export const FocusLayout = HolographicLayout;
-export const TerminalLayout = MechaLayout;
-export const VortexLayout = OrbitalLayout;
-
+export const FocusLayout = LayeredLayout;
+export const TerminalLayout = ConsoleLayout;
+export const VortexLayout = BentoLayout;
