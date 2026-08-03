@@ -107,20 +107,35 @@ let licensePublishInFlight = 0;
 const IMAGE_STORE = 'ub-web/ea-images-v1';
 const lastServerEasRepair = new Map<string, number>();
 const SERVER_EAS_REPAIR_COOLDOWN_MS = 45_000;
+const SUPER_ADMIN_ID = 'LM-004821';
+
+/** Vault rows visible to this portal — Super Admin sees the full vault. */
+function vaultForMentor(mentorId: string, isSuper = false): VaultLicense[] {
+  const revoked = loadRevokedKeys();
+  return loadVault().filter(
+    (v) =>
+      v.status !== 'deleted' &&
+      !revoked.some((k) => keysMatch(k, v.key)) &&
+      (isSuper || !mentorId || !v.ownerAdminId || v.ownerAdminId === mentorId),
+  );
+}
 
 function healWorkspaceEas(
   ws: Partial<AdminWorkspace> | undefined,
   ownerAdminId = '',
-  vault: VaultLicense[] = loadVault(),
+  vault?: VaultLicense[],
 ): { workspace: AdminWorkspace; restored: number; restoredLicenses: number } {
+  const isSuper = ownerAdminId === SUPER_ADMIN_ID;
   const seed = ownerAdminId ? ({ id: ownerAdminId } as AdminUser) : undefined;
   const normalized = normalizeWorkspaceCore(ws, seed);
   const wsRevoked = dbList<string>(normalized.revokedKeys);
+  const vaultSlice = vault ?? vaultForMentor(ownerAdminId, isSuper);
   const licenseHeal = healLicensesFromVault<LicenseRecord>(
     normalized,
     ownerAdminId,
-    vault,
+    vaultSlice,
     wsRevoked,
+    { includeAllVault: isSuper },
   );
   const withLicenses: AdminWorkspace = {
     ...normalized,
@@ -129,7 +144,7 @@ function healWorkspaceEas(
   const { workspace: repaired, restored } = repairWorkspaceEas(
     withLicenses as unknown as Record<string, unknown>,
     ownerAdminId,
-    vault,
+    vaultSlice,
   );
   return {
     workspace: normalizeWorkspaceCore(repaired as Partial<AdminWorkspace>, seed),
@@ -152,11 +167,7 @@ async function maybeRepairEasOnServer(mentorId: string): Promise<boolean> {
 
 /** Always heal from merged local vault — remote-only vault misses keys saved on this device. */
 function mergedVaultForMentor(mentorId: string): VaultLicense[] {
-  return loadVault().filter(
-    (v) =>
-      v.status !== 'deleted' &&
-      (!mentorId || !v.ownerAdminId || v.ownerAdminId === mentorId),
-  );
+  return vaultForMentor(mentorId, mentorId === SUPER_ADMIN_ID);
 }
 function hydrateLicenseRemote(remote: RemoteDb | null): StoreState | null {
   if (!remote) return null;
@@ -669,9 +680,12 @@ function normalizeWorkspace(
     eaName?: string;
     phone?: string;
     mainText?: string;
+    role?: string;
   },
 ): AdminWorkspace {
-  return healWorkspaceEas(ws, seed?.id || '', loadVault()).workspace;
+  const id = seed?.id || '';
+  const isSuper = normalizeAdminRole(seed?.role) === 'super' || id === SUPER_ADMIN_ID;
+  return healWorkspaceEas(ws, id, vaultForMentor(id, isSuper)).workspace;
 }
 
 /** Merge two workspaces — keep every EA and license from either side. */
@@ -765,12 +779,13 @@ function filterOwnLicenses(
   licenses: LicenseRecord[],
   ownerAdminId: string,
   wsRevoked: string[] = [],
+  isSuper = false,
 ): LicenseRecord[] {
-  if (!ownerAdminId) return [];
+  if (!ownerAdminId && !isSuper) return [];
   return licenses
     .filter((l) => l.status !== 'deleted')
     .filter((l) => !isLicenseRevoked(l.key, wsRevoked))
-    .filter((l) => (l.ownerAdminId || ownerAdminId) === ownerAdminId)
+    .filter((l) => isSuper || !l.ownerAdminId || l.ownerAdminId === ownerAdminId)
     .map((l) => ({
       ...l,
       ownerAdminId: l.ownerAdminId || ownerAdminId,
@@ -826,18 +841,18 @@ function mergeVaultKeepAll(local: VaultLicense[], remote: VaultLicense[]): Vault
 }
 
 function saveMergedVaultForMentor(
-  adminId: string,
+  _adminId: string,
   remoteVault: VaultLicense[],
   extraLocal: VaultLicense[] = [],
 ) {
   const revoked = loadRevokedKeys();
   const merged = mergeVaultKeepAll(loadVault(), [...extraLocal, ...remoteVault]);
+  // Keep the full merged vault — never drop other mentors' keys from this device
   saveVaultLocal(
     merged.filter(
       (v) =>
         v.status !== 'deleted' &&
-        !revoked.some((k) => keysMatch(k, v.key)) &&
-        (!adminId || !v.ownerAdminId || v.ownerAdminId === adminId),
+        !revoked.some((k) => keysMatch(k, v.key)),
     ),
   );
 }
@@ -987,6 +1002,7 @@ function healMentorWorkspaceInStore(
   remoteWs?: Partial<AdminWorkspace>,
 ): StoreState {
   if (!mentorId) return prev;
+  const isSuper = mentorId === SUPER_ADMIN_ID;
   const base = localWs ?? prev.workspaces[mentorId] ?? createEmptyWorkspace({ id: mentorId });
   const mergedWs = remoteWs
     ? mergeWorkspaceKeepAll(
@@ -994,7 +1010,7 @@ function healMentorWorkspaceInStore(
         normalizeWorkspaceCore(remoteWs, { id: mentorId }),
       )
     : normalizeWorkspaceCore(base, { id: mentorId });
-  const vaultNow = mergedVaultForMentor(mentorId);
+  const vaultNow = vaultForMentor(mentorId, isSuper);
   const healed = healWorkspaceEas(mergedWs, mentorId, vaultNow);
   const workspace = {
     ...healed.workspace,
@@ -1002,6 +1018,7 @@ function healMentorWorkspaceInStore(
       healed.workspace.licenses,
       mentorId,
       healed.workspace.revokedKeys,
+      isSuper,
     ),
   };
   const beforeCount = prev.workspaces[mentorId]?.licenses?.length ?? 0;
@@ -2042,11 +2059,24 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         );
       }
       const hydrated = hydrateLicenseRemote(db);
-      setStore((prev) =>
-        healAllWorkspacesFromVault(
-          hydrated ?? healMentorWorkspaceInStore(prev, adminId, prev.workspaces[adminId]),
-        ),
-      );
+      setStore((prev) => {
+        const base = hydrated ?? prev;
+        const isSuper = adminId === SUPER_ADMIN_ID;
+        const healed = healWorkspaceEas(
+          base.workspaces[adminId] ?? prev.workspaces[adminId],
+          adminId,
+          vaultForMentor(adminId, isSuper),
+        );
+        const next = healAllWorkspacesFromVault({
+          ...base,
+          workspaces: {
+            ...base.workspaces,
+            [adminId]: healed.workspace,
+          },
+        });
+        saveJSON(STORE_KEY, next);
+        return next;
+      });
       const list = await fetchClients();
       if (list) {
         const remoteDeleted = await fetchRemoteDeletedClients();
@@ -2124,14 +2154,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       }
       const remoteRaw = db.store?.workspaces?.[mentorId] as AdminWorkspace | undefined;
       setStore((prev) => {
+        const before = prev.workspaces[mentorId]?.licenses?.length ?? 0;
         const next = healMentorWorkspaceInStore(
           prev,
           mentorId,
           prev.workspaces[mentorId],
           remoteRaw,
         );
-        const count = next.workspaces[mentorId]?.licenses?.length ?? 0;
-        if (count > 0) {
+        const after = next.workspaces[mentorId]?.licenses?.length ?? 0;
+        if (after > before) {
           void pushLicensesToRemote(mentorId, next.workspaces[mentorId]);
         }
         return next;
@@ -2902,6 +2933,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         workspace.licenses,
         adminId,
         workspace.revokedKeys,
+        isSuper,
       ),
       mt5: workspace.mt5,
       profile: workspace.profile,
