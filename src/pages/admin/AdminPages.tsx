@@ -283,7 +283,7 @@ function Stat({
 }
 
 export function ManageEAsPage() {
-  const { eas, createEA, updateEA, deleteEA } = useAdmin();
+  const { eas, createEA, updateEA, deleteEA, profile } = useAdmin();
   const [name, setName] = useState('');
   const [draft, setDraft] = useState('');
   const [symbols, setSymbols] = useState<string[]>([]);
@@ -293,6 +293,36 @@ export function ManageEAsPage() {
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
+      <div
+        className="glow-card"
+        style={{
+          borderColor: 'rgba(59,130,246,0.45)',
+          background: 'rgba(59,130,246,0.08)',
+          padding: '14px 16px',
+        }}
+      >
+        <div className="muted" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em' }}>
+          MENTOR ID
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+          <code style={{ color: 'var(--electric)', fontWeight: 800, fontSize: 15 }}>
+            {profile.mentorId || '—'}
+          </code>
+          {profile.mentorId ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ width: 'auto', padding: '6px 10px', fontSize: 12 }}
+              onClick={() => void navigator.clipboard.writeText(profile.mentorId)}
+            >
+              Copy
+            </button>
+          ) : null}
+        </div>
+        <p className="muted" style={{ margin: '8px 0 0', fontSize: 12, lineHeight: 1.5 }}>
+          All students under your EAs use this Mentor ID in LumoEdgeCopy.mq5 — no license key in MT5.
+        </p>
+      </div>
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>Create New EA</h3>
         <div className="field"><label>EA Name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter EA name" /></div>
@@ -373,28 +403,36 @@ export function ManageEAsPage() {
                         marginTop: 6,
                         fontSize: 11,
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        flexWrap: 'wrap',
+                        flexDirection: 'column',
+                        gap: 4,
                       }}
                     >
-                      EA ID:{' '}
-                      <code style={{ color: 'var(--electric)', fontWeight: 700 }}>{ea.id}</code>
-                      <button
-                        type="button"
-                        aria-label="Copy EA ID"
-                        onClick={() => void navigator.clipboard.writeText(ea.id)}
-                        style={{
-                          background: 'rgba(59,130,246,0.12)',
-                          border: '1px solid rgba(59,130,246,0.35)',
-                          borderRadius: 6,
-                          padding: '2px 6px',
-                          color: 'var(--electric)',
-                          fontSize: 10,
-                        }}
-                      >
-                        Copy
-                      </button>
+                      <span>
+                        EA ID: <code style={{ color: 'var(--electric)', fontWeight: 700 }}>{ea.id}</code>
+                        <button
+                          type="button"
+                          aria-label="Copy EA ID"
+                          onClick={() => void navigator.clipboard.writeText(ea.id)}
+                          style={{
+                            marginLeft: 8,
+                            background: 'rgba(59,130,246,0.12)',
+                            border: '1px solid rgba(59,130,246,0.35)',
+                            borderRadius: 6,
+                            padding: '2px 6px',
+                            color: 'var(--electric)',
+                            fontSize: 10,
+                          }}
+                        >
+                          Copy
+                        </button>
+                      </span>
+                      <span>
+                        Mentor ID:{' '}
+                        <code style={{ color: 'var(--electric)', fontWeight: 700 }}>
+                          {profile.mentorId || '—'}
+                        </code>
+                      </span>
+                      <span>Licenses under this EA receive copy trades automatically.</span>
                     </div>
                     {!isEditing ? (
                       <div style={{ marginTop: 6 }}>
@@ -808,13 +846,25 @@ export function OpenOrdersPage() {
   const [takeProfit, setTakeProfit] = useState('0.00');
   const [comment, setComment] = useState(profile.eaDisplayName);
   const [trades, setTrades] = useState('1');
-  const active = licenses.filter((l) => l.status === 'active').length;
+  const [selectedEaId, setSelectedEaId] = useState(() => eas[0]?.id || '');
+  const activeForEa = licenses.filter(
+    (l) =>
+      (l.status === 'active' || l.status === 'assigned') &&
+      String(l.eaId || '') === selectedEaId,
+  ).length;
   const symbols = [...new Set(eas.flatMap((e) => e.symbols))];
   const connected = mt5.connected;
+  const selectedEa = eas.find((ea) => ea.id === selectedEaId);
+
+  useEffect(() => {
+    if (!selectedEaId && eas[0]?.id) setSelectedEaId(eas[0].id);
+  }, [eas, selectedEaId]);
 
   const run = (copy: boolean) => {
-    if (!connected) return;
+    if (!copy && !connected) return;
+    if (copy && !selectedEaId) return alert('Select an EA first on Manage EAs.');
     const order = executeOrder({
+      eaId: selectedEaId,
       symbol: symbol.toUpperCase(),
       side,
       volume: Number(volume) || 0.01,
@@ -825,7 +875,7 @@ export function OpenOrdersPage() {
     });
     alert(
       copy
-        ? `Copy trade queued for ${order.copiedTo} licensed client${order.copiedTo === 1 ? '' : 's'}. Clients receive trades via VPS + LumoEdgeCopy.mq5 (see Setup Methods).`
+        ? `Copy trade queued for ${order.copiedTo} client${order.copiedTo === 1 ? '' : 's'} under ${selectedEa?.name || 'this EA'}. Works from phone or laptop — students need LumoEdgeCopy.mq5 with your EA ID + Mentor ID.`
         : `Order saved: ${order.side.toUpperCase()} ${order.symbol}`,
     );
   };
@@ -856,6 +906,22 @@ export function OpenOrdersPage() {
       </div>
       <div className="glow-card cyber-card">
         <h3 style={{ marginTop: 0 }}>Order Details</h3>
+        <div className="field">
+          <label>Copy to EA *</label>
+          <select value={selectedEaId} onChange={(e) => setSelectedEaId(e.target.value)}>
+            {eas.length === 0 ? <option value="">Create an EA first</option> : null}
+            {eas.map((ea) => (
+              <option key={ea.id} value={ea.id}>
+                {ea.name} ({ea.id})
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
+          Mentor ID: <strong style={{ color: 'var(--electric)' }}>{profile.mentorId || '—'}</strong>
+          {' · '}
+          {activeForEa} licensed client{activeForEa === 1 ? '' : 's'} on this EA
+        </p>
         <div className="field"><label>Symbol *</label><input value={symbol} onChange={(e) => setSymbol(e.target.value)} /></div>
         <div>{symbols.slice(0, 6).map((s) => <button key={s} type="button" className="chip" onClick={() => setSymbol(s)}>{s}</button>)}</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, margin: '10px 0' }}>
@@ -878,9 +944,14 @@ export function OpenOrdersPage() {
           </p>
         ) : null}
         <div style={{ textAlign: 'center', margin: '12px 0' }} className="muted">OR</div>
-        <button className="btn btn-ghost" type="button" disabled={!connected} onClick={() => run(true)}>
-          COPY TRADE TO ALL CLIENTS ({active})
+        <button className="btn btn-ghost" type="button" disabled={!selectedEaId} onClick={() => run(true)}>
+          COPY TRADE TO EA CLIENTS ({activeForEa})
         </button>
+        {!selectedEaId ? (
+          <p className="orders-conn-warn" style={{ marginTop: 10 }}>
+            Create an EA on Manage EAs, generate licenses for it, then copy trade here from phone or laptop.
+          </p>
+        ) : null}
       </div>
       {orders[0] ? <div className="muted">Last: {orders[0].side.toUpperCase()} {orders[0].symbol} · copied {orders[0].copiedTo}</div> : null}
     </div>

@@ -306,6 +306,7 @@ export type AdminProfile = {
 
 export type CopyOrder = {
   id: string;
+  eaId?: string;
   symbol: string;
   side: 'buy' | 'sell';
   volume: number;
@@ -3281,11 +3282,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             createdAt: new Date().toISOString(),
           };
         }
-        const licensedClients = workspace.licenses.filter(
-          (l) => l.status === 'active' || l.status === 'assigned',
-        ).length;
+        const eaId = String(order.eaId || '').trim();
+        const licensedClients = workspace.licenses.filter((l) => {
+          if (l.status !== 'active' && l.status !== 'assigned') return false;
+          if (!eaId) return true;
+          return String(l.eaId || '') === eaId;
+        }).length;
         const created: CopyOrder = {
           ...order,
+          eaId: eaId || undefined,
           id: `ord-${Date.now()}`,
           copiedTo: licensedClients,
           createdAt: new Date().toISOString(),

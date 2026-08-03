@@ -21,7 +21,6 @@ import {
 import { getSastDayKey } from '../lib/chartScan';
 import { firebaseWatchMentorOrders } from '../lib/firebaseDb';
 import { getMt5Token } from '../lib/mt5Session';
-import { COPY_TRADE_MODE } from '../lib/vpsCopyTrade';
 import { loadJSON, saveJSON } from '../lib/storage';
 
 export type EngineSignal = 'idle' | 'active';
@@ -60,10 +59,17 @@ function bumpSentToday(): number {
   return next;
 }
 
+function orderForClient(row: Record<string, unknown>, clientEaId: string): boolean {
+  const tagged = String(row.eaId || '').trim();
+  if (!tagged || !clientEaId) return true;
+  return tagged === clientEaId;
+}
+
 export function CopyTradeProvider({
   email,
   licenseKey,
   eaName,
+  clientEaId,
   isPaused,
   ownerAdminId,
   children,
@@ -71,11 +77,12 @@ export function CopyTradeProvider({
   email?: string;
   licenseKey?: string;
   eaName: string;
+  clientEaId?: string;
   isPaused: boolean;
   ownerAdminId?: string;
   children: ReactNode;
 }) {
-  const mt5Linked = COPY_TRADE_MODE === 'vps' ? true : Boolean(getMt5Token(email));
+  const mt5Linked = Boolean(getMt5Token(email));
   const [engineSignal, setEngineSignal] = useState<EngineSignal>('idle');
   const [statusLabel, setStatusLabel] = useState('Waiting for Signal');
   const [statusDetail, setStatusDetail] = useState('Listening for trade signals…');
@@ -97,15 +104,12 @@ export function CopyTradeProvider({
   useEffect(() => {
     if (!email || !licenseKey || isPaused) {
       setEngineSignal('idle');
-      if (COPY_TRADE_MODE === 'vps') {
-        setStatusLabel('VPS Mode');
-        setStatusDetail('Complete VPS Setup — trades run on your MT5 terminal 24/7.');
-      } else {
-        setStatusLabel(mt5Linked ? 'Waiting for Signal' : 'Connect MT5');
-        setStatusDetail(
-          mt5Linked ? 'Listening for trade signals…' : 'Connect MetaTrader to receive trades.',
-        );
-      }
+      setStatusLabel(mt5Linked ? 'Waiting for Signal' : 'Connect MT5 or VPS script');
+      setStatusDetail(
+        mt5Linked
+          ? 'Listening for copy trades from your mentor EA…'
+          : 'Connect MetaTrader in the app, or run LumoEdgeCopy.mq5 on VPS with your mentor EA ID.',
+      );
       return;
     }
 
@@ -117,52 +121,12 @@ export function CopyTradeProvider({
     }
 
     rememberLicenseOwner(licenseKey, mentorId);
-
-    if (COPY_TRADE_MODE === 'vps') {
-      setEngineSignal('idle');
-      setStatusLabel('VPS Mode Active');
-      setStatusDetail('Listening via LumoEdgeCopy.mq5 on your VPS — browser execution is off.');
-      let primed = false;
-
-      const handleOrders = (rawOrders: Array<Record<string, unknown>>) => {
-        const orders = sortCopyOrders(rawOrders);
-        const latest = orders[0];
-        if (!latest?.id) return;
-        const orderId = String(latest.id);
-
-        if (!primed) {
-          primed = true;
-          for (const row of orders.slice(1)) {
-            const id = String(row.id || '');
-            if (id && !isCopyOrderProcessed(mentorId, id)) {
-              markProcessed(mentorId, id);
-            }
-          }
-        }
-
-        if (isCopyOrderProcessed(mentorId, orderId)) return;
-        const sideLabel = String(latest.side || 'buy') === 'sell' ? 'SELL' : 'BUY';
-        setEngineSignal('active');
-        setStatusLabel('Signal Queued');
-        setStatusDetail(
-          `${sideLabel} ${String(latest.symbol || 'XAUUSD')} queued — your VPS script will execute it.`,
-        );
-        markProcessed(mentorId, orderId);
-        window.setTimeout(() => {
-          setEngineSignal('idle');
-          setStatusLabel('VPS Mode Active');
-          setStatusDetail('Listening via LumoEdgeCopy.mq5 on your VPS — browser execution is off.');
-        }, 4000);
-      };
-
-      const unsub = firebaseWatchMentorOrders(mentorId, handleOrders);
-      return () => unsub();
-    }
-
     let primed = false;
 
     const handleOrders = (rawOrders: Array<Record<string, unknown>>) => {
-      const orders = sortCopyOrders(rawOrders);
+      const orders = sortCopyOrders(rawOrders).filter((row) =>
+        orderForClient(row, clientEaId || ''),
+      );
       const latest = orders[0];
       if (!latest?.id) return;
 
@@ -183,6 +147,7 @@ export function CopyTradeProvider({
 
       const order: CopyOrderPayload = {
         id: orderId,
+        eaId: String(latest.eaId || ''),
         symbol: String(latest.symbol || 'XAUUSD'),
         side: String(latest.side || 'buy') === 'sell' ? 'sell' : 'buy',
         volume: Number(latest.volume) || 0.01,
@@ -195,6 +160,22 @@ export function CopyTradeProvider({
 
       lastHandledRef.current = orderId;
       const sideLabel = order.side === 'sell' ? 'SELL' : 'BUY';
+
+      if (!mt5Linked) {
+        setEngineSignal('active');
+        setStatusLabel('Signal Received');
+        setStatusDetail(
+          `${sideLabel} ${order.symbol} queued — open MT5 in the app or use LumoEdgeCopy.mq5 on VPS.`,
+        );
+        markProcessed(mentorId, orderId);
+        window.setTimeout(() => {
+          setEngineSignal('idle');
+          setStatusLabel('Waiting for Signal');
+          setStatusDetail('Connect MetaTrader or VPS script to execute copy trades.');
+        }, 5000);
+        return;
+      }
+
       setEngineSignal('active');
       setStatusLabel('Executing Trade');
       setStatusDetail(`Sending ${sideLabel} ${order.symbol} to MT5…`);
@@ -213,7 +194,7 @@ export function CopyTradeProvider({
           setPopupOpen(false);
           setEngineSignal('idle');
           setStatusLabel('Waiting for Signal');
-          setStatusDetail('Listening for trade signals…');
+          setStatusDetail('Listening for copy trades from your mentor EA…');
           return;
         }
 
@@ -228,7 +209,7 @@ export function CopyTradeProvider({
           window.setTimeout(() => {
             setEngineSignal('idle');
             setStatusLabel('Waiting for Signal');
-            setStatusDetail('Listening for trade signals…');
+            setStatusDetail('Listening for copy trades from your mentor EA…');
           }, 3200);
           return;
         }
@@ -243,9 +224,16 @@ export function CopyTradeProvider({
       });
     };
 
+    setStatusLabel(mt5Linked ? 'Waiting for Signal' : 'Connect MT5 or VPS');
+    setStatusDetail(
+      mt5Linked
+        ? 'Listening for copy trades from your mentor EA…'
+        : 'Use LumoEdgeCopy.mq5 on VPS with mentor EA ID + Mentor ID (no license key needed).',
+    );
+
     const unsub = firebaseWatchMentorOrders(mentorId, handleOrders);
     return () => unsub();
-  }, [email, licenseKey, eaName, isPaused, ownerAdminId]);
+  }, [email, licenseKey, eaName, clientEaId, isPaused, ownerAdminId, mt5Linked]);
 
   const value = useMemo<CopyTradeEngineState>(
     () => ({

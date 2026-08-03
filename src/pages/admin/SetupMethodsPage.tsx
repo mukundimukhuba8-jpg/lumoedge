@@ -89,7 +89,7 @@ export function SetupMethodsPage() {
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <Placeholder title="Setup Methods">
-        VPS copy trading — how mentors and clients connect MetaTrader to Lumo Edge.
+        EA-based copy trading — one EA ID controls all licenses under that EA.
       </Placeholder>
 
       <div
@@ -102,38 +102,26 @@ export function SetupMethodsPage() {
           lineHeight: 1.55,
         }}
       >
-        <strong style={{ display: 'block', marginBottom: 6 }}>VPS mode is active</strong>
-        Copy trades are delivered to clients through the Lumo Edge MT5 script on their VPS or PC.
-        The browser app no longer executes copy trades — clients must complete the setup below.
+        <strong style={{ display: 'block', marginBottom: 6 }}>How copy trading works now</strong>
+        You pick an EA on Open Orders and tap COPY TRADE — from phone or laptop. Every licensed
+        student under that EA receives the signal. Students use the same EA ID + your Mentor ID in
+        MT5. No license key in the script.
       </div>
 
-      <StepCard step={1} title="Use a PC or VPS with MT5" icon={<Server size={16} />}>
-        For reliable 24/7 copy trading, clients should run MetaTrader 5 on a VPS or always-on PC.
-        Install MT5, log in to their broker account, and keep the terminal open with automated
-        trading enabled.
+      <StepCard step={1} title="Manage EAs — copy Mentor ID + EA ID" icon={<Shield size={16} />}>
+        On <strong>Manage EAs</strong>, copy your <strong>Mentor ID</strong> and each EA&apos;s{' '}
+        <strong>EA ID</strong> (e.g. <code>ea-1784470635215</code>). Give students the EA ID for the
+        EA their license belongs to.
       </StepCard>
 
-      <StepCard step={2} title="Copy the EA ID" icon={<Shield size={16} />}>
-        Each managed EA has an <strong style={{ color: 'var(--text)' }}>EA ID</strong> on the{' '}
-        <strong style={{ color: 'var(--text)' }}>Manage EAs</strong> page (for example{' '}
-        <code style={{ color: 'var(--electric)' }}>ea-1730123456789</code>). Clients also receive a
-        personal <strong style={{ color: 'var(--text)' }}>Copy EA ID</strong> (starts with{' '}
-        <code style={{ color: 'var(--electric)' }}>CT-</code>) on their Setup page after activating
-        their license — they need that ID in the MT5 script inputs.
+      <StepCard step={2} title="Students: VPS + MT5" icon={<Server size={16} />}>
+        Each student runs MT5 on a VPS or PC with LumoEdgeCopy.mq5 attached. Same EA ID + Mentor
+        ID for everyone under that EA — no per-student license key in MT5.
       </StepCard>
 
-      <StepCard step={3} title="Download the copy trading script" icon={<Download size={16} />}>
-        Clients download <strong style={{ color: 'var(--text)' }}>LumoEdgeCopy.mq5</strong> from
-        their in-app Setup page or directly:
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-          <code
-            style={{
-              flex: 1,
-              fontSize: 12,
-              wordBreak: 'break-all',
-              color: 'var(--electric)',
-            }}
-          >
+      <StepCard step={3} title="Download LumoEdgeCopy.mq5" icon={<Download size={16} />}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <code style={{ flex: 1, fontSize: 12, wordBreak: 'break-all', color: 'var(--electric)' }}>
             {scriptUrl}
           </code>
           <CopyButton value={scriptUrl} />
@@ -146,48 +134,29 @@ export function SetupMethodsPage() {
             Download
           </a>
         </div>
-        <p style={{ margin: '10px 0 0' }}>
-          In MT5: File → Open Data Folder → MQL5 → Experts → paste the file → compile in MetaEditor
-          → attach to any chart.
-        </p>
       </StepCard>
 
-      <StepCard step={4} title="Configure MetaTrader settings" icon={<Settings2 size={16} />}>
-        In MetaTrader: <strong style={{ color: 'var(--text)' }}>Tools → Options → Expert Advisors</strong>
-        <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
-          <li>Enable <strong>Allow automated trading</strong></li>
-          <li>Enable <strong>Allow WebRequest for listed URL</strong></li>
-          <li>Add this URL to the allowed list:</li>
-        </ul>
+      <StepCard step={4} title="MT5 script inputs + WebRequest" icon={<Settings2 size={16} />}>
+        Inputs: <strong>EaId</strong>, <strong>MentorId</strong>, ApiBaseUrl. Leave license key
+        empty. Add to WebRequest allowlist:
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-          <code
-            style={{
-              flex: 1,
-              fontSize: 12,
-              wordBreak: 'break-all',
-              color: 'var(--electric)',
-            }}
-          >
+          <code style={{ flex: 1, fontSize: 12, wordBreak: 'break-all', color: 'var(--electric)' }}>
             {apiUrl}
           </code>
           <CopyButton value={apiUrl} />
         </div>
-        <p style={{ margin: '10px 0 0' }}>
-          Script inputs: <strong>Copy EA ID</strong>, <strong>License key</strong>, and{' '}
-          <strong>ApiBaseUrl</strong> ({apiUrl}).
-        </p>
       </StepCard>
 
       <div className="glow-card">
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
           <Monitor size={16} color="var(--electric)" />
-          <strong>Mentor workflow</strong>
+          <strong>Copy from phone or laptop</strong>
         </div>
         <ol className="muted" style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>
-          <li>Create an EA on Manage EAs and generate license keys.</li>
-          <li>Connect your broker on Connect EA (or queue trades from Open Orders).</li>
-          <li>Queue copy trades from Open Orders — clients&apos; VPS scripts pick them up within seconds.</li>
-          <li>Clients tap I&apos;ve Paid / activate license, then complete VPS setup on their Setup page.</li>
+          <li>Create EA → generate licenses for students (keys stay in the app only).</li>
+          <li>Open Orders → select EA → COPY TRADE TO EA CLIENTS.</li>
+          <li>Students with LumoEdgeCopy.mq5 running receive trades within seconds.</li>
+          <li>Students can also use the Lumo Edge app + MT5 tab if the app is open.</li>
         </ol>
       </div>
     </div>

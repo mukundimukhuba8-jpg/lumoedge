@@ -1633,14 +1633,14 @@ export default async function handler(req, res) {
       }
 
       if (pathname === '/api/copy/poll' && req.method === 'GET') {
-        const copyEaId = String(url.searchParams.get('copyEaId') || '').trim();
-        const licenseKey = String(url.searchParams.get('licenseKey') || '').trim();
-        const email = String(url.searchParams.get('email') || '').trim();
+        const mentorId = String(url.searchParams.get('mentorId') || '').trim();
+        const eaId = String(url.searchParams.get('eaId') || url.searchParams.get('copyEaId') || '').trim();
+        const terminalId = String(url.searchParams.get('terminalId') || 'default').trim();
         const format = String(url.searchParams.get('format') || 'json').trim().toLowerCase();
         const result = await pollCopyOrder(firebaseRead, firebaseWrite, {
-          copyEaId,
-          licenseKey,
-          email,
+          mentorId,
+          eaId,
+          terminalId,
         });
         if (format === 'text') {
           res.statusCode = result.ok ? 200 : 400;

@@ -1,6 +1,5 @@
 import { Activity, Radio, Zap } from 'lucide-react';
 import { useCopyTradeEngine } from '../context/CopyTradeContext';
-import { COPY_TRADE_MODE } from '../lib/vpsCopyTrade';
 
 type Props = {
   eaTitle?: string;
@@ -13,13 +12,9 @@ export function CopyTradeEnginePanel({ eaTitle, isPaused = false }: Props) {
 
   const pillPhase = isPaused
     ? 'connected'
-    : COPY_TRADE_MODE === 'vps'
-      ? statusLabel.includes('Queued') || statusLabel.includes('Signal')
-        ? 'copying'
-        : 'waiting'
-      : statusLabel === 'Trade Sent Successfully'
+    : statusLabel === 'Trade Sent Successfully'
       ? 'sent'
-      : statusLabel === 'Executing Trade'
+      : statusLabel === 'Executing Trade' || statusLabel === 'Signal Received'
         ? 'copying'
         : mt5Linked
           ? 'waiting'
@@ -55,7 +50,7 @@ export function CopyTradeEnginePanel({ eaTitle, isPaused = false }: Props) {
         </div>
         <div>
           <span>Broker</span>
-          <strong>{COPY_TRADE_MODE === 'vps' ? 'VPS/MT5' : mt5Linked ? 'Connected' : '—'}</strong>
+          <strong>{mt5Linked ? 'Connected' : 'VPS script'}</strong>
         </div>
         <div>
           <span>Signal</span>

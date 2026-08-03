@@ -5,6 +5,7 @@ import { findInVault, loadJSON, normalizeLicenseKey } from './storage';
 
 export type CopyOrderPayload = {
   id: string;
+  eaId?: string;
   symbol: string;
   side: 'buy' | 'sell';
   volume: number;
