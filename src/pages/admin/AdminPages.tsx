@@ -570,7 +570,15 @@ export function ManageEAsPage() {
 }
 
 export function GenerateLicensePage() {
-  const { eas, licenses, generateLicense, deleteLicense, profile } = useAdmin();
+  const {
+    eas,
+    licenses,
+    generateLicense,
+    deleteLicense,
+    profile,
+    resyncLicenses,
+    restoreLicensesFromCloud,
+  } = useAdmin();
   const [eaId, setEaId] = useState('');
   const [clientName, setClientName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
@@ -578,6 +586,8 @@ export function GenerateLicensePage() {
   const [search, setSearch] = useState('');
   const [lastKey, setLastKey] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreMsg, setRestoreMsg] = useState('');
   const [status, setStatus] = useState<{
     type: 'error' | 'success';
     title: string;
@@ -586,6 +596,10 @@ export function GenerateLicensePage() {
   const [copied, setCopied] = useState(false);
   const effectiveEaId = eaId || eas[0]?.id || '';
   const selected = eas.find((e) => e.id === effectiveEaId) ?? eas[0];
+
+  useEffect(() => {
+    resyncLicenses();
+  }, [resyncLicenses]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -779,8 +793,44 @@ export function GenerateLicensePage() {
         ) : null}
       </div>
       <div className="glow-card" style={{ boxShadow: 'none', borderColor: 'rgba(255,255,255,0.08)' }}>
-        <h3 style={{ marginTop: 0 }}>All Generated Licenses ({licenses.length})</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <h3 style={{ marginTop: 0 }}>All Generated Licenses ({licenses.length})</h3>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ width: 'auto', padding: '6px 12px', fontSize: 12 }}
+            disabled={restoring}
+            onClick={async () => {
+              setRestoreMsg('');
+              setRestoring(true);
+              try {
+                const result = await restoreLicensesFromCloud();
+                if (result.ok) {
+                  setRestoreMsg(
+                    result.licenses
+                      ? `Restored ${result.licenses} license key${result.licenses === 1 ? '' : 's'} from cloud.`
+                      : 'Sync finished — keys appear here as soon as cloud responds.',
+                  );
+                } else {
+                  setRestoreMsg(result.error || 'Could not restore license keys.');
+                }
+              } finally {
+                setRestoring(false);
+              }
+            }}
+          >
+            {restoring ? 'Restoring…' : 'Restore keys from cloud'}
+          </button>
+        </div>
+        {restoreMsg ? (
+          <p className="muted" style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--green)' }}>
+            {restoreMsg}
+          </p>
+        ) : null}
         <div className="field"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, email or key..." /></div>
+        {filtered.length === 0 ? (
+          <p className="muted">No license keys on this device yet — tap Restore keys from cloud above.</p>
+        ) : null}
         {filtered.map((lic) => (
           <div key={lic.id} style={{ padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1516,6 +1566,10 @@ export function SubscriptionsPage() {
     .filter((c) => normalizeClientStatus(c.status) === 'approved')
     .filter(match);
   const paidPending = pending.filter((c) => c.paymentClaimed).length;
+
+  useEffect(() => {
+    void refreshClientQueue();
+  }, [refreshClientQueue]);
 
   const onAddManual = async () => {
     if (manualSaving) return;

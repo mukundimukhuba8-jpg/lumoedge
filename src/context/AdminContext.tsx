@@ -946,7 +946,9 @@ function hasCachedSubscriberQueue(): boolean {
 
 function saveCachedClientQueue(list: ClientRequest[]) {
   if (!list.length) return;
-  saveJSON(CLIENT_QUEUE_CACHE_KEY, list);
+  const existing = loadJSON<ClientRequest[]>(CLIENT_QUEUE_CACHE_KEY, []);
+  const merged = existing.length ? mergeClientLists(existing, list) : list;
+  saveJSON(CLIENT_QUEUE_CACHE_KEY, merged);
 }
 
 function loadCachedClientQueue(): ClientRequest[] {
@@ -962,6 +964,74 @@ function loadCachedClientQueue(): ClientRequest[] {
     return merged;
   }
   return prepaidAsClientRequests();
+}
+
+function portalAdminId(): string {
+  try {
+    const session = loadJSON<AuthState>(AUTH_KEY, {
+      portalOpen: false,
+      admin: null,
+      admins: [],
+    });
+    return session.admin?.id || '';
+  } catch {
+    return '';
+  }
+}
+
+/** Rebuild workspace licenses/EAs from merged local vault — never drops existing rows. */
+function healMentorWorkspaceInStore(
+  prev: StoreState,
+  mentorId: string,
+  localWs?: Partial<AdminWorkspace>,
+  remoteWs?: Partial<AdminWorkspace>,
+): StoreState {
+  if (!mentorId) return prev;
+  const base = localWs ?? prev.workspaces[mentorId] ?? createEmptyWorkspace({ id: mentorId });
+  const mergedWs = remoteWs
+    ? mergeWorkspaceKeepAll(
+        normalizeWorkspaceCore(base, { id: mentorId }),
+        normalizeWorkspaceCore(remoteWs, { id: mentorId }),
+      )
+    : normalizeWorkspaceCore(base, { id: mentorId });
+  const vaultNow = mergedVaultForMentor(mentorId);
+  const healed = healWorkspaceEas(mergedWs, mentorId, vaultNow);
+  const workspace = {
+    ...healed.workspace,
+    licenses: filterOwnLicenses(
+      healed.workspace.licenses,
+      mentorId,
+      healed.workspace.revokedKeys,
+    ),
+  };
+  const beforeCount = prev.workspaces[mentorId]?.licenses?.length ?? 0;
+  if (
+    healed.restoredLicenses === 0 &&
+    healed.restored === 0 &&
+    workspace.licenses.length === beforeCount &&
+    workspaceDataFingerprint(workspace) ===
+      workspaceDataFingerprint(prev.workspaces[mentorId] ?? createEmptyWorkspace({ id: mentorId }))
+  ) {
+    return prev;
+  }
+  const next = {
+    ...prev,
+    workspaces: { ...prev.workspaces, [mentorId]: workspace },
+  };
+  saveJSON(STORE_KEY, next);
+  return next;
+}
+
+function healAllWorkspacesFromVault(prev: StoreState): StoreState {
+  let next = prev;
+  for (const id of Object.keys(prev.workspaces || {})) {
+    next = healMentorWorkspaceInStore(next, id);
+  }
+  const portalId = portalAdminId();
+  if (portalId && !next.workspaces[portalId]) {
+    next = healMentorWorkspaceInStore(next, portalId);
+  }
+  return next;
 }
 
 function saveCachedAdminRoster(list: AdminUser[]) {
@@ -1130,6 +1200,12 @@ type Ctx = {
   /** Pull license vault from cloud so activation can read keys instantly. */
   warmLicenseCache: () => void;
   restoreEAsFromCloud: () => Promise<{ ok: boolean; restored?: number; eas?: number; error?: string }>;
+  restoreLicensesFromCloud: () => Promise<{
+    ok: boolean;
+    restored?: number;
+    licenses?: number;
+    error?: string;
+  }>;
   /** True until the first subscriber queue fetch finishes (Super Admin). */
   clientsLoading: boolean;
   saveMt5: (mt5: Mt5Connection) => void;
@@ -1347,7 +1423,9 @@ const SPLASH_MAX_MS = 1200;
 
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(() => migrateAuth());
-  const [store, setStore] = useState<StoreState>(() => migrateStore(migrateAuth().admins));
+  const [store, setStore] = useState<StoreState>(() =>
+    healAllWorkspacesFromVault(migrateStore(migrateAuth().admins)),
+  );
   const [clients, setClients] = useState<ClientRequest[]>(() => loadCachedClientQueue());
   const [clientsLoading, setClientsLoading] = useState(() => !hasCachedSubscriberQueue());
   const [booting, setBooting] = useState(true);
@@ -1415,6 +1493,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             ),
           ),
         );
+        setStore((prev) => healAllWorkspacesFromVault(prev));
       }
       if (adminSession && db.store?.workspaces && typeof db.store.workspaces === 'object') {
         const remoteWs: StoreState['workspaces'] = {};
@@ -1594,7 +1673,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       if (db.images && typeof db.images === 'object') {
         mergeRemoteImages(db.images);
       }
-      if (!db?.store?.workspaces?.[mentorId]) return;
       if (db.vault && licensePublishInFlight === 0) {
         const revoked = loadRevokedKeys();
         saveMergedVaultForMentor(
@@ -1607,7 +1685,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         );
       }
       const vaultNow = mergedVaultForMentor(mentorId);
-      const remoteRaw = db.store.workspaces[mentorId] as AdminWorkspace;
+      const remoteRaw = db.store?.workspaces?.[mentorId] as AdminWorkspace | undefined;
+
+      if (!remoteRaw) {
+        setStore((prev) => healMentorWorkspaceInStore(prev, mentorId));
+        const list = await fetchClients();
+        if (list) {
+          const remoteDeleted = await fetchRemoteDeletedClients();
+          setClients((prev) =>
+            mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted),
+          );
+        }
+        return;
+      }
+
       const remoteWs = healWorkspaceEas(remoteRaw, mentorId, vaultNow).workspace;
       remoteWs.licenses = filterOwnLicenses(
         remoteWs.licenses,
@@ -1647,7 +1738,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           shouldPushLicenses = merged.licenses.length > remoteWs.licenses.length;
         }
         if (
-          workspaceDataFingerprint(merged) === workspaceDataFingerprint(localWs)
+          workspaceDataFingerprint(merged) === workspaceDataFingerprint(localWs) &&
+          healed.restoredLicenses === 0 &&
+          healed.restored === 0 &&
+          merged.licenses.length === localWs.licenses.length
         ) {
           return prev;
         }
@@ -1744,14 +1838,31 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         loadJSON<StoreState>(STORE_KEY, { workspaces: {} }).workspaces[mentorId]?.revokedKeys ?? [],
       );
       if (visibleLicenses.length === 0) {
-        const repaired = await maybeRepairEasOnServer(mentorId);
-        if (repaired) {
-          invalidateFetchDbCache();
-          const fresh = await fetchDb();
-          const merged = hydrateLicenseRemote(fresh);
-          if (merged) {
-            setStore(merged);
-          }
+        invalidateFetchDbCache();
+        const fresh = await fetchDb();
+        if (fresh?.vault && licensePublishInFlight === 0) {
+          const revoked = loadRevokedKeys();
+          saveMergedVaultForMentor(
+            mentorId,
+            dbList<VaultLicense>(fresh.vault).filter(
+              (v) =>
+                v.status !== 'deleted' &&
+                !revoked.some((k) => keysMatch(k, v.key)),
+            ),
+          );
+        }
+        const merged = hydrateLicenseRemote(fresh);
+        if (merged) {
+          setStore(healAllWorkspacesFromVault(merged));
+        } else {
+          setStore((prev) => healMentorWorkspaceInStore(prev, mentorId));
+        }
+        const list = await fetchClients();
+        if (list) {
+          const remoteDeleted = await fetchRemoteDeletedClients();
+          setClients((prev) =>
+            mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted),
+          );
         }
       }
     };
@@ -1913,6 +2024,45 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     }
   }, [auth.admin?.id]);
 
+  const restoreLicensesFromCloud = useCallback(async () => {
+    const adminId = auth.admin?.id;
+    if (!adminId) return { ok: false as const, error: 'Not logged in' };
+    try {
+      invalidateFetchDbCache();
+      const db = await fetchDb();
+      if (db?.vault && licensePublishInFlight === 0) {
+        const revoked = loadRevokedKeys();
+        saveMergedVaultForMentor(
+          adminId,
+          dbList<VaultLicense>(db.vault).filter(
+            (v) =>
+              v.status !== 'deleted' &&
+              !revoked.some((k) => keysMatch(k, v.key)),
+          ),
+        );
+      }
+      const hydrated = hydrateLicenseRemote(db);
+      setStore((prev) =>
+        healAllWorkspacesFromVault(
+          hydrated ?? healMentorWorkspaceInStore(prev, adminId, prev.workspaces[adminId]),
+        ),
+      );
+      const list = await fetchClients();
+      if (list) {
+        const remoteDeleted = await fetchRemoteDeletedClients();
+        setClients((prev) =>
+          mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted),
+        );
+      }
+      const licenses =
+        loadJSON<StoreState>(STORE_KEY, { workspaces: {} }).workspaces[adminId]?.licenses
+          ?.length ?? 0;
+      return { ok: true as const, restored: licenses, licenses };
+    } catch {
+      return { ok: false as const, error: 'Network error while restoring license keys' };
+    }
+  }, [auth.admin?.id]);
+
   const restoreEAsFromCloud = useCallback(async () => {
     const adminId = auth.admin?.id;
     if (!adminId) return { ok: false as const, error: 'Not logged in' };
@@ -1960,7 +2110,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       if (db.images && typeof db.images === 'object') {
         mergeRemoteImages(db.images);
       }
-      if (!db?.store?.workspaces?.[mentorId]) return;
       const vaultEntries = dbList<VaultLicense>(db.vault);
       if (db.vault && licensePublishInFlight === 0) {
         const revoked = loadRevokedKeys();
@@ -1973,38 +2122,28 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           ),
         );
       }
-      const remoteWs = healWorkspaceEas(
-        db.store.workspaces[mentorId] as AdminWorkspace,
-        mentorId,
-        mergedVaultForMentor(mentorId),
-      ).workspace;
-      remoteWs.licenses = filterOwnLicenses(
-        remoteWs.licenses,
-        mentorId,
-        remoteWs.revokedKeys,
-      );
+      const remoteRaw = db.store?.workspaces?.[mentorId] as AdminWorkspace | undefined;
       setStore((prev) => {
-        const localWs = prev.workspaces[mentorId];
-        const mergedWs = localWs
-          ? mergeWorkspaceKeepAll(localWs, remoteWs)
-          : remoteWs;
-        const healed = healWorkspaceEas(
-          mergedWs,
+        const next = healMentorWorkspaceInStore(
+          prev,
           mentorId,
-          mergedVaultForMentor(mentorId),
+          prev.workspaces[mentorId],
+          remoteRaw,
         );
-        const next = {
-          ...prev,
-          workspaces: { ...prev.workspaces, [mentorId]: healed.workspace },
-        };
-        saveJSON(STORE_KEY, next);
-        if (healed.restoredLicenses > 0 || healed.workspace.licenses.length > 0) {
-          void pushLicensesToRemote(mentorId, healed.workspace);
+        const count = next.workspaces[mentorId]?.licenses?.length ?? 0;
+        if (count > 0) {
+          void pushLicensesToRemote(mentorId, next.workspaces[mentorId]);
         }
         return next;
       });
     });
   }, [auth.admin]);
+
+  useEffect(() => {
+    if (booting || !auth.admin?.id) return;
+    warmLicenseCache();
+    resyncLicenses();
+  }, [booting, auth.admin?.id, warmLicenseCache, resyncLicenses]);
 
   const patchWorkspace = useCallback(
     (adminId: string, updater: (ws: AdminWorkspace) => AdminWorkspace, seed?: AdminUser) => {
@@ -3155,6 +3294,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       resyncLicenses,
       warmLicenseCache,
       restoreEAsFromCloud,
+      restoreLicensesFromCloud,
       clientsLoading,
       findLicense: (key) => {
         const vault = findInVault(key);
@@ -3424,7 +3564,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         approvedClients: isSuper ? countClientQueue(clients).approved : 0,
       },
     };
-  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, approveMentorByIds, resyncLicenses, warmLicenseCache, restoreEAsFromCloud]);
+  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, approveMentorByIds, resyncLicenses, warmLicenseCache, restoreEAsFromCloud, restoreLicensesFromCloud]);
 
   return (
     <AdminContext.Provider value={value}>
