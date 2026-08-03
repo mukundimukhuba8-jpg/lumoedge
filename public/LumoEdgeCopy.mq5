@@ -3,22 +3,24 @@
 //+------------------------------------------------------------------+
 #property copyright "Lumo Edge"
 #property link      "https://lumoedge.vercel.app"
-#property version   "1.00"
+#property version   "1.01"
 #property strict
 
-input string CopyEaId    = "";                              // Copy EA ID (from Lumo Edge Setup)
-input string LicenseKey  = "";                              // LUMO license key
+input string EaId        = "";                              // EA ID (Manage EAs page)
+input string MentorId    = "";                              // Mentor ID (Manage EAs page)
 input string ApiBaseUrl  = "https://lumoedge.vercel.app";   // Lumo Edge API URL
 input int    PollSeconds = 3;                               // Poll interval (seconds)
 input int    Slippage    = 30;                              // Slippage (points)
 input ulong  MagicNumber = 880031;                          // Magic number
 
 string g_lastOrderId = "";
+string g_terminalId  = "";
 
 int OnInit()
   {
+   g_terminalId = IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN));
    EventSetTimer(MathMax(1, PollSeconds));
-   Print("Lumo Edge Copy EA started. Copy EA ID: ", CopyEaId);
+   Print("Lumo Edge Copy EA started. EA ID: ", EaId, " Mentor: ", MentorId, " Terminal: ", g_terminalId);
    return(INIT_SUCCEEDED);
   }
 
@@ -29,7 +31,7 @@ void OnDeinit(const int reason)
 
 void OnTimer()
   {
-   if(StringLen(CopyEaId) < 4 || StringLen(LicenseKey) < 8)
+   if(StringLen(EaId) < 3 || StringLen(MentorId) < 3)
       return;
    PollAndExecute();
   }
@@ -39,7 +41,7 @@ string BuildPollUrl()
    string base = ApiBaseUrl;
    if(StringLen(base) > 0 && StringGetCharacter(base, StringLen(base)-1) == '/')
       base = StringSubstr(base, 0, StringLen(base)-1);
-   return base + "/api/copy/poll?format=text&copyEaId=" + CopyEaId + "&licenseKey=" + LicenseKey;
+   return base + "/api/copy/poll?format=text&eaId=" + EaId + "&mentorId=" + MentorId + "&terminalId=" + g_terminalId;
   }
 
 bool HttpGet(const string url, string &body, string &err)
@@ -131,7 +133,7 @@ bool PlaceTrade(const string symbol, const string side, const double volume, con
 
 void AckOrder(const string orderId)
   {
-   string json = "{\"copyEaId\":\"" + CopyEaId + "\",\"licenseKey\":\"" + LicenseKey + "\",\"orderId\":\"" + orderId + "\"}";
+   string json = "{\"eaId\":\"" + EaId + "\",\"mentorId\":\"" + MentorId + "\",\"terminalId\":\"" + g_terminalId + "\",\"orderId\":\"" + orderId + "\"}";
    string err = "";
    HttpPostJson("/api/copy/ack", json, err);
   }

@@ -1,4 +1,4 @@
-export const COPY_TRADE_MODE = 'vps' as const;
+export const COPY_TRADE_MODE = 'hybrid' as const;
 
 /** Public API base used in MT5 WebRequest allowlist (no trailing slash). */
 export function getCopyApiBaseUrl(): string {

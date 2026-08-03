@@ -1,10 +1,4 @@
-import {
-  dbList,
-  findVaultEntry,
-  findWorkspaceLicense,
-  keysMatch,
-  normalizeLicenseKey,
-} from './licenseClaim.mjs';
+import { dbList } from './licenseClaim.mjs';
 
 const TERMINAL_ROOT = 'lumo/copyTerminals';
 
@@ -16,158 +10,141 @@ export function sortOrders(orders) {
   });
 }
 
-export async function resolveLicenseContext(firebaseRead, licenseKey) {
-  const key = normalizeLicenseKey(licenseKey);
-  if (!key) return { error: 'Invalid license key' };
-
-  const [vaultRaw, workspacesRaw] = await Promise.all([
-    firebaseRead('lumo/vault'),
-    firebaseRead('lumo/store/workspaces'),
-  ]);
-  const vault = dbList(vaultRaw);
-  const workspaces =
-    workspacesRaw && typeof workspacesRaw === 'object' ? workspacesRaw : {};
-
-  let entry = findVaultEntry(vault, key);
-  let mentorId = entry?.ownerAdminId || '';
-  if (!entry) {
-    const wsHit = findWorkspaceLicense(workspaces, key);
-    if (wsHit) {
-      entry = wsHit.license;
-      mentorId = wsHit.ownerId;
-    }
-  }
-  if (!entry || !mentorId) return { error: 'License not found' };
-  if (entry.status === 'deleted') return { error: 'License revoked' };
-
-  return { key, entry, mentorId };
+function terminalPath(mentorId, eaId, terminalId) {
+  const safe = (v) => encodeURIComponent(String(v || '').trim());
+  return `${TERMINAL_ROOT}/${safe(mentorId)}/${safe(eaId)}/${safe(terminalId || 'default')}`;
 }
 
-export async function loadTerminal(firebaseRead, copyEaId) {
-  const id = String(copyEaId || '').trim();
-  if (!id) return null;
-  const row = await firebaseRead(`${TERMINAL_ROOT}/${encodeURIComponent(id)}`);
+export async function resolveEaContext(firebaseRead, mentorId, eaId) {
+  const mid = String(mentorId || '').trim();
+  const eid = String(eaId || '').trim();
+  if (!mid || !eid) return { error: 'mentorId and eaId required' };
+
+  const ws = (await firebaseRead(`lumo/store/workspaces/${mid}`)) || {};
+  const eas = dbList(ws.eas);
+  const ea = eas.find((row) => String(row?.id || '') === eid);
+  if (!ea) return { error: 'EA not found for this mentor' };
+
+  const licenses = dbList(ws.licenses).filter(
+    (lic) =>
+      lic &&
+      lic.status !== 'deleted' &&
+      (lic.status === 'active' || lic.status === 'assigned') &&
+      String(lic.eaId || '') === eid,
+  );
+
+  return { mentorId: mid, eaId: eid, ea, licenses, ws };
+}
+
+export async function loadEaTerminal(firebaseRead, mentorId, eaId, terminalId) {
+  const row = await firebaseRead(terminalPath(mentorId, eaId, terminalId));
   return row && typeof row === 'object' ? row : null;
 }
 
-export async function registerTerminal(firebaseRead, firebaseWrite, input) {
-  const copyEaId = String(input.copyEaId || '').trim();
-  const licenseKey = normalizeLicenseKey(String(input.licenseKey || ''));
-  const email = String(input.email || '').trim().toLowerCase();
-  if (!copyEaId || !licenseKey) return { ok: false, error: 'copyEaId and licenseKey required' };
-  if (!/^CT-[A-Z0-9-]{4,32}$/i.test(copyEaId)) {
-    return { ok: false, error: 'Invalid Copy EA ID format' };
-  }
-
-  const ctx = await resolveLicenseContext(firebaseRead, licenseKey);
-  if (ctx.error) return { ok: false, error: ctx.error };
-
-  const existing = await loadTerminal(firebaseRead, copyEaId);
-  if (
-    existing?.licenseKey &&
-    !keysMatch(existing.licenseKey, licenseKey)
-  ) {
-    return { ok: false, error: 'Copy EA ID already linked to another license' };
-  }
-
-  const next = {
-    copyEaId,
-    licenseKey: ctx.key,
-    mentorId: ctx.mentorId,
-    managedEaId: String(ctx.entry.eaId || ''),
-    eaName: String(ctx.entry.eaName || 'Lumo Edge'),
-    email: email || existing?.email || '',
-    processedOrderIds: Array.isArray(existing?.processedOrderIds)
-      ? existing.processedOrderIds.slice(-100)
-      : [],
-    registeredAt: existing?.registeredAt || new Date().toISOString(),
-    lastSeen: new Date().toISOString(),
-  };
-  const ok = await firebaseWrite(`${TERMINAL_ROOT}/${encodeURIComponent(copyEaId)}`, next);
-  return ok ? { ok: true, terminal: next } : { ok: false, error: 'Could not register terminal' };
+function orderMatchesEa(order, eaId) {
+  const tagged = String(order?.eaId || '').trim();
+  if (!tagged) return true;
+  return tagged === eaId;
 }
 
-export async function pollCopyOrder(firebaseRead, firebaseWrite, input) {
-  const copyEaId = String(input.copyEaId || '').trim();
-  const licenseKey = normalizeLicenseKey(String(input.licenseKey || ''));
-  if (!copyEaId || !licenseKey) return { ok: false, error: 'copyEaId and licenseKey required' };
+function buildOrderPayload(order, fallbackComment) {
+  const eaLabel = String(order.comment || fallbackComment || 'Lumo Edge')
+    .replace(/\s*~LumoEdge.*$/i, '')
+    .trim() || 'Lumo Edge';
+  const comment = String(order.comment || '').includes('~LumoEdge')
+    ? String(order.comment).slice(0, 31)
+    : `${eaLabel} ~LumoEdge`.slice(0, 31);
+  return {
+    id: String(order.id),
+    symbol: String(order.symbol || 'XAUUSD').toUpperCase(),
+    side: String(order.side || 'buy') === 'sell' ? 'sell' : 'buy',
+    volume: Math.max(0.01, Number(order.volume) || 0.01),
+    stopLoss: Number(order.stopLoss) || 0,
+    takeProfit: Number(order.takeProfit) || 0,
+    comment,
+    trades: Math.max(1, Math.min(50, Math.round(Number(order.trades) || 1))),
+    eaId: String(order.eaId || ''),
+    createdAt: String(order.createdAt || ''),
+  };
+}
 
-  const ctx = await resolveLicenseContext(firebaseRead, licenseKey);
+/** Poll by mentor EA ID — all student MT5 terminals under this EA share the same inputs. */
+export async function pollCopyOrderByEa(firebaseRead, firebaseWrite, input) {
+  const mentorId = String(input.mentorId || '').trim();
+  const eaId = String(input.eaId || input.copyEaId || '').trim();
+  const terminalId = String(input.terminalId || 'default').trim() || 'default';
+  if (!mentorId || !eaId) return { ok: false, error: 'mentorId and eaId required' };
+
+  const ctx = await resolveEaContext(firebaseRead, mentorId, eaId);
   if (ctx.error) return { ok: false, error: ctx.error };
 
-  let terminal = await loadTerminal(firebaseRead, copyEaId);
+  let terminal = await loadEaTerminal(firebaseRead, mentorId, eaId, terminalId);
   if (!terminal) {
-    const reg = await registerTerminal(firebaseRead, firebaseWrite, {
-      copyEaId,
-      licenseKey,
-      email: input.email || '',
-    });
-    if (!reg.ok) return reg;
-    terminal = reg.terminal;
-  } else if (!keysMatch(terminal.licenseKey, licenseKey)) {
-    return { ok: false, error: 'Copy EA ID does not match this license' };
+    terminal = {
+      mentorId,
+      eaId,
+      terminalId,
+      processedOrderIds: [],
+      registeredAt: new Date().toISOString(),
+    };
   }
 
-  const ws = (await firebaseRead(`lumo/store/workspaces/${ctx.mentorId}`)) || {};
-  const orders = sortOrders(dbList(ws.orders));
+  const orders = sortOrders(dbList(ctx.ws.orders)).filter((row) => orderMatchesEa(row, eaId));
   const processed = new Set(
     (Array.isArray(terminal.processedOrderIds) ? terminal.processedOrderIds : []).map(String),
   );
-
   const pending = orders.find((row) => row?.id && !processed.has(String(row.id))) || null;
-  const order = pending
-    ? {
-        id: String(pending.id),
-        symbol: String(pending.symbol || 'XAUUSD').toUpperCase(),
-        side: String(pending.side || 'buy') === 'sell' ? 'sell' : 'buy',
-        volume: Math.max(0.01, Number(pending.volume) || 0.01),
-        stopLoss: Number(pending.stopLoss) || 0,
-        takeProfit: Number(pending.takeProfit) || 0,
-        comment: String(pending.comment || ctx.entry.eaName || 'Lumo Edge').slice(0, 31),
-        trades: Math.max(1, Math.min(50, Math.round(Number(pending.trades) || 1))),
-        createdAt: String(pending.createdAt || ''),
-      }
-    : null;
+  const order = pending ? buildOrderPayload(pending, ctx.ea?.name) : null;
 
-  await firebaseWrite(`${TERMINAL_ROOT}/${encodeURIComponent(copyEaId)}`, {
+  await firebaseWrite(terminalPath(mentorId, eaId, terminalId), {
     ...terminal,
-    licenseKey: ctx.key,
-    mentorId: ctx.mentorId,
+    mentorId,
+    eaId,
+    terminalId,
     lastSeen: new Date().toISOString(),
     lastPollAt: new Date().toISOString(),
+    licensedClients: ctx.licenses.length,
   });
 
-  return { ok: true, pending: Boolean(order), order };
+  return {
+    ok: true,
+    pending: Boolean(order),
+    order,
+    licensedClients: ctx.licenses.length,
+  };
 }
 
-export async function ackCopyOrder(firebaseRead, firebaseWrite, input) {
-  const copyEaId = String(input.copyEaId || '').trim();
-  const licenseKey = normalizeLicenseKey(String(input.licenseKey || ''));
+export async function ackCopyOrderByEa(firebaseRead, firebaseWrite, input) {
+  const mentorId = String(input.mentorId || '').trim();
+  const eaId = String(input.eaId || input.copyEaId || '').trim();
+  const terminalId = String(input.terminalId || 'default').trim() || 'default';
   const orderId = String(input.orderId || '').trim();
-  if (!copyEaId || !licenseKey || !orderId) {
-    return { ok: false, error: 'copyEaId, licenseKey, and orderId required' };
+  if (!mentorId || !eaId || !orderId) {
+    return { ok: false, error: 'mentorId, eaId, and orderId required' };
   }
 
-  const ctx = await resolveLicenseContext(firebaseRead, licenseKey);
+  const ctx = await resolveEaContext(firebaseRead, mentorId, eaId);
   if (ctx.error) return { ok: false, error: ctx.error };
 
-  const terminal = await loadTerminal(firebaseRead, copyEaId);
-  if (!terminal || !keysMatch(terminal.licenseKey, licenseKey)) {
-    return { ok: false, error: 'Terminal not registered for this license' };
-  }
+  const terminal =
+    (await loadEaTerminal(firebaseRead, mentorId, eaId, terminalId)) || {
+      mentorId,
+      eaId,
+      terminalId,
+      processedOrderIds: [],
+    };
 
   const processed = Array.isArray(terminal.processedOrderIds)
     ? terminal.processedOrderIds.map(String)
     : [];
   if (!processed.includes(orderId)) processed.push(orderId);
 
-  const next = {
+  const ok = await firebaseWrite(terminalPath(mentorId, eaId, terminalId), {
     ...terminal,
     processedOrderIds: processed.slice(-100),
     lastAckAt: new Date().toISOString(),
     lastSeen: new Date().toISOString(),
-  };
-  const ok = await firebaseWrite(`${TERMINAL_ROOT}/${encodeURIComponent(copyEaId)}`, next);
+  });
   return ok ? { ok: true } : { ok: false, error: 'Could not save acknowledgement' };
 }
 
@@ -187,4 +164,29 @@ export function formatPollText(result) {
     o.comment,
     String(o.trades || 1),
   ].join('\n');
+}
+
+export async function pollCopyOrder(firebaseRead, firebaseWrite, input) {
+  const mentorId = String(input.mentorId || '').trim();
+  const eaId = String(input.eaId || input.copyEaId || '').trim();
+  if (mentorId && eaId) {
+    return pollCopyOrderByEa(firebaseRead, firebaseWrite, input);
+  }
+  return { ok: false, error: 'mentorId and eaId required' };
+}
+
+export async function ackCopyOrder(firebaseRead, firebaseWrite, input) {
+  const mentorId = String(input.mentorId || '').trim();
+  const eaId = String(input.eaId || input.copyEaId || '').trim();
+  if (mentorId && eaId) {
+    return ackCopyOrderByEa(firebaseRead, firebaseWrite, input);
+  }
+  return { ok: false, error: 'mentorId and eaId required' };
+}
+
+export async function registerTerminal(_firebaseRead, _firebaseWrite, input) {
+  const mentorId = String(input.mentorId || '').trim();
+  const eaId = String(input.eaId || '').trim();
+  if (!mentorId || !eaId) return { ok: false, error: 'mentorId and eaId required' };
+  return { ok: true, mentorId, eaId };
 }

@@ -16,6 +16,7 @@ import {
   resolveProfileImage,
 } from './lib/mentorMedia';
 import { startMt5KeepAlive } from './lib/mt5Session';
+import { findInVault } from './lib/storage';
 import { AdminAuthPage } from './pages/admin/AdminAuthPage';
 import { AdminShell } from './pages/admin/AdminShell';
 import { ActivateLicensePage } from './pages/client/ActivateLicensePage';
@@ -107,12 +108,14 @@ function ClientAppGate({ children }: { children: React.ReactNode }) {
   const hideBackdrop = location.pathname.includes('metatrader');
 
   const ownerAdminId = bot.licenseKey ? mentorIdForLicense(bot.licenseKey) : '';
+  const clientEaId = bot.licenseKey ? findInVault(bot.licenseKey)?.eaId || '' : '';
 
   return (
     <CopyTradeProvider
       email={user?.email}
       licenseKey={bot.licenseKey}
       eaName={bot.displayName || bot.name || 'Lumo Edge'}
+      clientEaId={clientEaId}
       isPaused={isPaused}
       ownerAdminId={ownerAdminId}
     >

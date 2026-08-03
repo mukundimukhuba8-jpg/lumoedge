@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Copy, Download, Monitor, Server, Settings2, Shield } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Download, Server, Settings2, Shield } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { getOrCreateCopyEaId } from '../../lib/copyEaId';
+import { mentorIdForLicense } from '../../lib/copyTrade';
+import { findInVault } from '../../lib/storage';
 import {
-  getCopyApiBaseUrl,
   getCopyScriptUrl,
-  getWebRequestAllowlistUrl,
-  registerCopyTerminal,
 } from '../../lib/vpsCopyTrade';
+import {
+  Mt5ScriptInputsHint,
+  Mt5WebRequestInstructions,
+} from '../../components/Mt5WebRequestInstructions';
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
@@ -90,32 +92,12 @@ function StepBlock({
 
 export function VpsSetupPage() {
   const navigate = useNavigate();
-  const { user, bot } = useApp();
+  const { bot } = useApp();
   const licenseKey = bot.licenseKey?.trim() || '';
-  const copyEaId = licenseKey ? getOrCreateCopyEaId(licenseKey) : '';
-  const apiUrl = getWebRequestAllowlistUrl();
+  const vault = licenseKey ? findInVault(licenseKey) : undefined;
+  const eaId = vault?.eaId || '';
+  const mentorId = licenseKey ? mentorIdForLicense(licenseKey) : '';
   const scriptUrl = getCopyScriptUrl();
-  const [registerMsg, setRegisterMsg] = useState('');
-
-  useEffect(() => {
-    if (!licenseKey || !copyEaId || !user?.email) return;
-    let cancelled = false;
-    void registerCopyTerminal({
-      copyEaId,
-      licenseKey,
-      email: user.email,
-    }).then((res) => {
-      if (cancelled) return;
-      setRegisterMsg(
-        res.ok
-          ? 'Terminal registered — your VPS script can receive trades.'
-          : res.error || 'Could not register terminal yet.',
-      );
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [licenseKey, copyEaId, user?.email]);
 
   return (
     <div className="page cyber-page" style={{ paddingTop: 24, paddingBottom: 28 }}>
@@ -134,112 +116,81 @@ export function VpsSetupPage() {
       </header>
 
       <p className="muted" style={{ textAlign: 'center', fontSize: 13, lineHeight: 1.55, marginTop: 0 }}>
-        Complete these steps on a PC or VPS with MetaTrader 5 for 24/7 copy trading.
+        Your mentor&apos;s EA controls copy trades for all licenses under that EA. No license key goes
+        in MT5 — only EA ID + Mentor ID.
       </p>
-
-      {registerMsg ? (
-        <p
-          style={{
-            textAlign: 'center',
-            fontSize: 12,
-            color: registerMsg.includes('registered') ? 'var(--green)' : 'var(--orange)',
-            fontWeight: 650,
-          }}
-        >
-          {registerMsg}
-        </p>
-      ) : null}
 
       <div style={{ display: 'grid', gap: 12, marginTop: 8 }}>
         <StepBlock n={1} title="Use a PC or VPS with MT5" icon={<Server size={16} color="var(--electric)" />}>
-          Install MetaTrader 5 on a VPS or always-on computer. Log in to your broker and keep the
-          terminal running with automated trading enabled.
+          Install MetaTrader 5 on a VPS or always-on PC. Log in to your broker and keep automated
+          trading enabled.
         </StepBlock>
 
-        <StepBlock n={2} title="Copy your Copy EA ID" icon={<Shield size={16} color="var(--electric)" />}>
-          Paste this ID into the Lumo Edge script on your chart:
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              marginTop: 10,
-              padding: '10px 12px',
-              borderRadius: 12,
-              background: 'rgba(59,130,246,0.1)',
-              border: '1px solid rgba(59,130,246,0.35)',
-            }}
-          >
-            <code style={{ flex: 1, color: 'var(--electric)', fontWeight: 700, wordBreak: 'break-all' }}>
-              {copyEaId || 'Activate your license first'}
-            </code>
-            {copyEaId ? <CopyButton value={copyEaId} /> : null}
-          </div>
-          {licenseKey ? (
-            <p style={{ margin: '8px 0 0', fontSize: 12 }}>
-              License: <span style={{ color: 'var(--text)' }}>{licenseKey}</span>
-            </p>
-          ) : null}
-        </StepBlock>
-
-        <StepBlock n={3} title="Download the copy trading script" icon={<Download size={16} color="var(--electric)" />}>
-          Download and install the Lumo Edge receiver script:
-          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-            <a
-              href={scriptUrl}
-              download="LumoEdgeCopy.mq5"
-              className="btn btn-blue"
-              style={{ flex: 1, minWidth: 140 }}
+        <StepBlock n={2} title="Copy EA ID + Mentor ID" icon={<Shield size={16} color="var(--electric)" />}>
+          Use the values from your mentor (Manage EAs page). Yours for this license:
+          <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 12,
+                background: 'rgba(59,130,246,0.1)',
+                border: '1px solid rgba(59,130,246,0.35)',
+              }}
             >
-              Download LumoEdgeCopy.mq5
-            </a>
-            <CopyButton value={scriptUrl} />
+              <span className="muted" style={{ fontSize: 11, minWidth: 72 }}>EA ID</span>
+              <code style={{ flex: 1, color: 'var(--electric)', fontWeight: 700, wordBreak: 'break-all' }}>
+                {eaId || 'Activate your license first'}
+              </code>
+              {eaId ? <CopyButton value={eaId} /> : null}
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 12,
+                background: 'rgba(59,130,246,0.1)',
+                border: '1px solid rgba(59,130,246,0.35)',
+              }}
+            >
+              <span className="muted" style={{ fontSize: 11, minWidth: 72 }}>Mentor ID</span>
+              <code style={{ flex: 1, color: 'var(--electric)', fontWeight: 700, wordBreak: 'break-all' }}>
+                {mentorId || '—'}
+              </code>
+              {mentorId ? <CopyButton value={mentorId} /> : null}
+            </div>
           </div>
-          <p style={{ margin: '10px 0 0' }}>
-            MT5 → File → Open Data Folder → MQL5 → Experts → save file → compile in MetaEditor →
-            attach to a chart.
-          </p>
         </StepBlock>
 
-        <StepBlock n={4} title="Configure MetaTrader settings" icon={<Settings2 size={16} color="var(--electric)" />}>
-          Tools → Options → Expert Advisors:
-          <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
-            <li>Enable automated trading</li>
-            <li>Enable WebRequest for listed URL</li>
-            <li>Add this URL:</li>
-          </ul>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              marginTop: 10,
-              padding: '10px 12px',
-              borderRadius: 12,
-              background: 'rgba(245,158,11,0.1)',
-              border: '1px solid rgba(245,158,11,0.35)',
-            }}
+        <StepBlock n={3} title="Download LumoEdgeCopy.mq5" icon={<Download size={16} color="var(--electric)" />}>
+          <a
+            href={scriptUrl}
+            download="LumoEdgeCopy.mq5"
+            className="btn btn-blue"
+            style={{ marginTop: 8 }}
           >
-            <code style={{ flex: 1, color: '#fbbf24', fontSize: 12, wordBreak: 'break-all' }}>
-              {apiUrl}
-            </code>
-            <CopyButton value={apiUrl} />
-          </div>
+            Download script
+          </a>
           <p style={{ margin: '10px 0 0' }}>
-            Script inputs: Copy EA ID, License key, ApiBaseUrl ({getCopyApiBaseUrl()}).
+            MT5 → File → Open Data Folder → MQL5 → Experts → compile → attach to chart.
           </p>
         </StepBlock>
 
-        <section className="glow-card" style={{ textAlign: 'left', padding: '14px' }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-            <Monitor size={16} color="var(--electric)" />
-            <strong>When setup is complete</strong>
-          </div>
-          <p className="muted" style={{ margin: 0, fontSize: 13, lineHeight: 1.55 }}>
-            Your VPS script polls Lumo Edge every few seconds. When your mentor sends a copy trade,
-            it executes automatically on your MT5 account — no need to keep this browser open.
-          </p>
-        </section>
+        <StepBlock n={4} title="Allow WebRequest URL in MT5 (required)" icon={<Settings2 size={16} color="var(--electric)" />}>
+          MT5 will ask you to allow WebRequest for a URL — add this before attaching the script:
+          <Mt5WebRequestInstructions />
+          <Mt5ScriptInputsHint />
+        </StepBlock>
+
+        <StepBlock n={5} title="Attach the script" icon={<Shield size={16} color="var(--electric)" />}>
+          After WebRequest is allowed, attach LumoEdgeCopy to any chart with your EA ID and Mentor
+          ID from step 2. Turn on Algo Trading (green button). Copy trades arrive within a few
+          seconds when your mentor sends them.
+        </StepBlock>
       </div>
     </div>
   );

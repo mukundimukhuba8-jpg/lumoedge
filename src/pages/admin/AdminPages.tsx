@@ -283,16 +283,48 @@ function Stat({
 }
 
 export function ManageEAsPage() {
-  const { eas, createEA, updateEA, deleteEA } = useAdmin();
+  const { eas, createEA, updateEA, deleteEA, profile, restoreEAsFromCloud } = useAdmin();
   const [name, setName] = useState('');
   const [draft, setDraft] = useState('');
   const [symbols, setSymbols] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [editSymbols, setEditSymbols] = useState<string[]>([]);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreMsg, setRestoreMsg] = useState('');
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
+      <div
+        className="glow-card"
+        style={{
+          borderColor: 'rgba(59,130,246,0.45)',
+          background: 'rgba(59,130,246,0.08)',
+          padding: '14px 16px',
+        }}
+      >
+        <div className="muted" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em' }}>
+          MENTOR ID
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+          <code style={{ color: 'var(--electric)', fontWeight: 800, fontSize: 15 }}>
+            {profile.mentorId || '—'}
+          </code>
+          {profile.mentorId ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ width: 'auto', padding: '6px 10px', fontSize: 12 }}
+              onClick={() => void navigator.clipboard.writeText(profile.mentorId)}
+            >
+              Copy
+            </button>
+          ) : null}
+        </div>
+        <p className="muted" style={{ margin: '8px 0 0', fontSize: 12, lineHeight: 1.5 }}>
+          All students under your EAs use this Mentor ID in LumoEdgeCopy.mq5 — no license key in MT5.
+        </p>
+      </div>
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>Create New EA</h3>
         <div className="field"><label>EA Name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter EA name" /></div>
@@ -353,7 +385,45 @@ export function ManageEAsPage() {
         <p className="muted" style={{ marginTop: 0 }}>
           Edit symbols here — they sync to every license key and licensed client for that EA.
         </p>
-        {eas.length === 0 ? <p className="muted">No EAs yet — create one to generate licenses.</p> : null}
+        {eas.length === 0 ? (
+          <div style={{ display: 'grid', gap: 10 }}>
+            <p className="muted">No EAs yet — create one to generate licenses.</p>
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              On another device? Pull your EAs from the cloud — nothing is deleted unless you tap Delete.
+            </p>
+            <button
+              type="button"
+              className="btn btn-blue"
+              style={{ width: 'fit-content' }}
+              disabled={restoring}
+              onClick={async () => {
+                setRestoreMsg('');
+                setRestoring(true);
+                try {
+                  const result = await restoreEAsFromCloud();
+                  if (result.ok) {
+                    setRestoreMsg(
+                      result.eas
+                        ? `Restored ${result.eas} EA${result.eas === 1 ? '' : 's'} from cloud.`
+                        : 'Sync finished — if still empty, create a new EA below.',
+                    );
+                  } else {
+                    setRestoreMsg(result.error || 'Could not restore EAs.');
+                  }
+                } finally {
+                  setRestoring(false);
+                }
+              }}
+            >
+              {restoring ? 'Restoring…' : 'Restore EAs from cloud'}
+            </button>
+            {restoreMsg ? (
+              <p className="muted" style={{ margin: 0, fontSize: 13, color: 'var(--green)' }}>
+                {restoreMsg}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {eas.map((ea) => {
           const src = displayImageSrc(ea.imageUrl);
           const isEditing = editingId === ea.id;
@@ -373,28 +443,36 @@ export function ManageEAsPage() {
                         marginTop: 6,
                         fontSize: 11,
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        flexWrap: 'wrap',
+                        flexDirection: 'column',
+                        gap: 4,
                       }}
                     >
-                      EA ID:{' '}
-                      <code style={{ color: 'var(--electric)', fontWeight: 700 }}>{ea.id}</code>
-                      <button
-                        type="button"
-                        aria-label="Copy EA ID"
-                        onClick={() => void navigator.clipboard.writeText(ea.id)}
-                        style={{
-                          background: 'rgba(59,130,246,0.12)',
-                          border: '1px solid rgba(59,130,246,0.35)',
-                          borderRadius: 6,
-                          padding: '2px 6px',
-                          color: 'var(--electric)',
-                          fontSize: 10,
-                        }}
-                      >
-                        Copy
-                      </button>
+                      <span>
+                        EA ID: <code style={{ color: 'var(--electric)', fontWeight: 700 }}>{ea.id}</code>
+                        <button
+                          type="button"
+                          aria-label="Copy EA ID"
+                          onClick={() => void navigator.clipboard.writeText(ea.id)}
+                          style={{
+                            marginLeft: 8,
+                            background: 'rgba(59,130,246,0.12)',
+                            border: '1px solid rgba(59,130,246,0.35)',
+                            borderRadius: 6,
+                            padding: '2px 6px',
+                            color: 'var(--electric)',
+                            fontSize: 10,
+                          }}
+                        >
+                          Copy
+                        </button>
+                      </span>
+                      <span>
+                        Mentor ID:{' '}
+                        <code style={{ color: 'var(--electric)', fontWeight: 700 }}>
+                          {profile.mentorId || '—'}
+                        </code>
+                      </span>
+                      <span>Licenses under this EA receive copy trades automatically.</span>
                     </div>
                     {!isEditing ? (
                       <div style={{ marginTop: 6 }}>
@@ -492,7 +570,15 @@ export function ManageEAsPage() {
 }
 
 export function GenerateLicensePage() {
-  const { eas, licenses, generateLicense, deleteLicense, profile, resyncLicenses } = useAdmin();
+  const {
+    eas,
+    licenses,
+    generateLicense,
+    deleteLicense,
+    profile,
+    resyncLicenses,
+    restoreLicensesFromCloud,
+  } = useAdmin();
   const [eaId, setEaId] = useState('');
   const [clientName, setClientName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
@@ -500,6 +586,8 @@ export function GenerateLicensePage() {
   const [search, setSearch] = useState('');
   const [lastKey, setLastKey] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreMsg, setRestoreMsg] = useState('');
   const [status, setStatus] = useState<{
     type: 'error' | 'success';
     title: string;
@@ -541,7 +629,7 @@ export function GenerateLicensePage() {
             <Loader2 size={34} className="spin" style={{ color: 'var(--electric)' }} />
             <strong style={{ color: 'var(--electric)', marginTop: 12 }}>Generating license key…</strong>
             <span className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-              Saving to cloud — send the key only after this finishes
+              Key saves on this device first — cloud sync continues in the background
             </span>
           </div>
         ) : null}
@@ -705,8 +793,44 @@ export function GenerateLicensePage() {
         ) : null}
       </div>
       <div className="glow-card" style={{ boxShadow: 'none', borderColor: 'rgba(255,255,255,0.08)' }}>
-        <h3 style={{ marginTop: 0 }}>All Generated Licenses ({licenses.length})</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <h3 style={{ marginTop: 0 }}>All Generated Licenses ({licenses.length})</h3>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ width: 'auto', padding: '6px 12px', fontSize: 12 }}
+            disabled={restoring}
+            onClick={async () => {
+              setRestoreMsg('');
+              setRestoring(true);
+              try {
+                const result = await restoreLicensesFromCloud();
+                if (result.ok) {
+                  setRestoreMsg(
+                    result.licenses
+                      ? `Restored ${result.licenses} license key${result.licenses === 1 ? '' : 's'} from cloud.`
+                      : 'Sync finished — keys appear here as soon as cloud responds.',
+                  );
+                } else {
+                  setRestoreMsg(result.error || 'Could not restore license keys.');
+                }
+              } finally {
+                setRestoring(false);
+              }
+            }}
+          >
+            {restoring ? 'Restoring…' : 'Restore keys from cloud'}
+          </button>
+        </div>
+        {restoreMsg ? (
+          <p className="muted" style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--green)' }}>
+            {restoreMsg}
+          </p>
+        ) : null}
         <div className="field"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, email or key..." /></div>
+        {filtered.length === 0 ? (
+          <p className="muted">No license keys on this device yet — tap Restore keys from cloud above.</p>
+        ) : null}
         {filtered.map((lic) => (
           <div key={lic.id} style={{ padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -808,13 +932,25 @@ export function OpenOrdersPage() {
   const [takeProfit, setTakeProfit] = useState('0.00');
   const [comment, setComment] = useState(profile.eaDisplayName);
   const [trades, setTrades] = useState('1');
-  const active = licenses.filter((l) => l.status === 'active').length;
+  const [selectedEaId, setSelectedEaId] = useState(() => eas[0]?.id || '');
+  const activeForEa = licenses.filter(
+    (l) =>
+      (l.status === 'active' || l.status === 'assigned') &&
+      String(l.eaId || '') === selectedEaId,
+  ).length;
   const symbols = [...new Set(eas.flatMap((e) => e.symbols))];
   const connected = mt5.connected;
+  const selectedEa = eas.find((ea) => ea.id === selectedEaId);
+
+  useEffect(() => {
+    if (!selectedEaId && eas[0]?.id) setSelectedEaId(eas[0].id);
+  }, [eas, selectedEaId]);
 
   const run = (copy: boolean) => {
-    if (!connected) return;
+    if (!copy && !connected) return;
+    if (copy && !selectedEaId) return alert('Select an EA first on Manage EAs.');
     const order = executeOrder({
+      eaId: selectedEaId,
       symbol: symbol.toUpperCase(),
       side,
       volume: Number(volume) || 0.01,
@@ -825,7 +961,7 @@ export function OpenOrdersPage() {
     });
     alert(
       copy
-        ? `Copy trade queued for ${order.copiedTo} licensed client${order.copiedTo === 1 ? '' : 's'}. Clients receive trades via VPS + LumoEdgeCopy.mq5 (see Setup Methods).`
+        ? `Copy trade queued for ${order.copiedTo} client${order.copiedTo === 1 ? '' : 's'} under ${selectedEa?.name || 'this EA'}. Works from phone or laptop — students need LumoEdgeCopy.mq5 with your EA ID + Mentor ID.`
         : `Order saved: ${order.side.toUpperCase()} ${order.symbol}`,
     );
   };
@@ -856,6 +992,22 @@ export function OpenOrdersPage() {
       </div>
       <div className="glow-card cyber-card">
         <h3 style={{ marginTop: 0 }}>Order Details</h3>
+        <div className="field">
+          <label>Copy to EA *</label>
+          <select value={selectedEaId} onChange={(e) => setSelectedEaId(e.target.value)}>
+            {eas.length === 0 ? <option value="">Create an EA first</option> : null}
+            {eas.map((ea) => (
+              <option key={ea.id} value={ea.id}>
+                {ea.name} ({ea.id})
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="muted" style={{ marginTop: 0, fontSize: 12 }}>
+          Mentor ID: <strong style={{ color: 'var(--electric)' }}>{profile.mentorId || '—'}</strong>
+          {' · '}
+          {activeForEa} licensed client{activeForEa === 1 ? '' : 's'} on this EA
+        </p>
         <div className="field"><label>Symbol *</label><input value={symbol} onChange={(e) => setSymbol(e.target.value)} /></div>
         <div>{symbols.slice(0, 6).map((s) => <button key={s} type="button" className="chip" onClick={() => setSymbol(s)}>{s}</button>)}</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, margin: '10px 0' }}>
@@ -878,9 +1030,14 @@ export function OpenOrdersPage() {
           </p>
         ) : null}
         <div style={{ textAlign: 'center', margin: '12px 0' }} className="muted">OR</div>
-        <button className="btn btn-ghost" type="button" disabled={!connected} onClick={() => run(true)}>
-          COPY TRADE TO ALL CLIENTS ({active})
+        <button className="btn btn-ghost" type="button" disabled={!selectedEaId} onClick={() => run(true)}>
+          COPY TRADE TO EA CLIENTS ({activeForEa})
         </button>
+        {!selectedEaId ? (
+          <p className="orders-conn-warn" style={{ marginTop: 10 }}>
+            Create an EA on Manage EAs, generate licenses for it, then copy trade here from phone or laptop.
+          </p>
+        ) : null}
       </div>
       {orders[0] ? <div className="muted">Last: {orders[0].side.toUpperCase()} {orders[0].symbol} · copied {orders[0].copiedTo}</div> : null}
     </div>
@@ -1247,7 +1404,7 @@ export function ApproveAdminsPage() {
         <h2 className="title-blue" style={{ fontSize: 17, margin: 0 }}>Approve Admins</h2>
         <p className="muted">
           Pending requests and admins already approved. Each admin gets their own empty portal.
-          If a mentor vanishes from Pending before you approve, tap Restore from cloud.
+          Your mentor list is saved on this device — tap Restore from cloud only if someone is missing.
         </p>
       </div>
 
@@ -1383,6 +1540,7 @@ export function SubscriptionsPage() {
     markClientPaid,
     deleteClient,
     stats,
+    clientsLoading,
   } = useAdmin();
   const [q, setQ] = useState('');
   const [manualEmail, setManualEmail] = useState('');
@@ -1408,6 +1566,10 @@ export function SubscriptionsPage() {
     .filter((c) => normalizeClientStatus(c.status) === 'approved')
     .filter(match);
   const paidPending = pending.filter((c) => c.paymentClaimed).length;
+
+  useEffect(() => {
+    void refreshClientQueue();
+  }, [refreshClientQueue]);
 
   const onAddManual = async () => {
     if (manualSaving) return;
@@ -1575,13 +1737,18 @@ export function SubscriptionsPage() {
         <Stat value={String(paidPending)} label="Marked I've Paid" tone="blue" />
         <Stat value={String(stats.approvedClients)} label="Approved clients" tone="green" />
       </div>
+      {clientsLoading ? (
+        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+          Syncing latest registrations in the background…
+        </p>
+      ) : null}
 
       <div className="glow-card" style={{ display: 'grid', gap: 10 }}>
         <div>
           <h3 style={{ margin: '0 0 4px' }}>Missing subscribers?</h3>
           <p className="muted" style={{ margin: 0 }}>
-            Pending clients are stored in the live cloud queue. If the list looks empty,
-            refresh from cloud — nothing is deleted unless you tap Delete.
+            Your subscriber list is saved on this device and updates quietly in the background.
+            Tap refresh only if someone paid and still does not appear.
           </p>
         </div>
         <button

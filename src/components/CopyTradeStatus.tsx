@@ -1,27 +1,43 @@
 import { useEffect, useState } from 'react';
-import { Check, Loader2, X } from 'lucide-react';
+import { Activity, Check, Loader2, Radio, X } from 'lucide-react';
 
-export type CopyTradePhase = 'executing' | 'success' | 'failed';
+export type CopyTradePhase = 'signal' | 'executing' | 'success' | 'failed';
 
 type Props = {
   open: boolean;
   phase: CopyTradePhase;
   message: string;
   progress: number;
+  eaName?: string;
+  side?: string;
+  symbol?: string;
   onClose: () => void;
 };
 
-export function CopyTradeStatus({ open, phase, message, progress, onClose }: Props) {
+export function CopyTradeStatus({
+  open,
+  phase,
+  message,
+  progress,
+  eaName,
+  side,
+  symbol,
+  onClose,
+}: Props) {
   const [exiting, setExiting] = useState(false);
   const failed = phase === 'failed';
   const success = phase === 'success';
-  const isActive = phase === 'executing';
+  const isActive = phase === 'executing' || phase === 'signal';
+  const sideLabel = side === 'sell' ? 'SELL' : side === 'buy' ? 'BUY' : '';
+  const displayEa = (eaName || 'Mentor EA').trim();
 
   const lineText = failed
     ? message || 'Trade execution failed'
     : success
-      ? 'Trade Executed Successfully'
-      : message || 'Executing trade…';
+      ? message || 'Trade opened successfully'
+      : phase === 'signal'
+        ? 'Signal received from mentor'
+        : message || 'Opening trade on MT5…';
 
   useEffect(() => {
     setExiting(false);
@@ -29,7 +45,7 @@ export function CopyTradeStatus({ open, phase, message, progress, onClose }: Pro
 
   useEffect(() => {
     if (!success || failed) return;
-    const hold = window.setTimeout(() => setExiting(true), 2000);
+    const hold = window.setTimeout(() => setExiting(true), 2400);
     return () => window.clearTimeout(hold);
   }, [success, failed]);
 
@@ -43,12 +59,24 @@ export function CopyTradeStatus({ open, phase, message, progress, onClose }: Pro
 
   return (
     <div
-      className={`te-popup-wrap${exiting ? ' te-popup-exit' : ''}`}
+      className={`te-popup-wrap copy-engine-popup${exiting ? ' te-popup-exit' : ''}`}
       role="status"
       aria-live="polite"
-      aria-label="Trade execution status"
+      aria-label="Copy trade engine"
     >
       <div className="te-popup">
+        <div className="copy-engine-popup-head">
+          <span className="copy-engine-popup-badge">
+            <Activity size={13} className={isActive ? 'copy-engine-live-ico' : ''} />
+            Copy Trade Engine
+          </span>
+          {isActive ? (
+            <span className="copy-engine-popup-live">
+              <Radio size={11} /> LIVE
+            </span>
+          ) : null}
+        </div>
+
         <div className="te-popup-row" key={`${phase}-${lineText}`}>
           <span className="te-popup-icon" aria-hidden>
             {failed ? (
@@ -63,14 +91,25 @@ export function CopyTradeStatus({ open, phase, message, progress, onClose }: Pro
             <span
               className={`te-popup-line${success ? ' done' : ''}${failed ? ' failed' : ''}`}
             >
-              {failed
-                ? lineText
-                : success
-                  ? `✓ ${lineText}`
-                  : `⚙️ ${lineText}`}
+              {failed ? lineText : success ? `✓ ${lineText}` : lineText}
             </span>
-            {isActive ? <span className="te-popup-sub">Sending trade to MT5…</span> : null}
-            {failed && message ? <span className="te-popup-sub">Check MetaTrader connection</span> : null}
+            <span className="te-popup-sub copy-engine-popup-mentor">
+              Signal from your mentor
+            </span>
+            <span className="te-popup-sub copy-engine-popup-ea">
+              <strong>{displayEa}</strong> opening trades · ~LumoEdge
+            </span>
+            {sideLabel && symbol ? (
+              <span className="copy-engine-popup-trade">
+                {sideLabel} {symbol}
+              </span>
+            ) : null}
+            {isActive && phase === 'executing' ? (
+              <span className="te-popup-sub">Sending order to MetaTrader…</span>
+            ) : null}
+            {failed && message ? (
+              <span className="te-popup-sub">Check MetaTrader connection</span>
+            ) : null}
           </div>
         </div>
 

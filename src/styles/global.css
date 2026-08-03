@@ -4804,6 +4804,84 @@ button:active:not(:disabled),
   color: rgba(255, 255, 255, 0.45);
 }
 
+.copy-engine-popup .te-popup {
+  border-color: rgba(59, 130, 246, 0.45);
+  box-shadow:
+    0 0 0 1px rgba(59, 130, 246, 0.15),
+    0 0 32px rgba(59, 130, 246, 0.22),
+    0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.copy-engine-popup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.copy-engine-popup-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--electric);
+}
+
+.copy-engine-popup-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #86efac;
+}
+
+.copy-engine-popup-mentor {
+  color: #93c5fd !important;
+  font-weight: 650;
+}
+
+.copy-engine-popup-ea {
+  color: var(--text) !important;
+}
+
+.copy-engine-popup-ea strong {
+  color: var(--electric);
+  font-weight: 800;
+}
+
+.copy-engine-popup-trade {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.16);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #bfdbfe;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.copy-engine-live-ico {
+  animation: copy-engine-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes copy-engine-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 @keyframes te-popup-in {
   from {
     opacity: 0;
