@@ -5,6 +5,7 @@ import App from './App';
 import { AdminProvider } from './context/AdminContext';
 import { AppProvider } from './context/AppContext';
 import './styles/global.css';
+import './styles/os-layouts.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -2,16 +2,40 @@ import { ALL_MEDIA_SLOTS, type MentorMediaSlotId } from './mentorMedia';
 import { loadJSON, saveJSON } from './storage';
 
 export type LayoutId =
-  | 'classic'
-  | 'bold'
-  | 'minimal'
-  | 'expanded'
-  | 'dashboard'
-  | 'terminal'
-  | 'focus'
-  | 'vortex'
-  | 'phantom'
-  | 'apex';
+  | 'ai-core'
+  | 'orbital'
+  | 'infinite-canvas'
+  | 'holographic'
+  | 'floating-island'
+  | 'reactor'
+  | 'cinematic'
+  | 'neural'
+  | 'glass-layer'
+  | 'command-center'
+  | 'minimal-luxury'
+  | 'zero-gravity'
+  | 'prism'
+  | 'hex-mesh'
+  | 'pulse-wave'
+  | 'satellite'
+  | 'vault'
+  | 'spectrum'
+  | 'mecha'
+  | 'eclipse';
+
+/** Map legacy layout IDs from older installs into the OS layout set. */
+const LEGACY_LAYOUT_MAP: Record<string, LayoutId> = {
+  classic: 'ai-core',
+  bold: 'reactor',
+  minimal: 'minimal-luxury',
+  expanded: 'cinematic',
+  dashboard: 'command-center',
+  terminal: 'mecha',
+  focus: 'holographic',
+  vortex: 'orbital',
+  phantom: 'glass-layer',
+  apex: 'eclipse',
+};
 
 export type EffectId = 'profit-matrix' | 'star-field' | 'fire-mode' | 'trader-night' | 'none';
 
@@ -74,9 +98,9 @@ const KEY = 'ub-web/interface-style-v1';
 const PREF_LISTENERS = new Set<() => void>();
 
 export const DEFAULT_PREFS: InterfacePrefs = {
-  layout: 'classic',
-  effect: 'none',
-  accent: 'blue',
+  layout: 'ai-core',
+  effect: 'star-field',
+  accent: 'cyan',
   customBg: 'default',
   theme: 'cyber-blue',
   animations: true,
@@ -234,31 +258,33 @@ function isCustomBgId(v: unknown): v is CustomBgId {
 export const LAYOUTS: {
   id: LayoutId;
   label: string;
+  description: string;
   schema: string;
 }[] = [
-  { id: 'classic', label: 'Classic', schema: 'classic' },
-  { id: 'bold', label: 'Bold', schema: 'bold' },
-  { id: 'minimal', label: 'Minimal', schema: 'minimal' },
-  { id: 'expanded', label: 'Expanded', schema: 'expanded' },
-  { id: 'dashboard', label: 'Dashboard', schema: 'dashboard' },
-  { id: 'terminal', label: 'Terminal', schema: 'terminal' },
-  { id: 'focus', label: 'Focus', schema: 'focus' },
-  { id: 'vortex', label: 'Vortex', schema: 'vortex' },
-  { id: 'phantom', label: 'Phantom', schema: 'phantom' },
-  { id: 'apex', label: 'Apex', schema: 'apex' },
+  { id: 'ai-core', label: 'AI Core', description: 'Living AI center with orbiting controls', schema: 'ai-core' },
+  { id: 'orbital', label: 'Orbital', description: 'Circular rings of actions around the AI', schema: 'orbital' },
+  { id: 'infinite-canvas', label: 'Infinite Canvas', description: 'Drag a free-form OS canvas', schema: 'infinite-canvas' },
+  { id: 'holographic', label: 'Holographic', description: 'Floating glass panels with glow edges', schema: 'holographic' },
+  { id: 'floating-island', label: 'Floating Island', description: 'Independent islands with premium depth', schema: 'floating-island' },
+  { id: 'reactor', label: 'Reactor', description: 'Energy core command reactor', schema: 'reactor' },
+  { id: 'cinematic', label: 'Cinematic', description: 'Full-bleed AI art with floating controls', schema: 'cinematic' },
+  { id: 'neural', label: 'Neural', description: 'Connected neural-net UI nodes', schema: 'neural' },
+  { id: 'glass-layer', label: 'Glass Layer', description: 'Parallax translucent layers', schema: 'glass-layer' },
+  { id: 'command-center', label: 'Command Center', description: 'Modular control-room panels', schema: 'command-center' },
+  { id: 'minimal-luxury', label: 'Minimal Luxury', description: 'Oversized type, invisible chrome', schema: 'minimal-luxury' },
+  { id: 'zero-gravity', label: 'Zero Gravity', description: 'Cards drifting at different depths', schema: 'zero-gravity' },
+  { id: 'prism', label: 'Prism', description: 'Faceted crystal panels and light splits', schema: 'prism' },
+  { id: 'hex-mesh', label: 'Hex Mesh', description: 'Hexagonal tactical lattice', schema: 'hex-mesh' },
+  { id: 'pulse-wave', label: 'Pulse Wave', description: 'Waveform-driven action rails', schema: 'pulse-wave' },
+  { id: 'satellite', label: 'Satellite', description: 'Telemetry rings and status pods', schema: 'satellite' },
+  { id: 'vault', label: 'Vault', description: 'Secure chamber with stacked vault doors', schema: 'vault' },
+  { id: 'spectrum', label: 'Spectrum', description: 'Spectrum bars and light-band navigation', schema: 'spectrum' },
+  { id: 'mecha', label: 'Mecha', description: 'Armored HUD with industrial modules', schema: 'mecha' },
+  { id: 'eclipse', label: 'Eclipse', description: 'Dark eclipse corona around the AI', schema: 'eclipse' },
 ];
 
-export type LayoutPresetId =
-  | 'cyber-neon'
-  | 'glass-elite'
-  | 'dark-titanium'
-  | 'matrix-green'
-  | 'midnight-blue'
-  | 'aurora'
-  | 'obsidian-pro'
-  | 'carbon-black'
-  | 'ocean-tech'
-  | 'neon-purple';
+/** @deprecated Presets now mirror LAYOUTS — kept for older callers. */
+export type LayoutPresetId = LayoutId;
 
 export const LAYOUT_PRESETS: {
   id: LayoutPresetId;
@@ -268,18 +294,46 @@ export const LAYOUT_PRESETS: {
   layout: LayoutId;
   effect: EffectId;
   accent: AccentId;
-}[] = [
-  { id: 'cyber-neon', label: 'Cyber Neon', description: 'Electric blue neon grid', theme: 'cyber-blue', layout: 'classic', effect: 'star-field', accent: 'cyan' },
-  { id: 'glass-elite', label: 'Glass Elite', description: 'Frost glass with gold accents', theme: 'arctic-white', layout: 'dashboard', effect: 'none', accent: 'gold' },
-  { id: 'dark-titanium', label: 'Dark Titanium', description: 'Industrial silver edges', theme: 'midnight-black', layout: 'terminal', effect: 'trader-night', accent: 'silver' },
-  { id: 'matrix-green', label: 'Matrix Green', description: 'Terminal matrix rain', theme: 'matrix-green', layout: 'terminal', effect: 'profit-matrix', accent: 'green' },
-  { id: 'midnight-blue', label: 'Midnight Blue', description: 'Deep ocean blues', theme: 'cyber-blue', layout: 'phantom', effect: 'trader-night', accent: 'blue' },
-  { id: 'aurora', label: 'Aurora', description: 'Cyan-purple aurora glow', theme: 'neon-purple', layout: 'vortex', effect: 'star-field', accent: 'purple' },
-  { id: 'obsidian-pro', label: 'Obsidian Pro', description: 'Pure black pro shell', theme: 'midnight-black', layout: 'apex', effect: 'none', accent: 'white' },
-  { id: 'carbon-black', label: 'Carbon Black', description: 'Matte carbon finish', theme: 'midnight-black', layout: 'minimal', effect: 'none', accent: 'silver' },
-  { id: 'ocean-tech', label: 'Ocean Tech', description: 'Teal ocean gradients', theme: 'cyber-blue', layout: 'expanded', effect: 'star-field', accent: 'teal' },
-  { id: 'neon-purple', label: 'Neon Purple', description: 'Violet neon pulse', theme: 'neon-purple', layout: 'bold', effect: 'fire-mode', accent: 'pink' },
-];
+}[] = LAYOUTS.map((layout, i) => {
+  const themes: ThemeId[] = [
+    'cyber-blue',
+    'neon-purple',
+    'matrix-green',
+    'arctic-white',
+    'midnight-black',
+    'gold-elite',
+    'crimson-red',
+    'sunset-orange',
+  ];
+  const accents: AccentId[] = [
+    'cyan',
+    'purple',
+    'green',
+    'gold',
+    'silver',
+    'blue',
+    'pink',
+    'teal',
+    'orange',
+    'white',
+  ];
+  const effects: EffectId[] = [
+    'star-field',
+    'none',
+    'profit-matrix',
+    'trader-night',
+    'fire-mode',
+  ];
+  return {
+    id: layout.id,
+    label: layout.label,
+    description: layout.description,
+    theme: themes[i % themes.length],
+    layout: layout.id,
+    effect: effects[i % effects.length],
+    accent: accents[i % accents.length],
+  };
+});
 
 export function applyLayoutPreset(presetId: LayoutPresetId, base?: InterfacePrefs): InterfacePrefs {
   const preset = LAYOUT_PRESETS.find((p) => p.id === presetId);
@@ -292,6 +346,16 @@ export function applyLayoutPreset(presetId: LayoutPresetId, base?: InterfacePref
     effect: preset.effect,
     accent: preset.accent,
   };
+}
+
+export function resolveLayoutId(raw: unknown): LayoutId {
+  if (typeof raw === 'string' && LAYOUTS.some((l) => l.id === raw)) {
+    return raw as LayoutId;
+  }
+  if (typeof raw === 'string' && LEGACY_LAYOUT_MAP[raw]) {
+    return LEGACY_LAYOUT_MAP[raw];
+  }
+  return DEFAULT_PREFS.layout;
 }
 
 export const EFFECTS: {
@@ -328,7 +392,7 @@ export function loadInterfacePrefs(): InterfacePrefs {
   const raw = loadJSON<Partial<InterfacePrefs> | null>(KEY, null);
   if (!raw) return { ...DEFAULT_PREFS };
   return {
-    layout: LAYOUTS.some((l) => l.id === raw.layout) ? (raw.layout as LayoutId) : DEFAULT_PREFS.layout,
+    layout: resolveLayoutId(raw.layout),
     effect: [...EFFECTS.map((e) => e.id), 'none'].includes(raw.effect as EffectId)
       ? (raw.effect as EffectId)
       : DEFAULT_PREFS.effect,

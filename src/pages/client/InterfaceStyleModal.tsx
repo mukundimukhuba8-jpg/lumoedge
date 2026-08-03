@@ -14,14 +14,13 @@ import {
 import {
   ACCENTS,
   EFFECTS,
-  LAYOUT_PRESETS,
+  LAYOUTS,
   THEMES,
-  applyLayoutPreset,
   type AccentId,
   type CustomBgId,
   type EffectId,
   type InterfacePrefs,
-  type LayoutPresetId,
+  type LayoutId,
   type StyleTab,
   type ThemeId,
   accentHex,
@@ -74,7 +73,7 @@ export function InterfaceStyleModal({
     [],
   );
 
-  const setPreset = (presetId: LayoutPresetId) => onChange(applyLayoutPreset(presetId, prefs));
+  const setLayout = (layout: LayoutId) => onChange({ ...prefs, layout });
   const setTheme = (theme: ThemeId) => onChange({ ...prefs, theme });
   const setAccent = (next: AccentId) => onChange({ ...prefs, accent: next });
   const setCustomBg = (customBg: CustomBgId) => {
@@ -180,22 +179,18 @@ export function InterfaceStyleModal({
           {tab === 'layouts' ? (
             <>
               <p className="muted iface-intro">
-                Professional layout presets — instantly updates theme, cards, navigation, and effects.
+                Choose a futuristic OS layout — same controls, completely different composition.
               </p>
               <div className="iface-theme-grid">
-                {LAYOUT_PRESETS.map((preset) => {
-                  const active =
-                    prefs.theme === preset.theme &&
-                    prefs.layout === preset.layout &&
-                    prefs.effect === preset.effect &&
-                    prefs.accent === preset.accent;
-                  const themeTokens = THEMES.find((t) => t.id === preset.theme)?.tokens;
+                {LAYOUTS.map((layout, i) => {
+                  const active = prefs.layout === layout.id;
+                  const themeTokens = THEMES[i % THEMES.length]?.tokens;
                   return (
                     <button
-                      key={preset.id}
+                      key={layout.id}
                       type="button"
                       className={`iface-theme-card${active ? ' active' : ''}`}
-                      onClick={() => setPreset(preset.id)}
+                      onClick={() => setLayout(layout.id)}
                       style={
                         themeTokens
                           ? ({
@@ -207,8 +202,8 @@ export function InterfaceStyleModal({
                       }
                     >
                       <span className="iface-theme-preview" aria-hidden />
-                      <strong>{preset.label}</strong>
-                      <span className="muted">{preset.description}</span>
+                      <strong>{layout.label}</strong>
+                      <span className="muted">{layout.description}</span>
                       {active ? <Check size={14} className="iface-theme-check" /> : null}
                     </button>
                   );
