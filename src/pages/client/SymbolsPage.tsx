@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Home, Monitor, ScanSearch, Server, Signal } from 'lucide-react';
+import { ArrowLeft, Home, Monitor, ScanSearch, Signal } from 'lucide-react';
 import { CopyTradeEnginePanel } from '../../components/CopyTradeEnginePanel';
 import { useApp } from '../../context/AppContext';
 import {
@@ -97,24 +97,6 @@ export function SymbolsPage() {
         </header>
 
         <CopyTradeEnginePanel eaTitle={eaTitle} isPaused={isPaused} />
-
-        <button
-          type="button"
-          className="btn btn-ghost"
-          style={{
-            marginBottom: 12,
-            borderColor: 'rgba(59,130,246,0.35)',
-            color: 'var(--electric)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-          }}
-          onClick={() => navigate('/app/setup')}
-        >
-          <Server size={16} />
-          VPS Setup — MT5 copy script
-        </button>
 
         <div className="symbols-tabs" role="tablist" aria-label="Symbol views">
           <button
