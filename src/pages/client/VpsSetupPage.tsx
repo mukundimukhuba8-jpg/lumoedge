@@ -5,10 +5,12 @@ import { useApp } from '../../context/AppContext';
 import { mentorIdForLicense } from '../../lib/copyTrade';
 import { findInVault } from '../../lib/storage';
 import {
-  getCopyApiBaseUrl,
   getCopyScriptUrl,
-  getWebRequestAllowlistUrl,
 } from '../../lib/vpsCopyTrade';
+import {
+  Mt5ScriptInputsHint,
+  Mt5WebRequestInstructions,
+} from '../../components/Mt5WebRequestInstructions';
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
@@ -95,7 +97,6 @@ export function VpsSetupPage() {
   const vault = licenseKey ? findInVault(licenseKey) : undefined;
   const eaId = vault?.eaId || '';
   const mentorId = licenseKey ? mentorIdForLicense(licenseKey) : '';
-  const apiUrl = getWebRequestAllowlistUrl();
   const scriptUrl = getCopyScriptUrl();
 
   return (
@@ -179,13 +180,16 @@ export function VpsSetupPage() {
           </p>
         </StepBlock>
 
-        <StepBlock n={4} title="MetaTrader settings" icon={<Settings2 size={16} color="var(--electric)" />}>
-          Enable WebRequest for: <CopyButton value={apiUrl} />
-          <code style={{ display: 'block', marginTop: 8, color: '#fbbf24', fontSize: 12 }}>{apiUrl}</code>
-          <p style={{ margin: '10px 0 0' }}>
-            Script inputs: <strong>EaId</strong>, <strong>MentorId</strong>, ApiBaseUrl (
-            {getCopyApiBaseUrl()}). Leave license key empty.
-          </p>
+        <StepBlock n={4} title="Allow WebRequest URL in MT5 (required)" icon={<Settings2 size={16} color="var(--electric)" />}>
+          MT5 will ask you to allow WebRequest for a URL — add this before attaching the script:
+          <Mt5WebRequestInstructions />
+          <Mt5ScriptInputsHint />
+        </StepBlock>
+
+        <StepBlock n={5} title="Attach the script" icon={<Shield size={16} color="var(--electric)" />}>
+          After WebRequest is allowed, attach LumoEdgeCopy to any chart with your EA ID and Mentor
+          ID from step 2. Turn on Algo Trading (green button). Copy trades arrive within a few
+          seconds when your mentor sends them.
         </StepBlock>
       </div>
     </div>

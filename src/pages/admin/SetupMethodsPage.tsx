@@ -1,6 +1,10 @@
 import { Check, Copy, Download, Monitor, Server, Settings2, Shield } from 'lucide-react';
 import { useState } from 'react';
-import { getCopyApiBaseUrl, getCopyScriptUrl } from '../../lib/vpsCopyTrade';
+import { getCopyScriptUrl } from '../../lib/vpsCopyTrade';
+import {
+  Mt5ScriptInputsHint,
+  Mt5WebRequestInstructions,
+} from '../../components/Mt5WebRequestInstructions';
 import { Placeholder } from './AdminShell';
 
 function CopyButton({ value }: { value: string }) {
@@ -83,7 +87,6 @@ function StepCard({
 }
 
 export function SetupMethodsPage() {
-  const apiUrl = getCopyApiBaseUrl();
   const scriptUrl = getCopyScriptUrl();
 
   return (
@@ -136,15 +139,10 @@ export function SetupMethodsPage() {
         </div>
       </StepCard>
 
-      <StepCard step={4} title="MT5 script inputs + WebRequest" icon={<Settings2 size={16} />}>
-        Inputs: <strong>EaId</strong>, <strong>MentorId</strong>, ApiBaseUrl. Leave license key
-        empty. Add to WebRequest allowlist:
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-          <code style={{ flex: 1, fontSize: 12, wordBreak: 'break-all', color: 'var(--electric)' }}>
-            {apiUrl}
-          </code>
-          <CopyButton value={apiUrl} />
-        </div>
+      <StepCard step={4} title="Allow WebRequest URL in MT5 (required)" icon={<Settings2 size={16} />}>
+        MT5 will block copy trades until this URL is added. Follow every step:
+        <Mt5WebRequestInstructions />
+        <Mt5ScriptInputsHint />
       </StepCard>
 
       <div className="glow-card">
