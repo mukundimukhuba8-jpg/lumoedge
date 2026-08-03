@@ -1,24 +1,24 @@
 :root {
-  --bg: #0a0a0a;
-  --panel: #121218;
-  --elevated: #16161e;
+  --bg: #04060c;
+  --panel: #0c101a;
+  --elevated: #121826;
   --text: #f4f7fb;
-  --muted: #9aa3b2;
-  --electric: #3b82f6;
+  --muted: #8b95a8;
+  --electric: #38bdf8;
   --cyan: #67e8f9;
-  --pink: #ff00ff;
+  --pink: #f472b6;
   --red: #e11d2e;
   --orange: #ff9f1c;
   --green: #39ff14;
   --gold: #f5d76e;
-  --input: #0e0e14;
-  --border: rgba(59, 130, 246, 0.35);
-  --card-border: rgba(59, 130, 246, 0.55);
-  --glass: #121218;
-  --glass-border: rgba(59, 130, 246, 0.55);
-  --glass-shine: rgba(255,255,255,0.06);
-  --font-display: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-body: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --input: #0a0e18;
+  --border: rgba(56, 189, 248, 0.32);
+  --card-border: rgba(56, 189, 248, 0.45);
+  --glass: rgba(12, 16, 26, 0.78);
+  --glass-border: rgba(56, 189, 248, 0.4);
+  --glass-shine: rgba(255,255,255,0.08);
+  --font-display: 'Orbitron', 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Space Grotesk', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 * {
@@ -75,11 +75,15 @@ a {
 }
 
 .glow-card {
-  background: #121218;
-  border: 1.5px solid var(--card-border);
-  border-radius: 18px;
+  background: linear-gradient(165deg, rgba(16, 22, 36, 0.94), rgba(8, 12, 20, 0.92));
+  border: 1px solid var(--card-border);
+  border-radius: 22px;
   padding: 16px;
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.08), 0 0 28px rgba(59, 130, 246, 0.22);
+  box-shadow:
+    0 0 0 1px rgba(56, 189, 248, 0.08),
+    0 18px 40px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(16px) saturate(140%);
 }
 
 .glow-card h2,
@@ -132,12 +136,13 @@ a {
   justify-content: center;
   gap: 6px;
   width: 100%;
-  border-radius: 999px;
+  border-radius: 16px;
   padding: 13px 16px;
   font-size: 14px;
   font-weight: 700;
-  letter-spacing: -0.01em;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  letter-spacing: 0.02em;
+  font-family: var(--font-body);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
 .btn:hover {
