@@ -3283,6 +3283,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           };
         }
         const eaId = String(order.eaId || '').trim();
+        const eaRecord = eaId ? workspace.eas.find((ea) => ea.id === eaId) : undefined;
+        const eaLabel = eaRecord?.name || order.comment || workspace.profile.eaDisplayName || 'Lumo Edge';
         const licensedClients = workspace.licenses.filter((l) => {
           if (l.status !== 'active' && l.status !== 'assigned') return false;
           if (!eaId) return true;
@@ -3290,6 +3292,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }).length;
         const created: CopyOrder = {
           ...order,
+          comment: order.comment?.includes('~LumoEdge')
+            ? order.comment
+            : `${eaLabel} ~LumoEdge`.slice(0, 31),
           eaId: eaId || undefined,
           id: `ord-${Date.now()}`,
           copiedTo: licensedClients,

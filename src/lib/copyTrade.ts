@@ -1,4 +1,4 @@
-import { buildTradeComment, fetchBrokerSymbols, orderSend } from './mt5Api';
+import { fetchBrokerSymbols, formatCopyTradeComment, orderSend } from './mt5Api';
 import { resolveBrokerSymbol } from './symbolVerify';
 import { getMt5Token } from './mt5Session';
 import { findInVault, loadJSON, normalizeLicenseKey } from './storage';
@@ -99,7 +99,7 @@ export async function executeCopyOrder(input: {
   const volume = Math.max(0.01, Number(input.order.volume) || 0.01);
   const count = Math.max(1, Math.min(50, Math.round(input.order.trades) || 1));
   let symbol = String(input.order.symbol || 'XAUUSD').trim().toUpperCase();
-  const comment = (input.order.comment || buildTradeComment(input.eaName)).slice(0, 31);
+  const comment = formatCopyTradeComment(input.eaName, input.order.comment);
   const sl = Number(input.order.stopLoss) || undefined;
   const tp = Number(input.order.takeProfit) || undefined;
 

@@ -48,6 +48,12 @@ function orderMatchesEa(order, eaId) {
 }
 
 function buildOrderPayload(order, fallbackComment) {
+  const eaLabel = String(order.comment || fallbackComment || 'Lumo Edge')
+    .replace(/\s*~LumoEdge.*$/i, '')
+    .trim() || 'Lumo Edge';
+  const comment = String(order.comment || '').includes('~LumoEdge')
+    ? String(order.comment).slice(0, 31)
+    : `${eaLabel} ~LumoEdge`.slice(0, 31);
   return {
     id: String(order.id),
     symbol: String(order.symbol || 'XAUUSD').toUpperCase(),
@@ -55,7 +61,7 @@ function buildOrderPayload(order, fallbackComment) {
     volume: Math.max(0.01, Number(order.volume) || 0.01),
     stopLoss: Number(order.stopLoss) || 0,
     takeProfit: Number(order.takeProfit) || 0,
-    comment: String(order.comment || fallbackComment || 'Lumo Edge').slice(0, 31),
+    comment,
     trades: Math.max(1, Math.min(50, Math.round(Number(order.trades) || 1))),
     eaId: String(order.eaId || ''),
     createdAt: String(order.createdAt || ''),
