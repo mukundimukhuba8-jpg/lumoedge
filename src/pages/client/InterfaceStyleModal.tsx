@@ -184,7 +184,7 @@ export function InterfaceStyleModal({
           {tab === 'layouts' ? (
             <>
               <p className="muted iface-intro">
-                Switch layouts anytime — same controls, new composition. Names only, no neon previews.
+                Completely different interface architectures — same controls, new visual hierarchy. Layout only; colors stay on Themes.
               </p>
               <div className="iface-layout-list">
                 {LAYOUTS.map((layout) => {
