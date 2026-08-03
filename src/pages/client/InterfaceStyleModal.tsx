@@ -9,16 +9,19 @@ import {
   ScanSearch,
   Sparkles,
   SlidersHorizontal,
+  Type,
   X,
 } from 'lucide-react';
 import {
   ACCENTS,
   EFFECTS,
+  FONTS,
   LAYOUTS,
   THEMES,
   type AccentId,
   type CustomBgId,
   type EffectId,
+  type FontId,
   type InterfacePrefs,
   type LayoutId,
   type StyleTab,
@@ -53,7 +56,7 @@ export function InterfaceStyleModal({
   mentorMedia = [],
   onOpenScanner,
 }: Props) {
-  const [tab, setTab] = useState<StyleTab>('themes');
+  const [tab, setTab] = useState<StyleTab>('layouts');
   const accent = accentHex(prefs.accent);
   const uploaded = ALL_MEDIA_SLOTS.map((slot) => ({
     ...slot,
@@ -63,8 +66,9 @@ export function InterfaceStyleModal({
   const tabs = useMemo(
     () =>
       [
-        { id: 'themes' as const, label: 'Themes', Icon: Palette },
         { id: 'layouts' as const, label: 'Layouts', Icon: Layers },
+        { id: 'fonts' as const, label: 'Fonts', Icon: Type },
+        { id: 'themes' as const, label: 'Themes', Icon: Palette },
         { id: 'effects' as const, label: 'Effects', Icon: Sparkles },
         { id: 'colours' as const, label: 'Colours', Icon: Palette },
         { id: 'custom' as const, label: 'Backgrounds', Icon: ImagePlus },
@@ -74,6 +78,7 @@ export function InterfaceStyleModal({
   );
 
   const setLayout = (layout: LayoutId) => onChange({ ...prefs, layout });
+  const setFont = (font: FontId) => onChange({ ...prefs, font });
   const setTheme = (theme: ThemeId) => onChange({ ...prefs, theme });
   const setAccent = (next: AccentId) => onChange({ ...prefs, accent: next });
   const setCustomBg = (customBg: CustomBgId) => {
@@ -87,7 +92,7 @@ export function InterfaceStyleModal({
 
   return createPortal(
     <div
-      className="iface-backdrop smooth-fade"
+      className="iface-backdrop iface-backdrop-os smooth-fade"
       role="dialog"
       aria-modal="true"
       aria-label="Interface Style"
@@ -179,32 +184,51 @@ export function InterfaceStyleModal({
           {tab === 'layouts' ? (
             <>
               <p className="muted iface-intro">
-                Choose a futuristic OS layout — same controls, completely different composition.
+                Switch layouts anytime — same controls, new composition. Names only, no neon previews.
               </p>
-              <div className="iface-theme-grid">
-                {LAYOUTS.map((layout, i) => {
+              <div className="iface-layout-list">
+                {LAYOUTS.map((layout) => {
                   const active = prefs.layout === layout.id;
-                  const themeTokens = THEMES[i % THEMES.length]?.tokens;
                   return (
                     <button
                       key={layout.id}
                       type="button"
-                      className={`iface-theme-card${active ? ' active' : ''}`}
+                      className={`iface-layout-row${active ? ' active' : ''}`}
                       onClick={() => setLayout(layout.id)}
-                      style={
-                        themeTokens
-                          ? ({
-                              '--theme-preview-a': themeTokens.electric,
-                              '--theme-preview-b': themeTokens.cyan,
-                              '--theme-preview-c': themeTokens.purple,
-                            } as CSSProperties)
-                          : undefined
-                      }
                     >
-                      <span className="iface-theme-preview" aria-hidden />
-                      <strong>{layout.label}</strong>
-                      <span className="muted">{layout.description}</span>
-                      {active ? <Check size={14} className="iface-theme-check" /> : null}
+                      <span className="iface-layout-copy">
+                        <strong>{layout.label}</strong>
+                        <span>{layout.description}</span>
+                      </span>
+                      {active ? <Check size={16} className="iface-layout-check" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
+
+          {tab === 'fonts' ? (
+            <>
+              <p className="muted iface-intro">
+                Choose typography for the whole operating system.
+              </p>
+              <div className="iface-layout-list">
+                {FONTS.map((font) => {
+                  const active = prefs.font === font.id;
+                  return (
+                    <button
+                      key={font.id}
+                      type="button"
+                      className={`iface-layout-row${active ? ' active' : ''}`}
+                      onClick={() => setFont(font.id)}
+                      style={{ fontFamily: font.body } as CSSProperties}
+                    >
+                      <span className="iface-layout-copy">
+                        <strong style={{ fontFamily: font.display }}>{font.label}</strong>
+                        <span>{font.description}</span>
+                      </span>
+                      {active ? <Check size={16} className="iface-layout-check" /> : null}
                     </button>
                   );
                 })}
