@@ -10,7 +10,6 @@ import {
   Monitor,
   Plus,
   ScanSearch,
-  Sparkles,
   TrendingDown,
   TrendingUp,
   Pencil,
@@ -18,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { FloatingAiAssistant } from '../../components/FloatingAiAssistant';
 import { TradeEnginePanel } from '../../components/TradeEnginePanel';
 import {
   DAILY_SCAN_LIMIT,
@@ -296,7 +296,7 @@ export function ChartScannerPage() {
   };
 
   return (
-    <div className="app-shell scan-shell">
+    <div className="app-shell scan-shell scan-shell-premium">
       <div className="scan-page">
         <header className="scan-header">
           <button
@@ -320,113 +320,7 @@ export function ChartScannerPage() {
           </div>
         </header>
 
-        <div className="scan-card scan-count">
-          Scans left today:{' '}
-          <strong>
-            {scansLeft}/{DAILY_SCAN_LIMIT}
-          </strong>
-        </div>
-
-        {scansLeft <= 0 ? (
-          <div className="scan-limit-banner" role="status">
-            Daily scan limit reached. Please wait for reset or contact your administrator.
-          </div>
-        ) : null}
-
-        {limitMsg && scansLeft > 0 ? (
-          <p className="muted scan-hint" style={{ marginTop: 0 }}>
-            {limitMsg}
-          </p>
-        ) : null}
-
-        {aiLive === false ? (
-          <div
-            className="scan-card"
-            style={{
-              borderColor: 'rgba(248,113,113,0.55)',
-              color: '#fecaca',
-              fontSize: 13,
-              lineHeight: 1.45,
-            }}
-          >
-            <strong style={{ color: '#fff' }}>Demo assistance only</strong>
-            <div style={{ marginTop: 6 }}>
-              OpenAI key is not on the live server yet. In Vercel → Settings →
-              Environment Variables, add{' '}
-              <code style={{ color: '#fff' }}>CHART_SCAN_API_KEY</code> for{' '}
-              <strong>Production</strong>, then Redeploy. Confirm at{' '}
-              <code style={{ color: '#fff' }}>/api/scan/status</code> shows{' '}
-              <code style={{ color: '#fff' }}>configured: true</code>.
-            </div>
-          </div>
-        ) : null}
-
-        <div className="scan-card scan-info">
-          <Sparkles size={18} color="var(--electric)" />
-          <span>
-            {aiLive
-              ? 'AI reads the exact symbol & timeframe from your chart image.'
-              : 'Demo picks a random symbol until CHART_SCAN_API_KEY is set on Vercel.'}
-          </span>
-        </div>
-
-        <div className="scan-row">
-          <div className="scan-card scan-mini">
-            <div className="muted scan-mini-label">Trades (Max 20)</div>
-            <div className="scan-stepper">
-              <button
-                type="button"
-                onClick={() => setTrades((n) => Math.max(1, n - 1))}
-                aria-label="Fewer trades"
-              >
-                <Minus size={16} />
-              </button>
-              <strong>{trades}</strong>
-              <button
-                type="button"
-                onClick={() => setTrades((n) => Math.min(20, n + 1))}
-                aria-label="More trades"
-              >
-                <Plus size={16} />
-              </button>
-            </div>
-          </div>
-          <div className="scan-card scan-mini">
-            <div className="muted scan-mini-label">Lot Size</div>
-            <input
-              className="scan-lot"
-              value={lotSize}
-              onChange={(e) => setLotSize(e.target.value)}
-              inputMode="decimal"
-            />
-          </div>
-        </div>
-
-        <div className="scan-card scan-auto">
-          <div>
-            <strong>Auto Trade</strong>
-            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-              After scan, trade engine validates and sends to MT5 when confidence ≥
-              {MIN_SCAN_CONFIDENCE}%. Comment:{' '}
-              <span style={{ color: 'var(--text)' }}>{eaName} Lumo~edge</span>
-            </div>
-          </div>
-          <button
-            type="button"
-            className={`scan-toggle${autoOpen ? ' on' : ''}`}
-            onClick={() => setAutoOpen((v) => !v)}
-            aria-pressed={autoOpen}
-          >
-            <span />
-          </button>
-        </div>
-        {tradeStatus ? (
-          <p className="muted scan-hint" style={{ marginTop: 0 }}>
-            {tradeStatus}
-          </p>
-        ) : null}
-
-        <div className="scan-stage">
+        <section className="scan-stage scan-stage-hero" aria-label="Chart scanner">
           <div
             className={`scan-radar${scanning ? ' active' : ''}${
               scanning && scanPreview ? ' has-image' : ''
@@ -445,10 +339,15 @@ export function ChartScannerPage() {
             <span className="scan-orbit scan-orbit-c" />
             <span className="scan-sweep" />
             <span className="scan-radar-core">
-              <ScanSearch size={26} color="var(--electric)" />
+              <ScanSearch size={30} color="var(--electric)" />
             </span>
           </div>
           <p className="scan-upload-label">Upload your MT5 chart</p>
+          <p className="muted scan-hero-sub">
+            {aiLive
+              ? 'AI reads the exact symbol & timeframe from your chart image.'
+              : 'Demo picks a random symbol until CHART_SCAN_API_KEY is set on Vercel.'}
+          </p>
           <div className="scan-actions">
             <button
               type="button"
@@ -472,6 +371,12 @@ export function ChartScannerPage() {
           <p className="muted scan-hint">
             Take a screenshot of your MT5 chart or upload one.
           </p>
+          <div className="scan-count-pill">
+            Scans left today{' '}
+            <strong>
+              {scansLeft}/{DAILY_SCAN_LIMIT}
+            </strong>
+          </div>
           <input
             ref={cameraRef}
             type="file"
@@ -487,7 +392,91 @@ export function ChartScannerPage() {
             hidden
             onChange={(e) => void onPick(e.target.files?.[0] || null)}
           />
-        </div>
+        </section>
+
+        {scansLeft <= 0 ? (
+          <div className="scan-limit-banner" role="status">
+            Daily scan limit reached. Please wait for reset or contact your administrator.
+          </div>
+        ) : null}
+
+        {limitMsg && scansLeft > 0 ? (
+          <p className="muted scan-hint" style={{ marginTop: 0 }}>
+            {limitMsg}
+          </p>
+        ) : null}
+
+        {aiLive === false ? (
+          <div className="scan-alert-card" role="status">
+            <strong>Demo assistance only</strong>
+            <div>
+              OpenAI key is not on the live server yet. In Vercel → Settings →
+              Environment Variables, add{' '}
+              <code>CHART_SCAN_API_KEY</code> for{' '}
+              <strong>Production</strong>, then Redeploy. Confirm at{' '}
+              <code>/api/scan/status</code> shows{' '}
+              <code>configured: true</code>.
+            </div>
+          </div>
+        ) : null}
+
+        <section className="scan-secondary" aria-label="Trade settings">
+          <div className="scan-row">
+            <div className="scan-card scan-mini">
+              <div className="muted scan-mini-label">Trades (Max 20)</div>
+              <div className="scan-stepper">
+                <button
+                  type="button"
+                  onClick={() => setTrades((n) => Math.max(1, n - 1))}
+                  aria-label="Fewer trades"
+                >
+                  <Minus size={16} />
+                </button>
+                <strong>{trades}</strong>
+                <button
+                  type="button"
+                  onClick={() => setTrades((n) => Math.min(20, n + 1))}
+                  aria-label="More trades"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="scan-card scan-mini">
+              <div className="muted scan-mini-label">Lot Size</div>
+              <input
+                className="scan-lot"
+                value={lotSize}
+                onChange={(e) => setLotSize(e.target.value)}
+                inputMode="decimal"
+              />
+            </div>
+          </div>
+
+          <div className="scan-card scan-auto">
+            <div>
+              <strong>Auto Trade</strong>
+              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                After scan, trade engine validates and sends to MT5 when confidence ≥
+                {MIN_SCAN_CONFIDENCE}%. Comment:{' '}
+                <span style={{ color: 'var(--text)' }}>{eaName} Lumo~edge</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className={`scan-toggle${autoOpen ? ' on' : ''}`}
+              onClick={() => setAutoOpen((v) => !v)}
+              aria-pressed={autoOpen}
+            >
+              <span />
+            </button>
+          </div>
+          {tradeStatus ? (
+            <p className="muted scan-hint" style={{ marginTop: 0 }}>
+              {tradeStatus}
+            </p>
+          ) : null}
+        </section>
 
         {phase !== 'idle' || lastResult ? (
           <div className="scan-reveal">
@@ -658,16 +647,11 @@ export function ChartScannerPage() {
           </div>
         ) : null}
 
-        <button
-          type="button"
-          className="mt5-fab"
-          aria-label="AI assistant"
-          onClick={() =>
-            alert('Chart Scanner AI is active. Upload an MT5 chart screenshot to scan.')
-          }
-        >
-          <Bot size={22} color="#061018" />
-        </button>
+        <FloatingAiAssistant
+          className="scan-ai-orb"
+          title="Scanner AI"
+          message="Chart Scanner AI is active. Upload an MT5 chart screenshot to scan."
+        />
       </div>
 
       <nav className="lay-dock" aria-label="Main">

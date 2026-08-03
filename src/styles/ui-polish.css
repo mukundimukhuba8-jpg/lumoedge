@@ -1,0 +1,830 @@
+/* ═══════════════════════════════════════════════════════════════
+   UI Polish Phase — premium OS chrome without feature changes.
+   Accent tokens from applyInterfaceTheme drive the visual identity.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --accent-rgb: 148, 163, 184;
+  --accent: var(--electric);
+  --accent-soft: rgba(var(--accent-rgb), 0.14);
+  --accent-soft-2: rgba(var(--accent-rgb), 0.22);
+  --accent-glow: rgba(var(--accent-rgb), 0.42);
+  --accent-glow-soft: rgba(var(--accent-rgb), 0.22);
+  --accent-border: rgba(var(--accent-rgb), 0.42);
+  --accent-wash: rgba(var(--accent-rgb), 0.08);
+  --accent-shadow: 0 0 22px rgba(var(--accent-rgb), 0.35);
+  --ambient-a: rgba(var(--accent-rgb), 0.18);
+  --ambient-b: rgba(var(--accent-rgb), 0.08);
+}
+
+/* —— Ambient dynamic environment —— */
+.ambient-env {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ambient-env-gradient {
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(ellipse 55% 40% at 20% 15%, var(--ambient-a), transparent 55%),
+    radial-gradient(ellipse 50% 45% at 85% 20%, var(--ambient-b), transparent 50%),
+    radial-gradient(ellipse 60% 50% at 50% 100%, rgba(var(--accent-rgb), 0.1), transparent 55%);
+  animation: ambient-drift 18s ease-in-out infinite alternate;
+}
+
+.ambient-env-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+  opacity: 0.45;
+}
+
+.ambient-env-glow-a {
+  width: 42vw;
+  height: 42vw;
+  left: -8%;
+  top: 8%;
+  background: rgba(var(--accent-rgb), 0.22);
+  animation: ambient-pulse 9s ease-in-out infinite;
+}
+
+.ambient-env-glow-b {
+  width: 36vw;
+  height: 36vw;
+  right: -10%;
+  top: 35%;
+  background: rgba(var(--accent-rgb), 0.14);
+  animation: ambient-pulse 11s ease-in-out 1.4s infinite;
+}
+
+.ambient-env-glow-c {
+  width: 50vw;
+  height: 30vw;
+  left: 20%;
+  bottom: -8%;
+  background: rgba(var(--accent-rgb), 0.1);
+  animation: ambient-pulse 13s ease-in-out 0.6s infinite;
+}
+
+.ambient-env-particles {
+  position: absolute;
+  inset: 0;
+}
+
+.ambient-env-particles span {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  left: calc(4% + (var(--p) * 3.9%));
+  top: calc(8% + (var(--p) * 3.2%));
+  opacity: 0.15;
+  animation: ambient-particle 10s linear infinite;
+  animation-delay: calc(var(--p) * -0.45s);
+  box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.35);
+}
+
+.ambient-env-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.12), transparent 30%, rgba(0, 0, 0, 0.28));
+}
+
+@keyframes ambient-drift {
+  from { transform: translate3d(-1.5%, -1%, 0) scale(1); }
+  to { transform: translate3d(2%, 1.5%, 0) scale(1.04); }
+}
+
+@keyframes ambient-pulse {
+  0%, 100% { opacity: 0.28; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.08); }
+}
+
+@keyframes ambient-particle {
+  0% { transform: translateY(0); opacity: 0.1; }
+  40% { opacity: 0.35; }
+  100% { transform: translateY(-28px); opacity: 0.05; }
+}
+
+.app-shell.lumo-app {
+  background: transparent;
+  isolation: isolate;
+}
+
+.app-shell.lumo-app > *:not(.ambient-env) {
+  position: relative;
+  z-index: 1;
+}
+
+/* —— Global accent wiring (replace hardcoded blues) —— */
+.field input:focus,
+.field select:focus {
+  border-color: var(--electric);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.18);
+}
+
+.btn {
+  transition:
+    transform 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease,
+    filter 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-blue {
+  background: var(--electric);
+  color: #061018;
+  box-shadow: var(--accent-shadow);
+}
+
+.btn-blue:hover {
+  box-shadow: 0 0 28px rgba(var(--accent-rgb), 0.5);
+}
+
+.btn-ghost {
+  border-color: var(--electric);
+  box-shadow: none;
+}
+
+.btn-ghost:hover,
+.btn-ghost:active {
+  background: var(--accent-soft);
+  box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.18);
+}
+
+.title-blue {
+  text-shadow: 0 0 24px rgba(var(--accent-rgb), 0.35);
+}
+
+.glow-card {
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.045),
+    rgba(8, 12, 20, 0.72)
+  );
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 18px 40px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px) saturate(140%);
+}
+
+/* —— Typography breathing room —— */
+h1, h2, h3,
+.scan-title,
+.iface-header strong {
+  font-family: var(--font-display);
+  letter-spacing: -0.03em;
+}
+
+.muted {
+  letter-spacing: 0.01em;
+}
+
+.page {
+  padding: 32px 20px 32px;
+}
+
+/* —— Settings hub (Apple / Linear style) —— */
+.iface-sheet-settings {
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.iface-body-settings {
+  display: grid;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.iface-back {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.iface-title-center {
+  justify-content: center;
+  flex: 1;
+}
+
+.iface-intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.iface-tool-premium {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 14px;
+  border-radius: 18px;
+  background: var(--accent-wash);
+  border: 1px solid var(--accent-border);
+  color: var(--text);
+  box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.12);
+}
+
+.iface-tool-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--electric);
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  flex-shrink: 0;
+}
+
+.iface-tool-copy {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.iface-tool-copy strong {
+  font-size: 14px;
+}
+
+.iface-tool-chevron,
+.iface-hub-chevron {
+  color: rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
+}
+
+.iface-settings-hub {
+  display: grid;
+  gap: 10px;
+}
+
+.iface-hub-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 16px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.iface-hub-card:active {
+  transform: scale(0.985);
+  background: var(--accent-soft);
+  border-color: rgba(var(--accent-rgb), 0.35);
+}
+
+.iface-hub-ico {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--electric);
+  flex-shrink: 0;
+}
+
+.iface-hub-copy {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.iface-hub-copy strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.iface-hub-copy span {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.iface-tabs {
+  display: none !important;
+}
+
+.iface-layout-row.active,
+.iface-theme-card.active,
+.iface-effect-card.active,
+.iface-custom-card.active .iface-custom-preview,
+.iface-colour.active {
+  border-color: var(--accent-border) !important;
+  box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.28);
+}
+
+.iface-tab.active,
+.iface-layout.active .iface-layout-circle,
+.iface-effect-status,
+.iface-avatar {
+  box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.45);
+}
+
+.iface-tool {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.12);
+}
+
+.iface-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.iface-setting-row strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.iface-setting-row .muted {
+  font-size: 12px;
+}
+
+/* Hide legacy sticky FAB — replaced by FloatingAiAssistant */
+.iface-fab {
+  display: none !important;
+}
+
+/* —— Floating AI orb —— */
+.ai-orb-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.ai-orb-root > * {
+  pointer-events: auto;
+}
+
+.ai-orb {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ai-orb:active {
+  transform: scale(0.94);
+}
+
+.ai-orb-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.35), transparent 42%),
+    var(--electric);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 0 24px rgba(var(--accent-rgb), 0.55),
+    0 10px 24px rgba(0, 0, 0, 0.35);
+  animation: ai-orb-breathe 2.8s ease-in-out infinite;
+}
+
+.ai-orb-core {
+  position: relative;
+  z-index: 1;
+  color: #061018;
+  display: grid;
+  place-items: center;
+}
+
+.ai-orb.is-open .ai-orb-ring {
+  animation: none;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 0 18px rgba(var(--accent-rgb), 0.4);
+}
+
+.ai-orb-panel {
+  width: min(280px, calc(100vw - 48px));
+  border-radius: 18px;
+  padding: 12px 12px 14px;
+  background: rgba(10, 12, 18, 0.92);
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45), 0 0 24px rgba(var(--accent-rgb), 0.18);
+  transform-origin: bottom right;
+  opacity: 0;
+  transform: translateY(8px) scale(0.94);
+  pointer-events: none;
+  transition:
+    opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ai-orb-panel.is-open {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.ai-orb-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ai-orb-panel-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--electric);
+}
+
+.ai-orb-panel-head strong {
+  flex: 1;
+  font-size: 13px;
+}
+
+.ai-orb-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ai-orb-panel-body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.82);
+}
+
+@keyframes ai-orb-breathe {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50% { transform: scale(1.04); filter: brightness(1.08); }
+}
+
+.iface-ai-orb {
+  position: sticky;
+  bottom: 8px;
+  margin-top: 8px;
+  align-self: flex-end;
+  margin-left: auto;
+}
+
+.scan-ai-orb {
+  position: fixed;
+  right: max(16px, calc(50% - 220px));
+  bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+}
+
+.scan-shell .mt5-fab {
+  display: none !important;
+}
+
+/* —— Scanner premium hierarchy —— */
+.scan-shell-premium {
+  background: transparent;
+}
+
+.scan-shell-premium .scan-page {
+  padding: 18px 18px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.scan-shell-premium .scan-header {
+  margin-bottom: 0;
+}
+
+.scan-shell-premium .scan-title {
+  font-size: 17px;
+  font-weight: 750;
+}
+
+.scan-shell-premium .scan-ai {
+  color: var(--electric);
+}
+
+.scan-shell-premium .scan-ai-dot {
+  background: var(--accent-soft);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  color: var(--electric);
+}
+
+.scan-stage-hero {
+  text-align: center;
+  padding: 8px 0 4px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.scan-shell-premium .scan-radar {
+  width: min(72vw, 240px);
+  height: min(72vw, 240px);
+  margin: 4px auto 4px;
+  background:
+    radial-gradient(circle at center, rgba(var(--accent-rgb), 0.22) 0%, rgba(8, 14, 24, 0.2) 42%, transparent 70%);
+  box-shadow:
+    0 0 0 1px rgba(var(--accent-rgb), 0.22),
+    0 0 48px rgba(var(--accent-rgb), 0.22),
+    inset 0 0 40px rgba(var(--accent-rgb), 0.08);
+}
+
+.scan-shell-premium .scan-orbit {
+  border-top-color: rgba(var(--accent-rgb), 0.85);
+  border-right-color: rgba(var(--accent-rgb), 0.28);
+}
+
+.scan-shell-premium .scan-orbit-b {
+  border-top-color: rgba(var(--accent-rgb), 0.9);
+  border-left-color: rgba(var(--accent-rgb), 0.22);
+}
+
+.scan-shell-premium .scan-orbit-c {
+  border-top-color: rgba(var(--accent-rgb), 0.7);
+}
+
+.scan-shell-premium .scan-sweep {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(var(--accent-rgb), 0.08) 40deg,
+    rgba(var(--accent-rgb), 0.5) 70deg,
+    transparent 95deg
+  );
+}
+
+.scan-shell-premium .scan-radar-core {
+  width: 64px;
+  height: 64px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.16), rgba(var(--accent-rgb), 0.2));
+  border: 1.4px solid rgba(var(--accent-rgb), 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 0 22px rgba(var(--accent-rgb), 0.4);
+}
+
+.scan-shell-premium .scan-radar.has-image {
+  width: min(82vw, 280px);
+  height: min(82vw, 280px);
+}
+
+.scan-shell-premium .scan-radar-grid {
+  background:
+    repeating-linear-gradient(0deg, transparent 0 11px, rgba(var(--accent-rgb), 0.14) 11px 12px),
+    repeating-linear-gradient(90deg, transparent 0 11px, rgba(var(--accent-rgb), 0.14) 11px 12px);
+}
+
+.scan-shell-premium .scan-beam::after {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(var(--accent-rgb), 0.14) 40%,
+    rgba(var(--accent-rgb), 0.85) 96%,
+    #fff 100%
+  );
+  box-shadow: 0 2px 14px rgba(var(--accent-rgb), 0.75);
+}
+
+.scan-shell-premium .scan-upload-label {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.scan-hero-sub {
+  margin: 0;
+  max-width: 28ch;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.scan-count-pill {
+  margin-top: 4px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.scan-count-pill strong {
+  color: var(--electric);
+  margin-left: 4px;
+}
+
+.scan-secondary {
+  display: grid;
+  gap: 12px;
+}
+
+.scan-shell-premium .scan-card {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  margin-bottom: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
+}
+
+.scan-shell-premium .scan-row {
+  gap: 12px;
+}
+
+.scan-shell-premium .scan-stepper button {
+  background: var(--accent-soft);
+  color: var(--electric);
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+}
+
+.scan-shell-premium .scan-toggle.on {
+  background: rgba(var(--accent-rgb), 0.35);
+  border-color: var(--electric);
+}
+
+.scan-shell-premium .scan-action {
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  background: var(--accent-wash);
+  color: var(--electric);
+  border-radius: 16px;
+  padding: 14px 12px;
+  transition: transform 0.16s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.scan-shell-premium .scan-action:active:not(:disabled) {
+  transform: scale(0.97);
+  box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.28);
+}
+
+.scan-alert-card {
+  border-radius: 16px;
+  padding: 14px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.22);
+  color: #fecaca;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.scan-alert-card strong {
+  display: block;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.scan-alert-card code {
+  color: #fff;
+}
+
+.scan-shell-premium .scan-accuracy {
+  color: var(--electric);
+}
+
+.scan-shell-premium .scan-accuracy-bar > div {
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.55), var(--electric));
+}
+
+.scan-shell-premium .scan-history {
+  margin-top: 4px;
+  margin-bottom: 72px;
+}
+
+.scan-shell-premium .scan-history-title {
+  letter-spacing: 0.12em;
+  font-size: 11px;
+}
+
+.scan-shell-premium .scan-history-row {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.scan-shell-premium .scan-history-row.open {
+  border-color: rgba(var(--accent-rgb), 0.35);
+  box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.12);
+}
+
+.scan-shell-premium .lay-dock {
+  border-color: rgba(var(--accent-rgb), 0.35) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35), 0 0 18px rgba(var(--accent-rgb), 0.16) !important;
+}
+
+.scan-shell-premium .lay-dock-item.active {
+  color: var(--electric);
+}
+
+.scan-shell-premium .lay-dock-item.active .lay-dock-ico {
+  border-color: var(--electric);
+  background: var(--accent-soft);
+  color: var(--electric);
+  box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.4);
+}
+
+/* Dock / nav accent globally on client shells */
+.lay-dock {
+  border-color: rgba(var(--accent-rgb), 0.35) !important;
+}
+
+.lay-dock-item.active,
+.os-dock-triple .lay-dock-item.active {
+  color: var(--electric) !important;
+}
+
+.lay-dock-item.active .lay-dock-ico {
+  border-color: var(--electric) !important;
+  background: var(--accent-soft) !important;
+  color: var(--electric) !important;
+  box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.4) !important;
+}
+
+/* Press / hover polish for interactive chrome */
+.scan-x,
+.iface-close,
+.iface-back,
+.scan-stepper button,
+.scan-action,
+.iface-hub-card,
+.iface-layout-row,
+.iface-colour,
+.iface-theme-card,
+.iface-effect-card {
+  transition: transform 0.16s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.scan-x:active,
+.iface-close:active,
+.iface-back:active {
+  transform: scale(0.94);
+}
+
+/* Loading / progress accent */
+.bg-manager-progress > span,
+.spin {
+  color: var(--electric);
+}
+
+.bg-manager-progress > span {
+  background: var(--electric);
+}
+
+[data-animations='off'] .ambient-env-gradient,
+[data-animations='off'] .ambient-env-glow,
+[data-animations='off'] .ambient-env-particles span,
+[data-animations='off'] .ai-orb-ring {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-env-gradient,
+  .ambient-env-glow,
+  .ambient-env-particles span,
+  .ai-orb-ring {
+    animation: none !important;
+  }
+}
