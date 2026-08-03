@@ -50,6 +50,7 @@ export function healLicensesFromVault<T extends LicenseLike>(
   ownerAdminId: string,
   vaultEntries: VaultLicense[],
   wsRevoked: string[] = dbList<string>(workspace.revokedKeys),
+  opts?: { includeAllVault?: boolean },
 ): { licenses: T[]; restored: number } {
   const licByKey = new Map<string, T>();
   for (const lic of dbList<T>(workspace.licenses)) {
@@ -61,7 +62,14 @@ export function healLicensesFromVault<T extends LicenseLike>(
   let restored = 0;
   for (const v of vaultEntries) {
     if (!v?.key || v.status === 'deleted') continue;
-    if (ownerAdminId && v.ownerAdminId && v.ownerAdminId !== ownerAdminId) continue;
+    if (
+      !opts?.includeAllVault &&
+      ownerAdminId &&
+      v.ownerAdminId &&
+      v.ownerAdminId !== ownerAdminId
+    ) {
+      continue;
+    }
     if (isLicenseRevoked(v.key, wsRevoked)) continue;
     const mergeKey = keyFingerprint(v.key) || v.id || v.key;
     if (!mergeKey || licByKey.has(mergeKey)) continue;

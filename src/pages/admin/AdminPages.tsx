@@ -283,15 +283,13 @@ function Stat({
 }
 
 export function ManageEAsPage() {
-  const { eas, createEA, updateEA, deleteEA, profile, restoreEAsFromCloud } = useAdmin();
+  const { eas, createEA, updateEA, deleteEA, profile } = useAdmin();
   const [name, setName] = useState('');
   const [draft, setDraft] = useState('');
   const [symbols, setSymbols] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [editSymbols, setEditSymbols] = useState<string[]>([]);
-  const [restoring, setRestoring] = useState(false);
-  const [restoreMsg, setRestoreMsg] = useState('');
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -386,43 +384,7 @@ export function ManageEAsPage() {
           Edit symbols here — they sync to every license key and licensed client for that EA.
         </p>
         {eas.length === 0 ? (
-          <div style={{ display: 'grid', gap: 10 }}>
-            <p className="muted">No EAs yet — create one to generate licenses.</p>
-            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-              On another device? Pull your EAs from the cloud — nothing is deleted unless you tap Delete.
-            </p>
-            <button
-              type="button"
-              className="btn btn-blue"
-              style={{ width: 'fit-content' }}
-              disabled={restoring}
-              onClick={async () => {
-                setRestoreMsg('');
-                setRestoring(true);
-                try {
-                  const result = await restoreEAsFromCloud();
-                  if (result.ok) {
-                    setRestoreMsg(
-                      result.eas
-                        ? `Restored ${result.eas} EA${result.eas === 1 ? '' : 's'} from cloud.`
-                        : 'Sync finished — if still empty, create a new EA below.',
-                    );
-                  } else {
-                    setRestoreMsg(result.error || 'Could not restore EAs.');
-                  }
-                } finally {
-                  setRestoring(false);
-                }
-              }}
-            >
-              {restoring ? 'Restoring…' : 'Restore EAs from cloud'}
-            </button>
-            {restoreMsg ? (
-              <p className="muted" style={{ margin: 0, fontSize: 13, color: 'var(--green)' }}>
-                {restoreMsg}
-              </p>
-            ) : null}
-          </div>
+          <p className="muted">No EAs yet — create one to generate licenses.</p>
         ) : null}
         {eas.map((ea) => {
           const src = displayImageSrc(ea.imageUrl);
@@ -570,15 +532,7 @@ export function ManageEAsPage() {
 }
 
 export function GenerateLicensePage() {
-  const {
-    eas,
-    licenses,
-    generateLicense,
-    deleteLicense,
-    profile,
-    resyncLicenses,
-    restoreLicensesFromCloud,
-  } = useAdmin();
+  const { eas, licenses, generateLicense, deleteLicense, profile } = useAdmin();
   const [eaId, setEaId] = useState('');
   const [clientName, setClientName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
@@ -586,8 +540,6 @@ export function GenerateLicensePage() {
   const [search, setSearch] = useState('');
   const [lastKey, setLastKey] = useState('');
   const [generating, setGenerating] = useState(false);
-  const [restoring, setRestoring] = useState(false);
-  const [restoreMsg, setRestoreMsg] = useState('');
   const [status, setStatus] = useState<{
     type: 'error' | 'success';
     title: string;
@@ -596,10 +548,6 @@ export function GenerateLicensePage() {
   const [copied, setCopied] = useState(false);
   const effectiveEaId = eaId || eas[0]?.id || '';
   const selected = eas.find((e) => e.id === effectiveEaId) ?? eas[0];
-
-  useEffect(() => {
-    resyncLicenses();
-  }, [resyncLicenses]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -793,43 +741,10 @@ export function GenerateLicensePage() {
         ) : null}
       </div>
       <div className="glow-card" style={{ boxShadow: 'none', borderColor: 'rgba(255,255,255,0.08)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <h3 style={{ marginTop: 0 }}>All Generated Licenses ({licenses.length})</h3>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{ width: 'auto', padding: '6px 12px', fontSize: 12 }}
-            disabled={restoring}
-            onClick={async () => {
-              setRestoreMsg('');
-              setRestoring(true);
-              try {
-                const result = await restoreLicensesFromCloud();
-                if (result.ok) {
-                  setRestoreMsg(
-                    result.licenses
-                      ? `Restored ${result.licenses} license key${result.licenses === 1 ? '' : 's'} from cloud.`
-                      : 'Sync finished — keys appear here as soon as cloud responds.',
-                  );
-                } else {
-                  setRestoreMsg(result.error || 'Could not restore license keys.');
-                }
-              } finally {
-                setRestoring(false);
-              }
-            }}
-          >
-            {restoring ? 'Restoring…' : 'Restore keys from cloud'}
-          </button>
-        </div>
-        {restoreMsg ? (
-          <p className="muted" style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--green)' }}>
-            {restoreMsg}
-          </p>
-        ) : null}
+        <h3 style={{ marginTop: 0 }}>All Generated Licenses ({filtered.length})</h3>
         <div className="field"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, email or key..." /></div>
         {filtered.length === 0 ? (
-          <p className="muted">No license keys on this device yet — tap Restore keys from cloud above.</p>
+          <p className="muted">No license keys yet — generate one above.</p>
         ) : null}
         {filtered.map((lic) => (
           <div key={lic.id} style={{ padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
