@@ -1354,7 +1354,7 @@ export function ApproveAdminsPage() {
         <h2 className="title-blue" style={{ fontSize: 17, margin: 0 }}>Approve Admins</h2>
         <p className="muted">
           Pending requests and admins already approved. Each admin gets their own empty portal.
-          If a mentor vanishes from Pending before you approve, tap Restore from cloud.
+          Your mentor list is saved on this device — tap Restore from cloud only if someone is missing.
         </p>
       </div>
 
@@ -1679,27 +1679,22 @@ export function SubscriptionsPage() {
       </div>
 
       <div className="stat-grid admin-stat-grid">
-        {clientsLoading ? (
-          <>
-            <Stat value="…" label="Awaiting approval" tone="orange" />
-            <Stat value="…" label="Marked I've Paid" tone="blue" />
-            <Stat value="…" label="Approved clients" tone="green" />
-          </>
-        ) : (
-          <>
-            <Stat value={String(stats.pendingClients)} label="Awaiting approval" tone="orange" />
-            <Stat value={String(paidPending)} label="Marked I've Paid" tone="blue" />
-            <Stat value={String(stats.approvedClients)} label="Approved clients" tone="green" />
-          </>
-        )}
+        <Stat value={String(stats.pendingClients)} label="Awaiting approval" tone="orange" />
+        <Stat value={String(paidPending)} label="Marked I've Paid" tone="blue" />
+        <Stat value={String(stats.approvedClients)} label="Approved clients" tone="green" />
       </div>
+      {clientsLoading ? (
+        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+          Syncing latest registrations in the background…
+        </p>
+      ) : null}
 
       <div className="glow-card" style={{ display: 'grid', gap: 10 }}>
         <div>
           <h3 style={{ margin: '0 0 4px' }}>Missing subscribers?</h3>
           <p className="muted" style={{ margin: 0 }}>
-            Pending clients are stored in the live cloud queue. If the list looks empty,
-            refresh from cloud — nothing is deleted unless you tap Delete.
+            Your subscriber list is saved on this device and updates quietly in the background.
+            Tap refresh only if someone paid and still does not appear.
           </p>
         </div>
         <button

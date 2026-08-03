@@ -484,6 +484,8 @@ async function syncPortalBrandingToClients(
 
 const AUTH_KEY = 'ub-web/admin-auth-v3';
 const STORE_KEY = 'ub-web/admin-store-v3';
+const CLIENT_QUEUE_CACHE_KEY = 'ub-web/subscriber-queue-v1';
+const ADMIN_ROSTER_CACHE_KEY = 'ub-web/admin-roster-v1';
 
 export const SUPER_ADMIN = {
   email: 'mukundimukhuba8@gmail.com',
@@ -938,10 +940,51 @@ function uniqueKey(existing: LicenseRecord[]) {
   return key;
 }
 
+function hasCachedSubscriberQueue(): boolean {
+  return loadJSON<ClientRequest[]>(CLIENT_QUEUE_CACHE_KEY, []).length > 0;
+}
+
+function saveCachedClientQueue(list: ClientRequest[]) {
+  if (!list.length) return;
+  saveJSON(CLIENT_QUEUE_CACHE_KEY, list);
+}
+
+function loadCachedClientQueue(): ClientRequest[] {
+  const cached = loadJSON<ClientRequest[]>(CLIENT_QUEUE_CACHE_KEY, []);
+  if (cached.length) {
+    return mergeSubscriberQueue(prepaidAsClientRequests(), cached, loadDeletedClients());
+  }
+  const store = loadJSON<StoreState>(STORE_KEY, { workspaces: {} });
+  const legacy = store.workspaces[SUPER_ADMIN.user.id]?.clientRequests;
+  if (legacy?.length) {
+    const merged = mergeSubscriberQueue(prepaidAsClientRequests(), legacy, loadDeletedClients());
+    saveCachedClientQueue(merged);
+    return merged;
+  }
+  return prepaidAsClientRequests();
+}
+
+function saveCachedAdminRoster(list: AdminUser[]) {
+  if (!list.length) return;
+  saveJSON(ADMIN_ROSTER_CACHE_KEY, list);
+}
+
+function loadCachedAdminRoster(): AdminUser[] {
+  return loadJSON<AdminUser[]>(ADMIN_ROSTER_CACHE_KEY, []);
+}
+
 function migrateAuth(): AuthState {
+  const cachedRoster = loadCachedAdminRoster();
   const v3 = loadJSON<AuthState | null>(AUTH_KEY, null as unknown as AuthState);
   if (v3 && Array.isArray(v3.admins)) {
-    return { ...v3, portalOpen: false };
+    const admins = (
+      cachedRoster.length
+        ? mergeAdminsForApprovalSync(v3.admins, cachedRoster)
+        : v3.admins.length
+          ? v3.admins
+          : cachedRoster
+    ).map((a) => ({ ...a, role: normalizeAdminRole(a.role) })) as AdminUser[];
+    return { ...v3, admins, portalOpen: false };
   }
   const v1 = loadJSON<{
     portalOpen?: boolean;
@@ -951,7 +994,9 @@ function migrateAuth(): AuthState {
   return {
     portalOpen: false,
     admin: null,
-    admins: v1.pendingAdmins ?? [],
+    admins: cachedRoster.length
+      ? cachedRoster.map((a) => ({ ...a, role: normalizeAdminRole(a.role) })) as AdminUser[]
+      : (v1.pendingAdmins ?? []),
   };
 }
 
@@ -1303,9 +1348,17 @@ const SPLASH_MAX_MS = 1200;
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(() => migrateAuth());
   const [store, setStore] = useState<StoreState>(() => migrateStore(migrateAuth().admins));
-  const [clients, setClients] = useState<ClientRequest[]>(() => prepaidAsClientRequests());
-  const [clientsLoading, setClientsLoading] = useState(true);
+  const [clients, setClients] = useState<ClientRequest[]>(() => loadCachedClientQueue());
+  const [clientsLoading, setClientsLoading] = useState(() => !hasCachedSubscriberQueue());
   const [booting, setBooting] = useState(true);
+
+  useEffect(() => {
+    saveCachedClientQueue(clients);
+  }, [clients]);
+
+  useEffect(() => {
+    saveCachedAdminRoster(auth.admins);
+  }, [auth.admins]);
 
   useEffect(() => {
     pruneClientDeviceStorage();
@@ -1394,9 +1447,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     void (async () => {
       try {
         if (isAdminPortalSession()) {
-          const db = await fetchDb();
+          const dbPromise = fetchDb();
+          const clientsPromise = fetchClients();
+          const db = await dbPromise;
           applyRemoteDb(db);
-          const list = await fetchClients();
+          const list = await clientsPromise;
           if (list) {
             const remoteDeleted = await fetchRemoteDeletedClients();
             setClients((prev) =>
@@ -1415,10 +1470,26 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           }
         }
       } catch {
-        // Offline or timed out — local cache is enough to enter the app
+        // Offline or timed out — cached queue stays on screen
       } finally {
         setClientsLoading(false);
         dismissWithMinDelay();
+      }
+    })();
+
+    // Background refresh — never block the UI when cache already hydrated the lists
+    void (async () => {
+      if (!isAdminPortalSession()) return;
+      try {
+        const remoteAdmins = (await fetchAdmins()) as AdminUser[] | null;
+        if (!remoteAdmins?.length) return;
+        setAuth((prev) => {
+          const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
+          saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+          return nextAuth;
+        });
+      } catch {
+        /* cached roster remains visible */
       }
     })();
 
@@ -2655,6 +2726,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           remoteDeleted,
         );
         setClients(merged);
+        saveCachedClientQueue(merged);
         const counts = countClientQueue(merged);
         approvalLog('client', 'queue_refreshed', counts);
         return { ok: true, ...counts };
@@ -2675,6 +2747,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
           nextAdmins = nextAuth.admins;
           saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+          saveCachedAdminRoster(nextAdmins);
           return nextAuth;
         });
         const counts = countAdminQueue(nextAdmins);
