@@ -14,6 +14,7 @@ import {
   fetchAdminsForLogin,
   fetchClients,
   fetchDb,
+  fetchImagesMap,
   invalidateFetchDbCache,
   patchClient,
   postClient,
@@ -541,6 +542,12 @@ async function syncPortalBrandingToClients(
             getEaImage(imageKeyFromPublicUrl(item.url));
       if (bytes && bytes.startsWith('data:')) {
         imagePayload[mediaKeyId] = bytes;
+      } else if (
+        item.url.startsWith('http') ||
+        item.url.startsWith('/api/')
+      ) {
+        // Hosted background URL — same durable pattern as profile picture
+        imagePayload[mediaKeyId] = item.url;
       }
     }
     const payload: Parameters<typeof pushDb>[0] = {
@@ -568,6 +575,11 @@ async function syncPortalBrandingToClients(
             getEaImage(imageKeyFromPublicUrl(item.url));
       if (bytes && bytes.startsWith('data:')) {
         imagePayload[mediaKeyId] = bytes;
+      } else if (
+        item.url.startsWith('http') ||
+        item.url.startsWith('/api/')
+      ) {
+        imagePayload[mediaKeyId] = item.url;
       }
     }
     await pushDb({
@@ -1546,18 +1558,35 @@ function mergeSubscriberQueue(
 }
 
 const AdminContext = createContext<Ctx | null>(null);
-/** Splash stays visible briefly, but never blocks the app on slow networks */
-const SPLASH_MIN_MS = 0;
-const SPLASH_MAX_MS = 400;
+/** Splash is optional polish only — never wait on network */
+const SPLASH_MAX_MS = 180;
+
+function scheduleIdle(fn: () => void, timeout = 1200): () => void {
+  const w = window as Window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+    cancelIdleCallback?: (id: number) => void;
+  };
+  if (typeof w.requestIdleCallback === 'function') {
+    const id = w.requestIdleCallback(fn, { timeout });
+    return () => w.cancelIdleCallback?.(id);
+  }
+  const id = window.setTimeout(fn, 0);
+  return () => window.clearTimeout(id);
+}
 
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(() => migrateAuth());
-  const [store, setStore] = useState<StoreState>(() =>
-    healAllWorkspacesFromVault(migrateStore(migrateAuth().admins)),
-  );
+  // Light init — vault heal runs after first paint so cold boot doesn't freeze
+  const [store, setStore] = useState<StoreState>(() => migrateStore(migrateAuth().admins));
   const [clients, setClients] = useState<ClientRequest[]>(() => loadCachedClientQueue());
   const [clientsLoading, setClientsLoading] = useState(() => !hasCachedSubscriberQueue());
-  const [booting, setBooting] = useState(true);
+  const [booting, setBooting] = useState(() => {
+    try {
+      return sessionStorage.getItem('lumo-was-ready') !== '1';
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
     saveCachedClientQueue(clients);
@@ -1571,24 +1600,39 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     pruneClientDeviceStorage();
   }, []);
 
+  // Defer heavy vault heal until the UI can paint
+  useEffect(() => {
+    return scheduleIdle(() => {
+      setStore((prev) => healAllWorkspacesFromVault(prev));
+    }, 800);
+  }, []);
+
   // Hydrate from disk-backed API so data survives new preview links
   useEffect(() => {
     let cancelled = false;
     let dismissed = false;
-    const started = Date.now();
 
     const dismissSplash = () => {
       if (cancelled || dismissed) return;
       dismissed = true;
       setBooting(false);
+      try {
+        sessionStorage.setItem('lumo-was-ready', '1');
+      } catch {
+        /* ignore */
+      }
+      try {
+        window.dispatchEvent(new Event('lumo-ready'));
+        (
+          window as Window & { __lumoMarkReady?: () => void }
+        ).__lumoMarkReady?.();
+      } catch {
+        /* ignore */
+      }
     };
 
-    const dismissWithMinDelay = () => {
-      const elapsed = Date.now() - started;
-      const wait = Math.max(0, SPLASH_MIN_MS - elapsed);
-      window.setTimeout(dismissSplash, wait);
-    };
-
+    // First frame — never hold the splash for Firebase
+    const paintDismiss = window.requestAnimationFrame(() => dismissSplash());
     const hardCap = window.setTimeout(dismissSplash, SPLASH_MAX_MS);
 
     const applyRemoteDb = (db: RemoteDb | null) => {
@@ -1638,9 +1682,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           return merged;
         });
       }
-      if (adminSession && db.images && typeof db.images === 'object') {
-        mergeRemoteImages(db.images);
-      }
+      // Images are hydrated separately after paint — never on this critical path
       if (Array.isArray(db.clients)) {
         setClients((prev) =>
           mergeSubscriberQueue(
@@ -1681,7 +1723,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         // Offline or timed out — cached queue stays on screen
       } finally {
         setClientsLoading(false);
-        dismissWithMinDelay();
+        dismissSplash();
       }
     })();
 
@@ -1701,9 +1743,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       }
     })();
 
+    // Admin images after UI is interactive — stops freeze on Generate License taps
+    const cancelImages = scheduleIdle(() => {
+      if (cancelled || !isAdminPortalSession()) return;
+      void fetchImagesMap().then((images) => {
+        if (cancelled || !images) return;
+        mergeRemoteImages(images);
+      });
+    }, 2000);
+
     return () => {
       cancelled = true;
       window.clearTimeout(hardCap);
+      window.cancelAnimationFrame(paintDismiss);
+      cancelImages();
     };
   }, []);
 
@@ -1806,13 +1859,16 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (booting || !auth.admin?.id) return;
     const mentorId = auth.admin.id;
+    let syncing = false;
     const syncWorkspace = async () => {
+      if (document.visibilityState === 'hidden') return;
+      if (syncing) return;
+      syncing = true;
+      try {
       const db = await fetchDb();
       if (!db) return;
       const vaultEntries = dbList<VaultLicense>(db.vault);
-      if (db.images && typeof db.images === 'object') {
-        mergeRemoteImages(db.images);
-      }
+      // Images are idle-hydrated once — never re-merge multi-MB maps on every poll
       if (db.vault && licensePublishInFlight === 0) {
         const revoked = loadRevokedKeys();
         saveMergedVaultForMentor(
@@ -2005,6 +2061,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           );
         }
       }
+      } finally {
+        syncing = false;
+      }
     };
     void syncWorkspace();
     const useFirebaseWatch = isFirebaseConfigured();
@@ -2013,6 +2072,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       : window.setInterval(() => void syncWorkspace(), 20000);
     let unwatch: (() => void) | undefined;
     let debounceTimer: number | undefined;
+    let resumeTimer: number | undefined;
     if (useFirebaseWatch) {
       void import('../lib/firebaseDb').then(({ firebaseWatchUpdates }) => {
         // Debounce — publish bumps updatedAt often; syncing every time freezes taps
@@ -2024,9 +2084,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         });
       });
     }
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (resumeTimer) window.clearTimeout(resumeTimer);
+      // Soft resume — give Safari a beat before network work
+      resumeTimer = window.setTimeout(() => void syncWorkspace(), 700);
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       if (poll) window.clearInterval(poll);
       if (debounceTimer) window.clearTimeout(debounceTimer);
+      if (resumeTimer) window.clearTimeout(resumeTimer);
+      document.removeEventListener('visibilitychange', onVisible);
       unwatch?.();
     };
   }, [booting, auth.admin?.id]);
@@ -2307,9 +2376,6 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     invalidateFetchDbCache();
     void fetchDb().then((db) => {
       if (!db) return;
-      if (db.images && typeof db.images === 'object') {
-        mergeRemoteImages(db.images);
-      }
       const vaultEntries = dbList<VaultLicense>(db.vault);
       if (db.vault && licensePublishInFlight === 0) {
         const revoked = loadRevokedKeys();
@@ -3777,6 +3843,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                         getEaImage(imageKeyFromPublicUrl(item.url));
                   if (bytes && bytes.startsWith('data:')) {
                     imagePayload[mediaKeyId] = bytes;
+                  } else if (
+                    item.url.startsWith('http') ||
+                    item.url.startsWith('/api/')
+                  ) {
+                    imagePayload[mediaKeyId] = item.url;
                   }
                 }
                 void pushDb({

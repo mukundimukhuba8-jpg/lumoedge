@@ -24,7 +24,12 @@ type Props = {
 };
 
 function resolvePreviewUrl(url: string): string {
-  return resolveStoredMediaUrl(url) || String(url || '').trim();
+  const resolved = resolveStoredMediaUrl(url) || String(url || '').trim();
+  if (resolved.startsWith('img:')) {
+    const key = resolved.replace(/^img:/, '');
+    return `/api/images/${encodeURIComponent(key)}`;
+  }
+  return resolved;
 }
 
 export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange }: Props) {
@@ -36,9 +41,18 @@ export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const snapshotRef = useRef<MentorMediaItem[]>(normalizeCustomMedia(customMedia));
 
   useEffect(() => {
-    setLocalMedia(normalizeCustomMedia(customMedia));
+    const incoming = normalizeCustomMedia(customMedia);
+    setLocalMedia((prev) => {
+      const prevFilled = prev.filter((m) => m.url && !m.url.startsWith('blob:')).length;
+      const incomingFilled = incoming.filter((m) => m.url).length;
+      // Don't wipe a fresher local upload with a thinner remote snapshot
+      if (prevFilled > incomingFilled) return prev;
+      snapshotRef.current = incoming;
+      return incoming;
+    });
   }, [customMedia]);
 
   const bgItems = useMemo(
@@ -60,8 +74,15 @@ export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange 
     setMessage('');
     setProgress(null);
     if (!file) return;
+    if (!adminId) {
+      setError('Sign in to the portal before uploading backgrounds.');
+      return;
+    }
 
-    const replacing = Boolean(localMedia.find((m) => m.slot === slot && m.url));
+    const before = normalizeCustomMedia(localMedia);
+    snapshotRef.current = before;
+
+    const replacing = Boolean(before.find((m) => m.slot === slot && m.url));
     if (!replacing && atMax) {
       setError('Maximum of 3 backgrounds allowed.');
       return;
@@ -69,7 +90,7 @@ export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange 
 
     const previewUrl = URL.createObjectURL(file);
     const previewKind = file.type.startsWith('video/') ? 'video' : 'image';
-    const withPreview = upsertMediaSlot(localMedia, {
+    const withPreview = upsertMediaSlot(before, {
       slot,
       kind: previewKind,
       url: previewUrl,
@@ -88,7 +109,7 @@ export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange 
         file,
         onProgress,
       );
-      const nextMedia = upsertMediaSlot(withPreview, {
+      const nextMedia = upsertMediaSlot(before, {
         slot,
         kind,
         url,
@@ -102,13 +123,15 @@ export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange 
       try {
         await onSync(nextMedia);
       } catch {
-        // local + cloud already saved — profile sync can retry on next save
+        // Cloud media already saved — profile sync can retry on next save
       }
 
       setProgress({ pct: 100, stage: 'Complete' });
       const label = BACKGROUND_SLOTS.find((s) => s.id === slot)?.label || slot;
       setMessage(`${label} uploaded — synced to all clients.`);
     } catch (err) {
+      setLocalMedia(before);
+      onMediaChange?.(before);
       setError(err instanceof Error ? err.message : 'Upload failed.');
     } finally {
       URL.revokeObjectURL(previewUrl);
@@ -122,6 +145,7 @@ export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange 
   const onRemove = async (slot: MentorMediaSlotId) => {
     setError('');
     setMessage('');
+    const before = normalizeCustomMedia(localMedia);
     const nextMedia = removeMediaSlot(localMedia, slot);
     setLocalMedia(nextMedia);
     onMediaChange?.(nextMedia);
@@ -129,6 +153,8 @@ export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange 
       await onSync(nextMedia);
       setMessage('Background removed.');
     } catch {
+      setLocalMedia(before);
+      onMediaChange?.(before);
       setError('Could not sync removal — try again.');
     }
   };
@@ -140,7 +166,7 @@ export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange 
         <div>
           <h3 style={{ margin: 0 }}>Background Manager</h3>
           <p className="muted" style={{ margin: '4px 0 0', fontSize: 12 }}>
-            {filledCount}/{MAX_BACKGROUNDS} backgrounds · syncs instantly to all clients
+            {filledCount}/{MAX_BACKGROUNDS} backgrounds · same cloud save as profile picture
           </p>
         </div>
       </div>

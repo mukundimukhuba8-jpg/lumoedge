@@ -366,18 +366,27 @@ export function resolveStoredMediaUrl(url: string): string {
 export function saveEaImage(id: string, dataUrl: string) {
   if (!id || !dataUrl) return;
   try {
-    const all = loadJSON<Record<string, string>>(IMAGE_STORE, {});
-    all[id] = dataUrl;
-    saveJSON(IMAGE_STORE, all);
+    const value = String(dataUrl);
+    // Huge base64 blobs freeze Safari and blow localStorage — prefer http(s) refs
+    const tooLargeForLocal = value.startsWith('data:') && value.length > 450_000;
+    if (!tooLargeForLocal) {
+      const all = loadJSON<Record<string, string>>(IMAGE_STORE, {});
+      all[id] = value;
+      saveJSONSafe(IMAGE_STORE, all);
+    }
+
+    // Skip dual network dumps for giant payloads (Storage/RTDB upload handles those)
+    if (value.startsWith('data:') && value.length > 450_000) return;
+
     void fetch('/api/db', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ images: { [id]: dataUrl } }),
+      body: JSON.stringify({ images: { [id]: value } }),
     }).catch(() => undefined);
     void fetch(imagePublicUrl(id), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataUrl }),
+      body: JSON.stringify({ dataUrl: value }),
     }).catch(() => undefined);
   } catch {
     // quota — ignore
