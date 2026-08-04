@@ -82,6 +82,34 @@ export function isAdminPortalSession(): boolean {
   }
 }
 
+/** Super Admin only — mentors must not pull the global 900+ client queue. */
+export function isSuperAdminSession(): boolean {
+  try {
+    const raw = localStorage.getItem(ADMIN_AUTH_KEY);
+    if (!raw) return false;
+    const auth = JSON.parse(raw) as {
+      admin?: { id?: string; role?: string } | null;
+    };
+    const id = String(auth?.admin?.id || '');
+    const role = String(auth?.admin?.role || '');
+    return role === 'super' || id === 'LM-004821';
+  } catch {
+    return false;
+  }
+}
+
+/** Logged-in portal admin id (mentor or super), else ''. */
+export function portalSessionAdminId(): string {
+  try {
+    const raw = localStorage.getItem(ADMIN_AUTH_KEY);
+    if (!raw) return '';
+    const auth = JSON.parse(raw) as { admin?: { id?: string } | null };
+    return String(auth?.admin?.id || '').trim();
+  } catch {
+    return '';
+  }
+}
+
 /** Drop admin-only bulk cache from client phones (prevents quota errors). */
 export function pruneClientDeviceStorage() {
   if (isAdminPortalSession()) return;

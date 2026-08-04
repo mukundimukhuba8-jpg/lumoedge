@@ -572,6 +572,7 @@ export function ManageEAsPage() {
 
 export function GenerateLicensePage() {
   const {
+    admin,
     eas,
     licenses,
     generateLicense,
@@ -595,10 +596,11 @@ export function GenerateLicensePage() {
   const effectiveEaId = eaId || eas[0]?.id || '';
   const selected = eas.find((e) => e.id === effectiveEaId) ?? eas[0];
 
-  // Light refresh only — full restore runs in background on admin boot
+  // Super Admin only — mentors must not pull 900+ clients when opening Generate License
   useEffect(() => {
+    if (admin?.role !== 'super') return;
     void refreshClientQueue();
-  }, [refreshClientQueue]);
+  }, [refreshClientQueue, admin?.role]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();

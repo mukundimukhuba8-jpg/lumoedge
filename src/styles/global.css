@@ -431,6 +431,17 @@ a {
     0 0 24px rgba(59, 130, 246, 0.08);
 }
 
+/* Phones: glass blur stacks with sync work and freezes taps — solid fill only */
+@media (hover: none), (max-width: 900px) {
+  .admin-shell-dark .glow-card,
+  .admin-shell-dark .stat-card,
+  .admin-shell-dark .drawer,
+  .admin-shell-dark .admin-drawer {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
 .admin-shell-super .glow-card,
 .admin-shell-super .stat-card {
   box-shadow:

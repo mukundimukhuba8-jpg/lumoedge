@@ -67,6 +67,7 @@ import {
   upsertClientVault,
   upsertVault,
   isAdminPortalSession,
+  isSuperAdminSession,
   type VaultLicense,
 } from '../lib/storage';
 import {
@@ -1711,18 +1712,24 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             ),
           ),
         );
-        // Defer heal — syncing 200+ licenses on the main thread freezes the menu
+        // Defer heal — syncing licenses on the main thread freezes the menu
         scheduleIdle(() => {
-          if (!cancelled && !isAdminDrawerOpen()) {
-            setStore((prev) => healAllWorkspacesFromVault(prev));
+          if (cancelled || isAdminDrawerOpen()) return;
+          const mentorId = portalAdminId();
+          if (mentorId && !isSuperAdminSession()) {
+            setStore((prev) => healMentorWorkspaceInStore(prev, mentorId));
+            return;
           }
+          setStore((prev) => healAllWorkspacesFromVault(prev));
         }, 2000);
       }
       if (adminSession && db.store?.workspaces && typeof db.store.workspaces === 'object') {
         const remoteWs: StoreState['workspaces'] = {};
-        for (const [id, ws] of Object.entries(
+        const mentorId = portalAdminId();
+        const entries = Object.entries(
           db.store.workspaces as StoreState['workspaces'],
-        )) {
+        ).filter(([id]) => isSuperAdminSession() || !mentorId || id === mentorId);
+        for (const [id, ws] of entries) {
           remoteWs[id] = healWorkspaceEas(ws, id, loadVault()).workspace;
         }
         // Merge — never let a thinner remote wipe local EAs / license keys
@@ -1733,7 +1740,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         });
       }
       // Images are hydrated separately after paint — never on this critical path
-      if (Array.isArray(db.clients)) {
+      // Mentors never ingest the global subscriber list into React state
+      if (Array.isArray(db.clients) && isSuperAdminSession()) {
         setClients((prev) =>
           mergeSubscriberQueue(
             prev,
@@ -1750,15 +1758,19 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       void (async () => {
         try {
           if (isAdminPortalSession()) {
-            const [db, list] = await Promise.all([fetchDb(), fetchClients()]);
+            // Mentors: workspace/vault only — never await 900+ clients on boot
+            const db = await fetchDb();
             if (cancelled) return;
             applyRemoteDb(db);
-            if (list) {
-              const remoteDeleted = await fetchRemoteDeletedClients();
-              if (cancelled) return;
-              setClients((prev) =>
-                mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted),
-              );
+            if (isSuperAdminSession()) {
+              const list = await fetchClients();
+              if (list && !cancelled) {
+                const remoteDeleted = await fetchRemoteDeletedClients();
+                if (cancelled) return;
+                setClients((prev) =>
+                  mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted),
+                );
+              }
             }
           } else {
             const list = await fetchClients();
@@ -1780,9 +1792,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       })();
     }, 400);
 
-    // Background refresh — never block the UI when cache already hydrated the lists
+    // Super Admin only — mentors do not need the 300+ mentor roster on every boot
     const cancelAdmins = scheduleIdle(() => {
-      if (cancelled || !isAdminPortalSession()) return;
+      if (cancelled || !isAdminPortalSession() || !isSuperAdminSession()) return;
       void (async () => {
         try {
           const remoteAdmins = (await fetchAdmins()) as AdminUser[] | null;
@@ -1817,14 +1829,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Subscription queue — only poll when admin portal is open, or client is waiting
+  // Subscription queue — Super Admin portal + client waiting/activate only.
+  // Mentors must NOT poll 900+ clients (main freeze after login).
   useEffect(() => {
     if (booting) return;
-    const needsQueue =
-      isAdminPortalSession() ||
-      (typeof window !== 'undefined' &&
-        (window.location.pathname.startsWith('/waiting') ||
-          window.location.pathname.startsWith('/activate')));
+    const onWaitingPath =
+      typeof window !== 'undefined' &&
+      (window.location.pathname.startsWith('/waiting') ||
+        window.location.pathname.startsWith('/activate'));
+    const needsQueue = isSuperAdminSession() || onWaitingPath;
     if (!needsQueue) {
       setClientsLoading(false);
       return;
@@ -1842,9 +1855,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       }
       setClientsLoading(false);
     };
-    // Delay first poll — cached dashboard is already on screen
-    const first = window.setTimeout(() => void tick(), isAdminPortalSession() ? 1500 : 400);
-    // Admin: 20s. Waiting clients: 20s. Never thrash phones.
+    const first = window.setTimeout(() => void tick(), isSuperAdminSession() ? 1500 : 400);
     const every = 20_000;
     const id = window.setInterval(tick, every);
     return () => {
@@ -1855,7 +1866,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
   // Keep mentor registration queue fresh for Super Admin approval
   useEffect(() => {
-    if (booting || !isAdminPortalSession()) return;
+    if (booting || !isAdminPortalSession() || !isSuperAdminSession()) return;
     const syncAdmins = async () => {
       if (mentorAdminSyncInflight) return;
       mentorAdminSyncInflight = true;
@@ -1949,12 +1960,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
       if (!remoteRaw) {
         setStore((prev) => healMentorWorkspaceInStore(prev, mentorId));
-        const list = await fetchClients();
-        if (list) {
-          const remoteDeleted = await fetchRemoteDeletedClients();
-          setClients((prev) =>
-            mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted),
-          );
+        // Super Admin only — mentors never download the global client queue here
+        if (isSuperAdminSession()) {
+          const list = await fetchClients();
+          if (list) {
+            const remoteDeleted = await fetchRemoteDeletedClients();
+            setClients((prev) =>
+              mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted),
+            );
+          }
         }
         return;
       }
@@ -2367,20 +2381,22 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      // Pending subscriptions / people
-      void repairClientQueueRemote().catch(() => undefined);
-      const list = await fetchClients();
-      if (list) {
-        const remoteDeleted = await fetchRemoteDeletedClients();
-        setClients((prev) => {
-          const merged = mergeSubscriberQueue(
-            prev,
-            list as ClientRequest[],
-            remoteDeleted,
-          );
-          saveCachedClientQueue(merged);
-          return merged;
-        });
+      // Pending subscriptions — Super Admin only (mentors don't use this queue)
+      if (isSuperAdminSession()) {
+        void repairClientQueueRemote().catch(() => undefined);
+        const list = await fetchClients();
+        if (list) {
+          const remoteDeleted = await fetchRemoteDeletedClients();
+          setClients((prev) => {
+            const merged = mergeSubscriberQueue(
+              prev,
+              list as ClientRequest[],
+              remoteDeleted,
+            );
+            saveCachedClientQueue(merged);
+            return merged;
+          });
+        }
       }
       const licenses =
         loadJSON<StoreState>(STORE_KEY, { workspaces: {} }).workspaces[adminId]?.licenses
@@ -2465,27 +2481,57 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     });
   }, [auth.admin]);
 
+  // One light hydrate after login — the old warm+resync+restore stack froze phones
   useEffect(() => {
     if (booting || !auth.admin?.id) return;
     const mentorId = auth.admin.id;
-    invalidateFetchDbCache();
-    void (async () => {
-      const db = await fetchDb();
-      const merged = hydrateLicenseRemote(db);
-      setStore((prev) =>
-        healMentorWorkspaceInStore(
-          merged ?? prev,
-          mentorId,
-          (merged ?? prev).workspaces[mentorId],
-          db?.store?.workspaces?.[mentorId] as AdminWorkspace | undefined,
-        ),
-      );
-      warmLicenseCache();
-      resyncLicenses();
-      // Background only — never block UI / taps on restore
-      void restoreLicensesFromCloud().catch(() => undefined);
-    })();
-  }, [booting, auth.admin?.id, warmLicenseCache, resyncLicenses, restoreLicensesFromCloud]);
+    let cancelled = false;
+    const cancel = scheduleIdle(() => {
+      if (cancelled || isAdminDrawerOpen()) return;
+      invalidateFetchDbCache();
+      void (async () => {
+        try {
+          const db = await fetchDb();
+          if (cancelled || isAdminDrawerOpen()) return;
+          const remoteWs = db?.store?.workspaces?.[mentorId] as
+            | AdminWorkspace
+            | undefined;
+          if (db?.vault && licensePublishInFlight === 0) {
+            const revoked = loadRevokedKeys();
+            saveMergedVaultForMentor(
+              mentorId,
+              dbList<VaultLicense>(db.vault).filter(
+                (v) =>
+                  v.status !== 'deleted' &&
+                  !revoked.some((k) => keysMatch(k, v.key)),
+              ),
+            );
+          }
+          setStore((prev) =>
+            healMentorWorkspaceInStore(
+              prev,
+              mentorId,
+              prev.workspaces[mentorId],
+              remoteWs,
+            ),
+          );
+        } catch {
+          /* offline — local workspace stays */
+        }
+        // Super Admin can deep-restore later; mentors stay on the light path
+        if (!cancelled && isSuperAdminSession()) {
+          scheduleIdle(() => {
+            if (cancelled || isAdminDrawerOpen()) return;
+            void restoreLicensesFromCloud().catch(() => undefined);
+          }, 4000);
+        }
+      })();
+    }, 600);
+    return () => {
+      cancelled = true;
+      cancel();
+    };
+  }, [booting, auth.admin?.id, restoreLicensesFromCloud]);
 
   const patchWorkspace = useCallback(
     (adminId: string, updater: (ws: AdminWorkspace) => AdminWorkspace, seed?: AdminUser) => {
