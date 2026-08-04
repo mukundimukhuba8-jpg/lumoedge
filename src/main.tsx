@@ -7,6 +7,7 @@ import { AppProvider } from './context/AppContext';
 import './styles/global.css';
 import './styles/os-layouts.css';
 import './styles/ui-polish.css';
+import './styles/shape-language.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

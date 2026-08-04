@@ -111,12 +111,12 @@ export function InterfaceStyleModal({
           </span>
           <ChevronRight size={16} className="iface-tool-chevron" aria-hidden />
         </button>
-        <div className="iface-settings-hub">
-          {HUB.map(({ id, label, description, Icon }) => (
+        <div className="iface-settings-hub shape-hub">
+          {HUB.map(({ id, label, description, Icon }, index) => (
             <button
               key={id}
               type="button"
-              className="iface-hub-card"
+              className={`iface-hub-card shape-hub-card shape-hub-${index % 4}`}
               onClick={() => setView(id)}
             >
               <span className="iface-hub-ico" aria-hidden>

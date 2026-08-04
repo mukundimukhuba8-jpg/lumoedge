@@ -320,7 +320,8 @@ export function ChartScannerPage() {
           </div>
         </header>
 
-        <section className="scan-stage scan-stage-hero" aria-label="Chart scanner">
+        <section className="scan-stage scan-stage-hero shape-hero" aria-label="Chart scanner">
+          <div className="shape-hero-aura" aria-hidden />
           <div
             className={`scan-radar${scanning ? ' active' : ''}${
               scanning && scanPreview ? ' has-image' : ''
@@ -348,24 +349,24 @@ export function ChartScannerPage() {
               ? 'AI reads the exact symbol & timeframe from your chart image.'
               : 'Demo picks a random symbol until CHART_SCAN_API_KEY is set on Vercel.'}
           </p>
-          <div className="scan-actions">
+          <div className="scan-actions shape-actions">
             <button
               type="button"
-              className="scan-action"
+              className="scan-action shape-action-circle"
               disabled={scanning || scansLeft <= 0}
               onClick={() => cameraRef.current?.click()}
             >
-              <Camera size={18} />
-              Camera
+              <Camera size={20} />
+              <span>Camera</span>
             </button>
             <button
               type="button"
-              className="scan-action"
+              className="scan-action shape-action-capsule"
               disabled={scanning || scansLeft <= 0}
               onClick={() => uploadRef.current?.click()}
             >
               <Upload size={18} />
-              Upload
+              <span>Upload</span>
             </button>
           </div>
           <p className="muted scan-hint">
@@ -407,7 +408,7 @@ export function ChartScannerPage() {
         ) : null}
 
         {aiLive === false ? (
-          <div className="scan-alert-card" role="status">
+          <div className="scan-alert-card shape-polygon" role="status">
             <strong>Demo assistance only</strong>
             <div>
               OpenAI key is not on the live server yet. In Vercel → Settings →
@@ -420,13 +421,14 @@ export function ChartScannerPage() {
           </div>
         ) : null}
 
-        <section className="scan-secondary" aria-label="Trade settings">
-          <div className="scan-row">
-            <div className="scan-card scan-mini">
+        <section className="scan-secondary shape-secondary" aria-label="Trade settings">
+          <div className="scan-row shape-widget-row">
+            <div className="scan-card scan-mini shape-island-squircle">
               <div className="muted scan-mini-label">Trades (Max 20)</div>
               <div className="scan-stepper">
                 <button
                   type="button"
+                  className="shape-step-round"
                   onClick={() => setTrades((n) => Math.max(1, n - 1))}
                   aria-label="Fewer trades"
                 >
@@ -435,6 +437,7 @@ export function ChartScannerPage() {
                 <strong>{trades}</strong>
                 <button
                   type="button"
+                  className="shape-step-round"
                   onClick={() => setTrades((n) => Math.min(20, n + 1))}
                   aria-label="More trades"
                 >
@@ -442,7 +445,7 @@ export function ChartScannerPage() {
                 </button>
               </div>
             </div>
-            <div className="scan-card scan-mini">
+            <div className="scan-card scan-mini shape-island-pill">
               <div className="muted scan-mini-label">Lot Size</div>
               <input
                 className="scan-lot"
@@ -453,7 +456,7 @@ export function ChartScannerPage() {
             </div>
           </div>
 
-          <div className="scan-card scan-auto">
+          <div className="scan-auto shape-open-strip">
             <div>
               <strong>Auto Trade</strong>
               <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
@@ -479,9 +482,9 @@ export function ChartScannerPage() {
         </section>
 
         {phase !== 'idle' || lastResult ? (
-          <div className="scan-reveal">
+          <div className="scan-reveal shape-reveal">
             {phase === 'scanning' ? (
-              <div className="scan-card scan-phase-card scanning">
+              <div className="scan-card scan-phase-card scanning shape-phase-orb">
                 <div className="scan-phase-pulse" />
                 <strong>Scanning chart…</strong>
                 <p className="muted">Reading symbol, direction &amp; setup</p>
@@ -490,7 +493,7 @@ export function ChartScannerPage() {
 
             {(phase === 'symbol' || phase === 'direction' || phase === 'accuracy') &&
             lastResult ? (
-              <div className="scan-card scan-phase-card pop-in">
+              <div className="scan-card scan-phase-card pop-in shape-phase-diagonal">
                 <div className="muted scan-phase-label">
                   Symbol detected — tap to correct
                 </div>
@@ -519,7 +522,7 @@ export function ChartScannerPage() {
 
             {(phase === 'direction' || phase === 'accuracy') && lastResult ? (
               <div
-                className={`scan-card scan-phase-card pop-in direction ${
+                className={`scan-card scan-phase-card pop-in direction shape-phase-hex ${
                   lastResult.direction === 'sell' ? 'sell' : 'buy'
                 }`}
               >
@@ -561,7 +564,7 @@ export function ChartScannerPage() {
             ) : null}
 
             {phase === 'accuracy' && lastResult ? (
-              <div className="scan-card scan-phase-card pop-in accuracy-box">
+              <div className="scan-card scan-phase-card pop-in accuracy-box shape-phase-feature">
                 <div className="muted scan-phase-label">Accuracy</div>
                 <div className="scan-accuracy">{accuracy}%</div>
                 <div className="scan-accuracy-bar">
@@ -587,17 +590,20 @@ export function ChartScannerPage() {
         ) : null}
 
         {history.length > 0 ? (
-          <div className="scan-history">
+          <div className="scan-history shape-history">
             <div className="scan-history-title">Scan history</div>
             <div className="scan-history-list">
-              {history.map((h) => {
+              {history.map((h, index) => {
                 const { time, date } = formatScanTime(h.createdAt);
                 const symbol = (h.symbol || 'XAUUSD').toUpperCase();
                 const signal = (h.direction || 'buy').toUpperCase();
                 const expanded = expandedHistoryId === h.id;
                 const status = scanResultStatus(h.accuracy);
                 return (
-                  <div key={h.id} className="scan-history-row-wrap">
+                  <div
+                    key={h.id}
+                    className={`scan-history-row-wrap shape-history-item shape-history-item-${index % 3}`}
+                  >
                     <button
                       type="button"
                       className={`scan-history-row${expanded ? ' open' : ''}`}
