@@ -18,14 +18,32 @@ import {
 import { startMt5KeepAlive } from '../lib/mt5Session';
 import { findInVault } from '../lib/storage';
 
-function assistantMessage(pathname: string) {
+function assistantLines(pathname: string, eaName: string, isPaused: boolean) {
   if (pathname.startsWith('/app/scanner')) {
-    return 'Chart Scanner AI is active. Upload an MT5 chart screenshot to scan.';
+    return [
+      'Connecting to Unlimited Bull...',
+      'License verified.',
+      'Chart Scanner online.',
+      'Upload an MT5 chart to analyse.',
+      'AI ready.',
+    ];
   }
   if (pathname.startsWith('/app/metatrader')) {
-    return 'Connect your broker account to let your EA send trades to MetaTrader.';
+    return [
+      'Connecting to Unlimited Bull...',
+      'License verified.',
+      'MetaTrader bridge standing by.',
+      'Link your broker to send trades.',
+      'AI ready.',
+    ];
   }
-  return 'Lumo AI assistant will help with chart scans and trade tips soon.';
+  return [
+    'Connecting to Unlimited Bull...',
+    'License verified.',
+    `${eaName} ${isPaused ? 'is paused' : 'is online'}.`,
+    'Trading engine standing by.',
+    'AI ready.',
+  ];
 }
 
 /**
@@ -91,7 +109,11 @@ export function ClientOsShell() {
         <FloatingAiAssistant
           className="os-shell-ai"
           title="Lumo AI"
-          message={assistantMessage(location.pathname)}
+          lines={assistantLines(
+            location.pathname,
+            bot.displayName || bot.name || 'Lumo Edge',
+            isPaused,
+          )}
         />
       </div>
     </CopyTradeProvider>

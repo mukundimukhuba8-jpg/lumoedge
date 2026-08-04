@@ -2729,13 +2729,38 @@ a {
 
 .ea-status-card {
   position: relative;
-  width: min(100%, 340px);
-  background: #0c130e;
-  border: 1px solid rgba(52, 211, 153, 0.35);
-  border-radius: 22px;
-  padding: 26px 20px 20px;
+  width: min(100%, 320px);
+  aspect-ratio: 1;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(var(--accent-rgb), 0.18), transparent 55%),
+    rgba(8, 10, 16, 0.94);
+  border: 1px solid rgba(var(--accent-rgb), 0.42);
+  border-radius: 50%;
+  padding: 34px 28px 28px;
   text-align: center;
-  box-shadow: 0 0 40px rgba(16, 185, 129, 0.18), 0 18px 50px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 0 48px rgba(var(--accent-rgb), 0.28),
+    0 22px 50px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px);
+  animation: ea-status-pop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes ea-status-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.72);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: none;
+  }
 }
 
 .ea-status-x {
@@ -2760,19 +2785,19 @@ a {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  border: 2.5px solid #34d399;
-  box-shadow: 0 0 22px rgba(52, 211, 153, 0.5);
+  border: 2.5px solid var(--electric);
+  box-shadow: 0 0 22px rgba(var(--accent-rgb), 0.55);
   overflow: hidden;
   display: grid;
   place-items: center;
-  background: #0a0f0c;
+  background: rgba(8, 10, 16, 0.9);
 }
 
 .ea-status-live-ring {
   position: absolute;
   inset: -8px;
   border-radius: 50%;
-  border: 2px solid rgba(52, 211, 153, 0.55);
+  border: 2px solid rgba(var(--accent-rgb), 0.55);
   animation: ea-float-pulse 1.8s ease-in-out infinite;
   pointer-events: none;
 }
@@ -2823,8 +2848,8 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  border: 1px solid rgba(52, 211, 153, 0.6);
-  color: #34d399;
+  border: 1px solid rgba(var(--accent-rgb), 0.65);
+  color: var(--electric);
   border-radius: 999px;
   padding: 5px 14px;
   font-size: 11px;
@@ -2836,8 +2861,8 @@ a {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #34d399;
-  box-shadow: 0 0 8px #34d399;
+  background: var(--electric);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.8);
 }
 
 .ea-status-pill.off {
@@ -2860,34 +2885,41 @@ a {
 }
 
 .ea-status-toggle {
-  width: 100%;
+  width: min(100%, 220px);
   border-radius: 999px;
-  padding: 13px;
-  font-size: 14px;
+  padding: 12px 16px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 1.6px;
-  background: #34d399;
-  color: #06281c;
-  box-shadow: 0 0 22px rgba(52, 211, 153, 0.45);
-  margin-bottom: 14px;
+  background: var(--electric);
+  color: #061018;
+  box-shadow: 0 0 22px rgba(var(--accent-rgb), 0.45);
+  margin-bottom: 12px;
 }
 
 .ea-status-toggle.start {
-  background: #10b981;
-  color: #eafff5;
+  background: var(--electric);
+  color: #061018;
 }
 
 .ea-status-terminal {
   text-align: left;
-  background: #071009;
-  border: 1px solid rgba(52, 211, 153, 0.25);
-  border-radius: 12px;
-  padding: 12px 14px;
+  width: min(100%, 240px);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  border-radius: 16px;
+  padding: 10px 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12.5px;
-  line-height: 1.9;
-  color: #34d399;
-  min-height: 118px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: rgb(var(--accent-rgb));
+  max-height: 96px;
+  overflow: auto;
+}
+
+.ea-status-name {
+  font-size: 18px !important;
+  margin: 8px 0 10px !important;
 }
 
 /* ——— Welcome splash (boot screen) ——— */

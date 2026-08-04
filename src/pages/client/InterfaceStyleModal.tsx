@@ -3,11 +3,9 @@ import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   Check,
-  ChevronRight,
   ImagePlus,
   Layers,
   Palette,
-  ScanSearch,
   Sparkles,
   SlidersHorizontal,
   Type,
@@ -44,7 +42,8 @@ type Props = {
   avatarUrl: string;
   mentorBgUrl: string;
   mentorMedia?: MentorMediaItem[];
-  onOpenScanner: () => void;
+  /** @deprecated Scanner is a tool, not a Settings category. */
+  onOpenScanner?: () => void;
 };
 
 type HubId = StyleTab;
@@ -54,14 +53,57 @@ const HUB: {
   label: string;
   description: string;
   Icon: typeof Palette;
+  size: 'hero' | 'wide' | 'tall' | 'compact';
 }[] = [
-  { id: 'themes', label: 'Appearance', description: 'Theme atmosphere and base surfaces', Icon: Palette },
-  { id: 'fonts', label: 'Typography', description: 'Display and body typefaces', Icon: Type },
-  { id: 'colours', label: 'Colours', description: 'Accent colour across the whole OS', Icon: Palette },
-  { id: 'effects', label: 'Effects', description: 'Ambient motion layers', Icon: Sparkles },
-  { id: 'custom', label: 'Backgrounds', description: 'Mentor art and custom media', Icon: ImagePlus },
-  { id: 'layouts', label: 'Layouts', description: 'Interface architecture', Icon: Layers },
-  { id: 'settings', label: 'Advanced', description: 'Motion and system polish', Icon: SlidersHorizontal },
+  {
+    id: 'themes',
+    label: 'Appearance',
+    description: 'Theme atmosphere and base surfaces',
+    Icon: Palette,
+    size: 'hero',
+  },
+  {
+    id: 'layouts',
+    label: 'Layouts',
+    description: 'Interface architecture',
+    Icon: Layers,
+    size: 'tall',
+  },
+  {
+    id: 'colours',
+    label: 'Colours',
+    description: 'Accent across the whole OS',
+    Icon: Palette,
+    size: 'compact',
+  },
+  {
+    id: 'fonts',
+    label: 'Typography',
+    description: 'Display and body typefaces',
+    Icon: Type,
+    size: 'wide',
+  },
+  {
+    id: 'custom',
+    label: 'Backgrounds',
+    description: 'Mentor art and custom media',
+    Icon: ImagePlus,
+    size: 'compact',
+  },
+  {
+    id: 'effects',
+    label: 'Effects',
+    description: 'Ambient motion layers',
+    Icon: Sparkles,
+    size: 'compact',
+  },
+  {
+    id: 'settings',
+    label: 'Advanced',
+    description: 'Motion, system polish, tool notes',
+    Icon: SlidersHorizontal,
+    size: 'wide',
+  },
 ];
 
 export function InterfaceStyleModal({
@@ -72,7 +114,6 @@ export function InterfaceStyleModal({
   avatarUrl,
   mentorBgUrl,
   mentorMedia = [],
-  onOpenScanner,
 }: Props) {
   const [view, setView] = useState<'hub' | HubId>('hub');
   const uploaded = ALL_MEDIA_SLOTS.map((slot) => ({
@@ -99,34 +140,23 @@ export function InterfaceStyleModal({
     body = (
       <>
         <p className="muted iface-intro">
-          Personalize your operating system. Each category opens a focused settings panel.
+          Customise the operating system — look, feel, motion, and behaviour.
         </p>
-        <button type="button" className="iface-tool iface-tool-premium" onClick={onOpenScanner}>
-          <span className="iface-tool-icon">
-            <ScanSearch size={20} />
-          </span>
-          <span className="iface-tool-copy">
-            <strong>Chart Scanner</strong>
-            <span className="muted">AI chart analysis &amp; auto trade</span>
-          </span>
-          <ChevronRight size={16} className="iface-tool-chevron" aria-hidden />
-        </button>
-        <div className="iface-settings-hub shape-hub">
-          {HUB.map(({ id, label, description, Icon }, index) => (
+        <div className="iface-bento">
+          {HUB.map(({ id, label, description, Icon, size }) => (
             <button
               key={id}
               type="button"
-              className={`iface-hub-card shape-hub-card shape-hub-${index % 4}`}
+              className={`iface-bento-card iface-bento-${size}`}
               onClick={() => setView(id)}
             >
-              <span className="iface-hub-ico" aria-hidden>
+              <span className="iface-bento-ico" aria-hidden>
                 <Icon size={18} />
               </span>
-              <span className="iface-hub-copy">
+              <span className="iface-bento-copy">
                 <strong>{label}</strong>
                 <span>{description}</span>
               </span>
-              <ChevronRight size={16} className="iface-hub-chevron" aria-hidden />
             </button>
           ))}
         </div>
@@ -370,7 +400,7 @@ export function InterfaceStyleModal({
     body = (
       <>
         <p className="muted iface-intro">
-          Control motion and polish. Disabling animations improves battery on older devices.
+          System behaviour and polish. Tool-specific controls stay with their screens.
         </p>
         <div className="iface-settings-list">
           <label className="iface-setting-row">
@@ -387,6 +417,13 @@ export function InterfaceStyleModal({
               <span />
             </button>
           </label>
+          <div className="iface-advanced-note">
+            <strong>Chart Scanner</strong>
+            <p className="muted">
+              Auto trade, lot size, trades count, and confidence behaviour live on the Scanner
+              screen — not in system Settings.
+            </p>
+          </div>
         </div>
       </>
     );
@@ -452,7 +489,12 @@ export function InterfaceStyleModal({
         <FloatingAiAssistant
           className="iface-ai-orb"
           title="Lumo AI"
-          message="Lumo AI assistant will help with chart scans and trade tips soon."
+          lines={[
+            'Connecting to Unlimited Bull...',
+            'License verified.',
+            'Operating system online.',
+            'AI ready.',
+          ]}
         />
       </div>
     </div>,
