@@ -87,6 +87,7 @@ import {
   isApprovedAdminRole,
   mergeAdminsForApprovalSync,
   normalizeAdminRole,
+  pickAdminRole,
 } from '../lib/adminQueue';
 import { MENTOR_AUTH_MSG } from '../lib/mentorAuthUi';
 import {
@@ -108,6 +109,8 @@ import { healLicensesFromVault } from '../lib/repairLicenses';
 let licensePublishInFlight = 0;
 const IMAGE_STORE = 'ub-web/ea-images-v1';
 const lastServerEasRepair = new Map<string, number>();
+/** One empty-license heal per mentor per session — stops fetch storms that freeze phones */
+const emptyLicenseHealedAt = new Map<string, number>();
 const SERVER_EAS_REPAIR_COOLDOWN_MS = 45_000;
 const SUPER_ADMIN_ID = 'LM-004821';
 
@@ -1509,11 +1512,17 @@ function applyRemoteAdmins(
     void pushDb({ auth: { admins, admin: null } }).catch(() => undefined);
   }
   let admin = prev.admin;
-    if (admin && normalizeAdminRole(admin.role) !== 'super') {
+  if (admin && normalizeAdminRole(admin.role) !== 'super') {
     const remote = admins.find(
       (a) => a.email.toLowerCase() === admin!.email.toLowerCase(),
     );
-    if (!remote || normalizeAdminRole(remote.role) !== 'admin') admin = null;
+    // Keep mentor session when either roster says admin (Firebase lag after approve)
+    const effective = pickAdminRole(remote?.role, admin.role);
+    if (effective !== 'admin') {
+      admin = null;
+    } else if (normalizeAdminRole(admin.role) !== 'admin') {
+      admin = { ...admin, role: 'admin' };
+    }
   }
   return { portalOpen: prev.portalOpen, admin, admins };
 }
@@ -2033,8 +2042,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         mentorId,
         loadJSON<StoreState>(STORE_KEY, { workspaces: {} }).workspaces[mentorId]?.revokedKeys ?? [],
       );
-      if (visibleLicenses.length === 0) {
-        invalidateFetchDbCache();
+      // Empty list is normal for new mentors — do NOT invalidate+refetch every poll (froze phones)
+      const lastEmptyHeal = emptyLicenseHealedAt.get(mentorId) || 0;
+      if (visibleLicenses.length === 0 && Date.now() - lastEmptyHeal > 120_000) {
+        emptyLicenseHealedAt.set(mentorId, Date.now());
         const fresh = await fetchDb();
         if (fresh?.vault && licensePublishInFlight === 0) {
           const revoked = loadRevokedKeys();
@@ -2049,16 +2060,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
         const merged = hydrateLicenseRemote(fresh);
         if (merged) {
-          setStore(healAllWorkspacesFromVault(merged));
+          setStore(healMentorWorkspaceInStore(merged, mentorId));
         } else {
           setStore((prev) => healMentorWorkspaceInStore(prev, mentorId));
-        }
-        const list = await fetchClients();
-        if (list) {
-          const remoteDeleted = await fetchRemoteDeletedClients();
-          setClients((prev) =>
-            mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted),
-          );
         }
       }
       } finally {
@@ -2533,24 +2537,25 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           auth.admins,
           remoteAdmins,
         ) as AdminUser[];
-        setAuth((prev) => {
-          const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
-          saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
-          return nextAuth;
-        });
 
         const remoteHit = remoteAdmins.find(
           (a) => a.email.toLowerCase() === normalized,
         );
-        const localHit = roster.find((a) => a.email.toLowerCase() === normalized);
+        const localHit =
+          roster.find((a) => a.email.toLowerCase() === normalized) ||
+          auth.admins.find((a) => a.email.toLowerCase() === normalized);
         const hit = remoteHit || localHit;
         if (!hit) {
           return MENTOR_AUTH_MSG.invalidCredentials;
         }
 
-        const role = normalizeAdminRole(remoteHit?.role ?? hit.role);
-        if (hit.password !== password) {
-          if (role === 'pending') return mentorPendingLoginMessage();
+        // Admin wins — local approve must not be blocked by lagging Firebase pending
+        const role = pickAdminRole(remoteHit?.role, localHit?.role);
+        const passwordOk = [remoteHit, localHit, hit].some(
+          (c) => c && String(c.password || '') === password,
+        );
+        if (!passwordOk) {
+          // Wrong password — never mask as "awaiting approval"
           return MENTOR_AUTH_MSG.invalidCredentials;
         }
         if (role === 'pending') {
@@ -2562,10 +2567,31 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
         const mentor: AdminUser = {
           ...hit,
+          ...(localHit || {}),
           ...(remoteHit || {}),
+          // Prefer Firebase id when present (approve/patch match)
+          id: String(remoteHit?.id || localHit?.id || hit.id),
           role: 'admin',
           email: normalized,
+          password,
         };
+
+        // Persist roster after auth decision — never demote pre-login
+        setAuth((prev) => {
+          const nextAdmins = mergeAdminsForApprovalSync(prev.admins, [
+            ...remoteAdmins,
+            mentor,
+          ]) as AdminUser[];
+          const nextAuth = {
+            ...prev,
+            admins: nextAdmins,
+            admin: null,
+            portalOpen: false,
+          };
+          saveJSON(AUTH_KEY, nextAuth);
+          return nextAuth;
+        });
+
         if (!store.workspaces[mentor.id]) {
           saveStore(
             {
@@ -2579,7 +2605,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           );
         }
         const { password: _p, ...user } = mentor;
-        saveAuth({ ...auth, admin: user, portalOpen: true });
+        saveAuth({ ...auth, admins: roster, admin: user, portalOpen: true });
+        // Heal Firebase if it still says pending after a successful local approve
+        if (normalizeAdminRole(remoteHit?.role) === 'pending') {
+          void patchAdminRole(mentor.email, 'admin', mentor as unknown as Record<string, unknown>).catch(
+            () => undefined,
+          );
+        }
         approvalLog('mentor', 'login_success', { email: normalized, id: user.id });
         return null;
         } catch (err) {

@@ -568,13 +568,35 @@ export async function firebasePatchAdminRole(
         return hit;
       });
 
+      if (!hit && fallback?.email) {
+        const email = String(fallback.email || '').trim().toLowerCase();
+        admins = admins.map((a) => {
+          if (String(a.email || '').trim().toLowerCase() !== email) return a;
+          hit = { ...a, role: pickAdminRole(a.role, role) as AdminLike['role'] };
+          return hit;
+        });
+      }
+
       if (!hit && fallback) {
+        const email = String(fallback.email || '').trim().toLowerCase();
         hit = {
           ...fallback,
-          email: String(fallback.email || '').trim().toLowerCase(),
+          email,
           role: pickAdminRole(fallback.role, role),
         } as AdminLike;
-        admins = mergeAdmins(admins, [hit]);
+        let found = false;
+        admins = admins.map((a) => {
+          if (String(a.email || '').trim().toLowerCase() !== email) return a;
+          found = true;
+          hit = {
+            ...a,
+            ...hit,
+            id: a.id || (hit as AdminLike).id,
+            role: pickAdminRole(a.role, (hit as AdminLike).role),
+          } as AdminLike;
+          return hit;
+        });
+        if (!found) admins = mergeAdmins(admins, [hit]);
       }
 
       if (!hit) return null;
@@ -584,7 +606,14 @@ export async function firebasePatchAdminRole(
         admin: null,
       });
       await set(ref(getFirebaseDb(), `${ROOT}/updatedAt`), new Date().toISOString());
-      return hit as Record<string, unknown>;
+      const email = String((hit as AdminLike).email || '')
+        .trim()
+        .toLowerCase();
+      const written =
+        admins.find(
+          (a) => String(a.email || '').trim().toLowerCase() === email,
+        ) || hit;
+      return written as Record<string, unknown>;
     } catch (err) {
       console.warn('[firebase] patchAdminRole failed', err);
       return null;

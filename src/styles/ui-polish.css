@@ -386,11 +386,8 @@ h1, h2, h3,
   align-items: flex-end;
   gap: 0;
   z-index: 30;
+  /* Root never steals taps — only the orb / open panel may */
   pointer-events: none;
-}
-
-.ai-orb-root > * {
-  pointer-events: auto;
 }
 
 .ai-orb {
@@ -404,6 +401,7 @@ h1, h2, h3,
   display: grid;
   place-items: center;
   z-index: 2;
+  pointer-events: auto;
   transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -461,12 +459,15 @@ h1, h2, h3,
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   transform-origin: bottom right;
   opacity: 0;
+  visibility: hidden;
   transform: translateY(18px) scale(0.28);
-  pointer-events: none;
+  /* Closed panel used to capture taps and block Start / Scanner on iPhone */
+  pointer-events: none !important;
   overflow: hidden;
   transition:
     opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0.28s linear,
     width 0.25s ease,
     height 0.25s ease;
   z-index: 1;
@@ -474,14 +475,16 @@ h1, h2, h3,
 
 .ai-term.is-open {
   opacity: 1;
+  visibility: visible;
   transform: translateY(0) scale(1);
-  pointer-events: auto;
+  pointer-events: auto !important;
 }
 
 .ai-term.is-closing {
   opacity: 0;
+  visibility: hidden;
   transform: translateY(14px) scale(0.35);
-  pointer-events: none;
+  pointer-events: none !important;
 }
 
 .ai-term-glow {

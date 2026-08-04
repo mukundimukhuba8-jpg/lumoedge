@@ -132,8 +132,15 @@ export function CopyTradeProvider({
 
     rememberLicenseOwner(licenseKey, mentorId);
     let primed = false;
+    let cancelled = false;
+    const timers: number[] = [];
+    const track = (id: number) => {
+      timers.push(id);
+      return id;
+    };
 
     const showSignalPopup = (order: CopyOrderPayload, label: string) => {
+      if (cancelled) return;
       const sideLabel = order.side === 'sell' ? 'sell' : 'buy';
       setPopupEaName(label);
       setPopupSide(sideLabel);
@@ -148,6 +155,7 @@ export function CopyTradeProvider({
     };
 
     const handleOrders = (rawOrders: Array<Record<string, unknown>>) => {
+      if (cancelled) return;
       const orders = sortCopyOrders(rawOrders).filter((row) =>
         orderForClient(row, clientEaId || ''),
       );
@@ -188,24 +196,32 @@ export function CopyTradeProvider({
       showSignalPopup(order, label);
 
       if (!mt5Linked) {
-        window.setTimeout(() => {
-          setPopupPhase('failed');
-          setPopupMessage('Connect MetaTrader or run LumoEdgeCopy.mq5 on VPS');
-          setPopupProgress(100);
-          markProcessed(mentorId, orderId);
-          setEngineSignal('idle');
-          setStatusLabel('Signal Received');
-          setStatusDetail(`${label} sent a trade — connect MT5 to execute.`);
-        }, 2200);
+        track(
+          window.setTimeout(() => {
+            if (cancelled) return;
+            setPopupPhase('failed');
+            setPopupMessage('Connect MetaTrader or run LumoEdgeCopy.mq5 on VPS');
+            setPopupProgress(100);
+            markProcessed(mentorId, orderId);
+            setEngineSignal('idle');
+            setStatusLabel('Signal Received');
+            setStatusDetail(`${label} sent a trade — connect MT5 to execute.`);
+          }, 2200),
+        );
         return;
       }
 
-      window.setTimeout(() => {
-        setPopupPhase('executing');
-        setPopupProgress(52);
-        setStatusLabel('Executing Trade');
-        setStatusDetail(`Opening ${order.side.toUpperCase()} ${order.symbol} · ${order.comment}`);
-      }, 650);
+      track(
+        window.setTimeout(() => {
+          if (cancelled) return;
+          setPopupPhase('executing');
+          setPopupProgress(52);
+          setStatusLabel('Executing Trade');
+          setStatusDetail(
+            `Opening ${order.side.toUpperCase()} ${order.symbol} · ${order.comment}`,
+          );
+        }, 650),
+      );
 
       void executeCopyOrder({
         email,
@@ -213,6 +229,7 @@ export function CopyTradeProvider({
         order,
         mentorId,
       }).then((result) => {
+        if (cancelled) return;
         if (result.message === 'Already copied') {
           setPopupOpen(false);
           setEngineSignal('idle');
@@ -229,11 +246,14 @@ export function CopyTradeProvider({
           setPopupProgress(100);
           setStatusLabel('Trade Sent Successfully');
           setStatusDetail(result.message);
-          window.setTimeout(() => {
-            setEngineSignal('idle');
-            setStatusLabel('Waiting for Signal');
-            setStatusDetail('Listening for copy trades from your mentor EA…');
-          }, 3200);
+          track(
+            window.setTimeout(() => {
+              if (cancelled) return;
+              setEngineSignal('idle');
+              setStatusLabel('Waiting for Signal');
+              setStatusDetail('Listening for copy trades from your mentor EA…');
+            }, 3200),
+          );
           return;
         }
 
@@ -255,7 +275,11 @@ export function CopyTradeProvider({
     );
 
     const unsub = firebaseWatchMentorOrders(mentorId, handleOrders);
-    return () => unsub();
+    return () => {
+      cancelled = true;
+      for (const id of timers) window.clearTimeout(id);
+      unsub();
+    };
   }, [email, licenseKey, eaName, clientEaId, isPaused, ownerAdminId, mt5Linked]);
 
   const value = useMemo<CopyTradeEngineState>(

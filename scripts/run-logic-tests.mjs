@@ -20,12 +20,8 @@ function pickAdminRole(a, b) {
 }
 
 function pickAdminRoleLive(liveRole, backupRole) {
-  const live = normalizeAdminRole(liveRole);
-  const backup = normalizeAdminRole(backupRole);
-  if (live === 'super') return 'super';
-  if (live === 'admin') return 'admin';
-  if (backup === 'admin') return 'pending';
-  return pickAdminRole(live, backup);
+  // Never demote approved mentors — admin always beats pending
+  return pickAdminRole(liveRole, backupRole);
 }
 
 function mergeAdminsLive(live, backup) {
@@ -45,6 +41,7 @@ function mergeAdminsLive(live, backup) {
     }
     const merged = { ...prev, ...item, email };
     merged.role = pickAdminRoleLive(prev.role, item.role);
+    if (prev.id) merged.id = prev.id;
     byEmail.set(email, merged);
   }
   return [...byEmail.values()];
@@ -63,17 +60,6 @@ function mergeAdminsForApprovalSync(local, remote) {
     if (!email || normalizeAdminRole(a.role) !== 'pending') continue;
     if (!byEmail.has(email)) {
       byEmail.set(email, { ...a, email, role: 'pending' });
-      continue;
-    }
-    const remoteHit = (remote || []).find(
-      (r) => String(r.email || '').trim().toLowerCase() === email,
-    );
-    const hit = byEmail.get(email);
-    if (
-      normalizeAdminRole(hit.role) === 'admin' &&
-      (!remoteHit || normalizeAdminRole(remoteHit.role) !== 'admin')
-    ) {
-      byEmail.set(email, { ...hit, role: 'pending' });
     }
   }
   return [...byEmail.values()];
@@ -145,8 +131,8 @@ function assert(name, cond) {
 console.log('\n=== Admin queue merge tests ===');
 
 assert(
-  'live pending beats stale backup admin',
-  pickAdminRoleLive('pending', 'admin') === 'pending',
+  'approved mentor is never demoted by lagging pending',
+  pickAdminRoleLive('pending', 'admin') === 'admin',
 );
 
 assert(
@@ -159,8 +145,8 @@ const sync3 = mergeAdminsForApprovalSync(
   [{ email: 'a@test.com', role: 'pending', id: '1' }],
 );
 assert(
-  'stale local admin reverted when remote says pending',
-  sync3.find((x) => x.email === 'a@test.com')?.role === 'pending',
+  'local admin kept when remote still pending (approve lag)',
+  sync3.find((x) => x.email === 'a@test.com')?.role === 'admin',
 );
 
 const sync2 = mergeAdminsForApprovalSync(

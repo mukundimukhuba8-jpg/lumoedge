@@ -17,7 +17,7 @@ import {
   resolveCustomBackdrop,
   resolveProfileImage,
 } from '../lib/mentorMedia';
-import { getMt5Token, startMt5KeepAlive } from '../lib/mt5Session';
+import { getMt5Token, startMt5KeepAlive, stopMt5KeepAlive } from '../lib/mt5Session';
 import { findInVault, resolveStoredMediaUrl } from '../lib/storage';
 
 function assistantLines(pathname: string, eaName: string, isPaused: boolean) {
@@ -67,7 +67,9 @@ export function ClientOsShell() {
   useEffect(() => subscribeInterfacePrefs(() => setPrefs(loadInterfacePrefs())), []);
 
   useEffect(() => {
-    if (user?.email) startMt5KeepAlive(user.email);
+    if (!user?.email) return;
+    startMt5KeepAlive(user.email);
+    return () => stopMt5KeepAlive(user.email);
   }, [user?.email]);
 
   useEffect(() => {
