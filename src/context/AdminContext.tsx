@@ -509,20 +509,54 @@ async function syncPortalBrandingToClients(
         changed = true;
       }
     }
+    const imagePayload: Record<string, string> = {};
+    if (displayImage) {
+      imagePayload[`profile-${adminId}`] = displayImage;
+    }
+    for (const item of normalizeCustomMedia(ws.profile.customMedia)) {
+      if (!item.url) continue;
+      const mediaKeyId = `${adminId}-${item.slot}`;
+      const bytes =
+        item.url.startsWith('data:')
+          ? item.url
+          : getEaImage(mediaKeyId) ||
+            getEaImage(`img:${mediaKeyId}`) ||
+            getEaImage(imageKeyFromPublicUrl(item.url));
+      if (bytes && bytes.startsWith('data:')) {
+        imagePayload[mediaKeyId] = bytes;
+      }
+    }
     const payload: Parameters<typeof pushDb>[0] = {
       store: { workspaces: { [adminId]: { ...ws, licenses: nextLicenses } } },
       vault: loadVault(),
     };
-    if (displayImage) {
-      payload.images = { [`profile-${adminId}`]: displayImage };
+    if (Object.keys(imagePayload).length) {
+      payload.images = imagePayload;
     }
     if (changed) payload.sessions = sessions;
     await pushDb(payload);
   } catch {
+    const imagePayload: Record<string, string> = {};
+    if (displayImage) {
+      imagePayload[`profile-${adminId}`] = displayImage;
+    }
+    for (const item of normalizeCustomMedia(ws.profile.customMedia)) {
+      if (!item.url) continue;
+      const mediaKeyId = `${adminId}-${item.slot}`;
+      const bytes =
+        item.url.startsWith('data:')
+          ? item.url
+          : getEaImage(mediaKeyId) ||
+            getEaImage(`img:${mediaKeyId}`) ||
+            getEaImage(imageKeyFromPublicUrl(item.url));
+      if (bytes && bytes.startsWith('data:')) {
+        imagePayload[mediaKeyId] = bytes;
+      }
+    }
     await pushDb({
       store: { workspaces: { [adminId]: { ...ws, licenses: nextLicenses } } },
       vault: loadVault(),
-      ...(displayImage ? { images: { [`profile-${adminId}`]: displayImage } } : {}),
+      ...(Object.keys(imagePayload).length ? { images: imagePayload } : {}),
     });
   }
 

@@ -2802,18 +2802,12 @@ a {
   pointer-events: none;
 }
 
-.ea-float-avatar {
+.ea-float-orb {
   position: relative;
 }
 
-.ea-float-live::after {
-  content: '';
-  position: absolute;
-  inset: -7px;
-  border-radius: 50%;
-  border: 2px solid rgba(34, 211, 238, 0.55);
-  animation: ea-float-pulse 1.8s ease-in-out infinite;
-  pointer-events: none;
+.ea-float-orb.is-live .ea-float-pulse {
+  border-color: rgba(var(--accent-rgb, 59, 130, 246), 0.55);
 }
 
 @keyframes ea-float-pulse {

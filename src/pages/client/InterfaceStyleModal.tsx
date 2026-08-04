@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
@@ -30,6 +30,7 @@ import {
 import {
   BACKGROUND_SLOTS,
   isPlaceholderMentorImage,
+  normalizeCustomMedia,
   type MentorMediaItem,
 } from '../../lib/mentorMedia';
 import { getEaImage, resolveStoredMediaUrl } from '../../lib/storage';
@@ -38,12 +39,14 @@ function resolveBgPreview(url: string): string {
   const raw = String(url || '').trim();
   if (!raw) return '';
   const stored = resolveStoredMediaUrl(raw);
-  if (stored) return stored;
+  if (stored && (stored.startsWith('data:') || stored.startsWith('http') || stored.startsWith('blob:') || stored.startsWith('/'))) {
+    return stored;
+  }
   if (raw.startsWith('img:')) {
     const key = raw.replace(/^img:/, '');
     return getEaImage(key) || getEaImage(raw) || `/api/images/${encodeURIComponent(key)}`;
   }
-  if (raw.startsWith('/api/images/') || raw.startsWith('http') || raw.startsWith('data:')) {
+  if (raw.startsWith('/api/images/') || raw.startsWith('http') || raw.startsWith('data:') || raw.startsWith('blob:')) {
     return raw;
   }
   return getEaImage(raw) || `/api/images/${encodeURIComponent(raw)}`;
@@ -131,9 +134,29 @@ export function InterfaceStyleModal({
   mentorMedia = [],
 }: Props) {
   const [view, setView] = useState<'hub' | HubId>('hub');
+  const [resolvedMedia, setResolvedMedia] = useState<MentorMediaItem[]>(() =>
+    normalizeCustomMedia(mentorMedia),
+  );
+
+  useEffect(() => {
+    setResolvedMedia(normalizeCustomMedia(mentorMedia));
+  }, [mentorMedia]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void import('../../lib/clientBrandingSync').then(async ({ hydrateCustomMediaImages }) => {
+      const next = await hydrateCustomMediaImages(mentorMedia);
+      if (!cancelled && next.length) setResolvedMedia(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mentorMedia]);
+
   const uploaded = BACKGROUND_SLOTS.map((slot) => ({
     ...slot,
-    item: (mentorMedia || []).find((m) => m.slot === slot.id),
+    item: resolvedMedia.find((m) => m.slot === slot.id),
   })).filter((s) => Boolean(s.item?.url));
 
   const activeHub = useMemo(() => HUB.find((h) => h.id === view), [view]);
@@ -386,18 +409,26 @@ export function InterfaceStyleModal({
                 className={`iface-custom-card${active ? ' active' : ''}`}
                 onClick={() => setCustomBg(slot.id)}
               >
-                <div
-                  className="iface-custom-preview"
-                  style={
-                    item.kind !== 'video' && previewUrl
-                      ? { backgroundImage: `url(${previewUrl})` }
-                      : undefined
-                  }
-                >
+                <div className="iface-custom-preview">
                   {item.kind === 'video' && previewUrl ? (
                     <video src={previewUrl} muted playsInline autoPlay loop />
-                  ) : null}
-                  {!previewUrl ? <span className="muted">Loading…</span> : null}
+                  ) : previewUrl ? (
+                    <img
+                      className="iface-custom-preview-img"
+                      src={previewUrl}
+                      alt=""
+                      onError={(e) => {
+                        const el = e.currentTarget;
+                        if (item.url.startsWith('img:') && !el.dataset.retry) {
+                          el.dataset.retry = '1';
+                          const key = item.url.replace(/^img:/, '');
+                          el.src = `/api/images/${encodeURIComponent(key)}`;
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span className="muted">Loading…</span>
+                  )}
                 </div>
                 <div className="iface-custom-meta">
                   {active ? <Check size={14} color="var(--electric)" /> : null}

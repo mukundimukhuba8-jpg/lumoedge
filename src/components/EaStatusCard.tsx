@@ -155,7 +155,11 @@ type FloatProps = {
   onOpen: () => void;
 };
 
-/** Persistent floating EA avatar — stays until paused. Tap opens full circle card. */
+/**
+ * Persistent floating EA avatar (the circled face).
+ * Stays on screen while the EA is live; tap opens the full circular popup.
+ * Hidden after STOP / pause.
+ */
 export function EaStatusFloat({
   visible,
   eaTitle,
@@ -167,21 +171,20 @@ export function EaStatusFloat({
   return (
     <button
       type="button"
-      className={`ea-float-chip${isPaused ? ' is-paused' : ' is-live'}`}
+      className={`ea-float-orb${isPaused ? ' is-paused' : ' is-live'}`}
       onClick={onOpen}
-      aria-label={`${eaTitle} status`}
+      aria-label={`Open ${eaTitle} status`}
     >
-      <span className="ea-float-avatar">
-        {!isPaused ? <span className="ea-float-pulse" aria-hidden /> : null}
+      {!isPaused ? <span className="ea-float-pulse" aria-hidden /> : null}
+      <span className="ea-float-orb-face">
         {isMentorProfileImage(avatarUrl) ? (
           <img src={avatarUrl} alt="" />
         ) : (
           <span aria-hidden>{(eaTitle || 'L').slice(0, 1)}</span>
         )}
       </span>
-      <span className="ea-float-meta">
-        <strong>{eaTitle}</strong>
-        <em>{isPaused ? 'STOPPED' : 'LIVE'}</em>
+      <span className="ea-float-orb-badge" aria-hidden>
+        {isPaused ? 'STOP' : 'LIVE'}
       </span>
     </button>
   );

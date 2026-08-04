@@ -2,11 +2,18 @@
 
 import type { LicenseSync } from '../context/AppContext';
 import { dbList, firebaseFetchImage } from './firebaseDb';
-import { isPlaceholderMentorImage, isGenericLumoLabel, normalizeCustomMedia } from './mentorMedia';
+import {
+  isPlaceholderMentorImage,
+  isGenericLumoLabel,
+  normalizeCustomMedia,
+  type MentorMediaItem,
+  type MentorMediaSlotId,
+} from './mentorMedia';
 import { fetchDb } from './remote';
 import {
   findInVault,
   getEaImage,
+  imagePublicUrl,
   isStreamableMediaUrl,
   keysMatch,
   loadJSON,
@@ -27,6 +34,96 @@ type VaultLike = {
   symbols?: string[];
   customMedia?: unknown[];
 };
+
+/** Union media slots — later sources fill empty slots / refresh urls. */
+export function mergeCustomMedia(...sources: unknown[]): MentorMediaItem[] {
+  const map = new Map<MentorMediaSlotId, MentorMediaItem>();
+  for (const src of sources) {
+    for (const item of normalizeCustomMedia(src)) {
+      if (!item.url) continue;
+      const prev = map.get(item.slot);
+      // Prefer non-empty, prefer http/data over bare img: when both exist
+      if (!prev) {
+        map.set(item.slot, item);
+        continue;
+      }
+      const prevWeak = prev.url.startsWith('img:') || prev.url.startsWith('/api/images/');
+      const nextStrong =
+        item.url.startsWith('http') ||
+        item.url.startsWith('data:') ||
+        item.url.startsWith('blob:');
+      if (prevWeak && nextStrong) map.set(item.slot, item);
+      else if (!prev.url) map.set(item.slot, item);
+      else map.set(item.slot, item);
+    }
+  }
+  return [...map.values()];
+}
+
+function mediaKeyFromUrl(url: string, ownerAdminId?: string, slot?: string): string {
+  const u = String(url || '').trim();
+  if (u.startsWith('img:')) return u.replace(/^img:/, '');
+  if (u.startsWith('/api/images/')) {
+    try {
+      return decodeURIComponent(u.replace('/api/images/', '').split('?')[0]);
+    } catch {
+      return u.replace('/api/images/', '').split('?')[0];
+    }
+  }
+  if (ownerAdminId && slot) return `${ownerAdminId}-${slot}`;
+  return '';
+}
+
+/** Pull background/profile bytes onto the client so Settings previews can render. */
+export async function hydrateCustomMediaImages(
+  media: MentorMediaItem[] | undefined,
+  ownerAdminId?: string,
+  dbImages?: Record<string, string>,
+): Promise<MentorMediaItem[]> {
+  const list = normalizeCustomMedia(media);
+  if (!list.length) return list;
+
+  const out: MentorMediaItem[] = [];
+  for (const item of list) {
+    let url = String(item.url || '').trim();
+    if (!url) continue;
+
+    const key = mediaKeyFromUrl(url, ownerAdminId, item.slot);
+    const fromMap =
+      (key && (dbImages?.[key] || dbImages?.[`img:${key}`])) ||
+      (key && (getEaImage(key) || getEaImage(`img:${key}`))) ||
+      '';
+
+    if (fromMap && (fromMap.startsWith('data:') || isStreamableMediaUrl(fromMap))) {
+      if (key) saveEaImage(key, fromMap);
+      out.push({ ...item, url: fromMap.startsWith('data:') ? (key ? `img:${key}` : url) : fromMap });
+      continue;
+    }
+
+    if (key) {
+      const fromFb = await firebaseFetchImage(key).catch(() => '');
+      if (fromFb && !isPlaceholderMentorImage(fromFb)) {
+        saveEaImage(key, fromFb);
+        out.push({
+          ...item,
+          url:
+            fromFb.startsWith('http') || fromFb.startsWith('/')
+              ? fromFb
+              : `img:${key}`,
+        });
+        continue;
+      }
+      // Keep a fetchable public URL so <img> / CSS backgrounds still try the API
+      if (url.startsWith('img:')) url = imagePublicUrl(key);
+      else if (!url.startsWith('http') && !url.startsWith('/') && !url.startsWith('data:')) {
+        url = imagePublicUrl(key);
+      }
+    }
+
+    out.push({ ...item, url });
+  }
+  return out;
+}
 
 function findLicenseEntry(db: NonNullable<Awaited<ReturnType<typeof fetchDb>>>, key: string) {
   for (const v of dbList<VaultLike>(db.vault)) {
@@ -68,11 +165,13 @@ function enrichBrandingFromWorkspace(
     ? String(raw.eaName || ownerEa?.name || ws?.profile?.eaDisplayName || '')
     : String(base.displayName || '');
   const mainText = base.mainText || String(raw.mainText || ws?.profile?.mainText || '');
-  const customMedia = base.customMedia?.some((m) => m.url)
-    ? base.customMedia
-    : normalizeCustomMedia(
-        (Array.isArray(raw.customMedia) ? raw.customMedia : ws?.profile?.customMedia) as [],
-      );
+  // Merge vault + license + mentor profile so background slots are never dropped
+  // when the vault only has profile photos.
+  const customMedia = mergeCustomMedia(
+    base.customMedia,
+    raw.customMedia,
+    ws?.profile?.customMedia,
+  );
   return {
     ...base,
     name: eaName || base.name,
@@ -132,9 +231,19 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
   if (vaultHit && vaultHit.ownerAdminId) {
     const imageUrl = await resolveMentorImage(vaultHit.ownerAdminId, localImages);
     const db = await fetchDb();
+    const dbImages =
+      db?.images && typeof db.images === 'object'
+        ? { ...localImages, ...(db.images as Record<string, string>) }
+        : localImages;
     const raw = db ? findLicenseEntry(db, normalizedKey) : null;
     const base = brandingFromVault(vaultHit, imageUrl);
-    return enrichBrandingFromWorkspace(base, raw);
+    const enriched = enrichBrandingFromWorkspace(base, raw);
+    const customMedia = await hydrateCustomMediaImages(
+      enriched.customMedia,
+      vaultHit.ownerAdminId,
+      dbImages,
+    );
+    return { ...enriched, customMedia };
   }
 
   const db = await fetchDb();
@@ -146,14 +255,18 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
   const ws = (raw as VaultLike & { _ws?: { profile?: Record<string, unknown>; eas?: Array<{ id: string; name?: string; symbols?: string[] }> } })._ws;
   const mentorId = String(raw.ownerAdminId || '');
   const ownerEa = ws?.eas?.find((e) => e.id === raw.eaId);
-  const imageUrl = await resolveMentorImage(
-    mentorId,
+  const dbImages =
     db.images && typeof db.images === 'object'
       ? { ...localImages, ...(db.images as Record<string, string>) }
-      : localImages,
-  );
+      : localImages;
+  const imageUrl = await resolveMentorImage(mentorId, dbImages);
 
   const eaName = String(raw.eaName || ownerEa?.name || ws?.profile?.eaDisplayName || '');
+  const customMedia = await hydrateCustomMediaImages(
+    mergeCustomMedia(raw.customMedia, ws?.profile?.customMedia),
+    mentorId,
+    dbImages,
+  );
   return {
     name: eaName,
     displayName: eaName,
@@ -164,9 +277,7 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
         : ownerEa?.symbols?.length
           ? ownerEa.symbols
           : ['XAUUSD'],
-    customMedia: normalizeCustomMedia(
-      (Array.isArray(raw.customMedia) ? raw.customMedia : ws?.profile?.customMedia) as [],
-    ),
+    customMedia,
     imageUrl,
   };
 }

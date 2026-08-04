@@ -108,6 +108,12 @@ function mergeBotBranding(local: EABot, remote: EABot): EABot {
   const localImg = sanitizeBotImage(local.imageUrl);
   const remoteMedia = normalizeCustomMedia(remote.customMedia);
   const localMedia = normalizeCustomMedia(local.customMedia);
+  // Union slots so mentor background uploads are not dropped when one side
+  // only has profile photos.
+  const mediaMap = new Map(
+    [...localMedia, ...remoteMedia].map((m) => [m.slot, m] as const),
+  );
+  for (const m of remoteMedia) mediaMap.set(m.slot, m);
   return {
     ...local,
     ...remote,
@@ -115,7 +121,7 @@ function mergeBotBranding(local: EABot, remote: EABot): EABot {
     mainText: pickBrandingField(local.mainText, remote.mainText),
     name: pickBrandingField(local.name, remote.name),
     imageUrl: remoteImg || localImg || '',
-    customMedia: remoteMedia.some((m) => m.url) ? remoteMedia : localMedia,
+    customMedia: [...mediaMap.values()],
   };
 }
 

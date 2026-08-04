@@ -153,10 +153,17 @@ export function resolveLicenseBrandingSync(
     remoteImages[`key-${normalizedKey}`] ||
     '';
 
-  const resolvedMedia =
-    ownerWs?.profile?.customMedia?.length
-      ? ownerWs.profile.customMedia
-      : license.customMedia;
+  // Prefer mentor profile backgrounds, but keep any license-only slots too
+  const resolvedMedia = (() => {
+    const map = new Map<string, NonNullable<typeof license.customMedia>[number]>();
+    for (const m of license.customMedia || []) {
+      if (m?.slot && m?.url) map.set(m.slot, m);
+    }
+    for (const m of ownerWs?.profile?.customMedia || []) {
+      if (m?.slot && m?.url) map.set(m.slot, m);
+    }
+    return [...map.values()];
+  })();
 
   const candidateImages = [
     license.eaImage,
