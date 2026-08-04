@@ -1,0 +1,544 @@
+/* ═══════════════════════════════════════════════════════════════
+   Mixed shape language — rhythm via circles, pills, islands,
+   diagonal cuts, open strips, and offsets. Same features.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* —— Hero: organic aura, not a rectangle —— */
+.shape-hero {
+  position: relative;
+  isolation: isolate;
+}
+
+.shape-hero-aura {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: min(92vw, 340px);
+  height: min(78vw, 290px);
+  transform: translate(-50%, -54%);
+  background:
+    radial-gradient(circle at 40% 35%, rgba(var(--accent-rgb), 0.22), transparent 58%),
+    radial-gradient(circle at 70% 70%, rgba(var(--accent-rgb), 0.12), transparent 55%);
+  border-radius: 58% 42% 48% 52% / 48% 56% 44% 52%;
+  filter: blur(2px);
+  opacity: 0.9;
+  z-index: -1;
+  pointer-events: none;
+  animation: shape-aura-breathe 8s ease-in-out infinite;
+}
+
+@keyframes shape-aura-breathe {
+  0%, 100% { transform: translate(-50%, -54%) scale(1); opacity: 0.75; }
+  50% { transform: translate(-48%, -56%) scale(1.04); opacity: 1; }
+}
+
+/* —— Primary actions: circle + capsule (standalone, not boxed) —— */
+.shape-actions {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.shape-action-circle {
+  width: 76px !important;
+  height: 76px !important;
+  border-radius: 50% !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  padding: 0 !important;
+  border-style: solid !important;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.28),
+    0 0 22px rgba(var(--accent-rgb), 0.22) !important;
+}
+
+.shape-action-circle span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.shape-action-capsule {
+  min-width: 148px !important;
+  height: 52px !important;
+  border-radius: 999px !important;
+  padding: 0 22px !important;
+  border-style: solid !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22) !important;
+  transform: translateY(6px);
+}
+
+/* —— Secondary widgets: mixed islands + overlap —— */
+.shape-secondary {
+  position: relative;
+  padding-top: 6px;
+}
+
+.shape-widget-row {
+  align-items: stretch;
+  position: relative;
+  z-index: 1;
+}
+
+.shape-island-squircle {
+  border-radius: 28px !important;
+  min-height: 112px;
+  transform: translate(-2px, 0) rotate(-0.6deg);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)) !important;
+  border: 1px solid rgba(var(--accent-rgb), 0.28) !important;
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(16px);
+}
+
+.shape-island-pill {
+  border-radius: 999px !important;
+  min-height: 96px;
+  margin-top: 18px;
+  transform: translate(6px, -10px);
+  padding: 16px 18px !important;
+  background: rgba(10, 12, 18, 0.72) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow:
+    0 14px 30px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(var(--accent-rgb), 0.08) !important;
+  z-index: 2;
+}
+
+.shape-step-round {
+  border-radius: 50% !important;
+  width: 34px !important;
+  height: 34px !important;
+}
+
+/* —— Auto trade: no card — open strip + gradient edge —— */
+.shape-open-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 4px;
+  padding: 16px 4px 8px;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  position: relative;
+}
+
+.shape-open-strip::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  right: -8px;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--accent-rgb), 0.45),
+    transparent
+  );
+}
+
+.shape-open-strip strong {
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+/* Soft polygon alert */
+.shape-polygon {
+  clip-path: polygon(0 10%, 4% 0, 100% 0, 100% 88%, 96% 100%, 0 100%);
+  border-radius: 0 !important;
+  border: none !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(248, 113, 113, 0.35),
+    0 14px 28px rgba(0, 0, 0, 0.25);
+}
+
+/* —— Reveal phases: each a different silhouette —— */
+.shape-reveal {
+  display: grid;
+  gap: 14px;
+  position: relative;
+}
+
+.shape-phase-orb {
+  width: min(100%, 280px);
+  margin: 0 auto;
+  border-radius: 999px !important;
+  text-align: center;
+  padding: 22px 28px !important;
+  background: rgba(8, 12, 20, 0.7) !important;
+  border: 1px solid rgba(var(--accent-rgb), 0.35) !important;
+  box-shadow: 0 0 28px rgba(var(--accent-rgb), 0.2) !important;
+}
+
+.shape-phase-diagonal {
+  clip-path: polygon(0 0, 100% 0, 100% 78%, 92% 100%, 0 100%);
+  border-radius: 22px 22px 8px 22px !important;
+  transform: translateX(-4px);
+  background:
+    linear-gradient(135deg, rgba(var(--accent-rgb), 0.12), rgba(255, 255, 255, 0.03)) !important;
+  border: 1px solid rgba(var(--accent-rgb), 0.28) !important;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.3) !important;
+}
+
+.shape-phase-hex {
+  clip-path: polygon(8% 0, 100% 0, 100% 72%, 92% 100%, 0 100%, 0 18%);
+  border-radius: 0 !important;
+  margin-left: 10px;
+  width: calc(100% - 10px);
+  background: rgba(12, 14, 20, 0.78) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow:
+    -10px 14px 30px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(var(--accent-rgb), 0.08) !important;
+  transform: translateY(-8px);
+  z-index: 2;
+}
+
+.shape-phase-feature {
+  border-radius: 28px 28px 40% 28px / 28px 28px 22% 28px !important;
+  padding-bottom: 18px !important;
+  margin-top: -6px;
+  background:
+    radial-gradient(ellipse at top right, rgba(var(--accent-rgb), 0.18), transparent 50%),
+    rgba(10, 12, 18, 0.82) !important;
+  border: 1px solid rgba(var(--accent-rgb), 0.3) !important;
+  box-shadow:
+    0 22px 44px rgba(0, 0, 0, 0.35),
+    0 0 30px rgba(var(--accent-rgb), 0.12) !important;
+  position: relative;
+  z-index: 3;
+}
+
+.shape-phase-feature .scan-preview {
+  border-radius: 22px 10px 28px 18px;
+  margin-top: 14px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  border: none;
+}
+
+/* —— History: edge-to-edge + floating offset rows —— */
+.shape-history {
+  margin-left: -6px;
+  margin-right: -6px;
+  padding: 8px 0 0;
+}
+
+.shape-history .scan-history-title {
+  padding: 0 10px 10px;
+  border-bottom: none;
+  position: relative;
+}
+
+.shape-history .scan-history-title::after {
+  content: '';
+  display: block;
+  margin-top: 8px;
+  width: 42px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--electric);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.5);
+}
+
+.shape-history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.shape-history-item .scan-history-row {
+  border: none !important;
+  background: rgba(255, 255, 255, 0.035) !important;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.shape-history-item-0 .scan-history-row {
+  border-radius: 18px 28px 18px 28px !important;
+  margin-right: 14px;
+}
+
+.shape-history-item-1 .scan-history-row {
+  border-radius: 999px !important;
+  margin-left: 16px;
+  margin-right: 4px;
+}
+
+.shape-history-item-2 .scan-history-row {
+  border-radius: 22px 8px 22px 8px !important;
+  margin-left: 6px;
+  clip-path: polygon(0 0, 100% 0, 97% 100%, 0 100%);
+}
+
+.shape-history-item .scan-history-thumb {
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+}
+
+.shape-history-item .scan-history-detail {
+  margin: 6px 12px 0;
+  border-radius: 16px;
+  background: transparent;
+  border: none;
+  padding: 10px 4px 0;
+}
+
+/* —— Settings hub: alternating silhouettes —— */
+.shape-hub {
+  gap: 12px !important;
+}
+
+.shape-hub-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.shape-hub-0 {
+  border-radius: 22px !important;
+  transform: translateX(0);
+}
+
+.shape-hub-1 {
+  border-radius: 999px !important;
+  padding-left: 18px !important;
+  padding-right: 18px !important;
+  margin-left: 10px;
+  margin-right: 4px;
+  background: rgba(var(--accent-rgb), 0.08) !important;
+  border-color: rgba(var(--accent-rgb), 0.28) !important;
+}
+
+.shape-hub-1 .iface-hub-ico {
+  border-radius: 50%;
+}
+
+.shape-hub-2 {
+  border-radius: 18px 32px 18px 32px !important;
+  transform: translateX(-4px);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 6% 100%);
+}
+
+.shape-hub-3 {
+  border-radius: 26px !important;
+  margin-left: 18px;
+  background: linear-gradient(
+    120deg,
+    rgba(255, 255, 255, 0.05),
+    rgba(var(--accent-rgb), 0.1)
+  ) !important;
+  box-shadow:
+    -8px 12px 28px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.shape-hub-0 .iface-hub-ico {
+  border-radius: 12px;
+}
+
+.shape-hub-2 .iface-hub-ico {
+  border-radius: 10px 16px;
+  transform: rotate(-4deg);
+}
+
+.shape-hub-3 .iface-hub-ico {
+  border-radius: 50%;
+  background: var(--accent-soft);
+}
+
+/* Chart scanner tool as floating capsule island */
+.iface-tool-premium {
+  border-radius: 999px !important;
+  margin-bottom: 4px;
+}
+
+.iface-tool-premium .iface-tool-icon {
+  border-radius: 50%;
+}
+
+/* Layout / font rows — break identical boxes */
+.iface-layout-list {
+  display: grid;
+  gap: 10px;
+}
+
+.iface-layout-row:nth-child(3n + 1) {
+  border-radius: 18px 28px 18px 28px;
+  margin-right: 8px;
+}
+
+.iface-layout-row:nth-child(3n + 2) {
+  border-radius: 999px;
+  margin-left: 12px;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.iface-layout-row:nth-child(3n) {
+  border-radius: 16px;
+  clip-path: polygon(0 0, 100% 0, 97% 100%, 0 100%);
+  margin-left: 4px;
+}
+
+.iface-theme-card:nth-child(odd) {
+  border-radius: 24px 14px 24px 14px;
+}
+
+.iface-theme-card:nth-child(even) {
+  border-radius: 14px 28px 14px 28px;
+  transform: translateY(6px);
+}
+
+.iface-effect-card:nth-child(odd) {
+  border-radius: 28px;
+}
+
+.iface-effect-card:nth-child(even) {
+  border-radius: 18px 36px;
+}
+
+.iface-colour .iface-swatch {
+  border-radius: 50%;
+}
+
+.iface-colour:nth-child(odd) {
+  border-radius: 18px;
+}
+
+.iface-colour:nth-child(even) {
+  border-radius: 999px;
+}
+
+.iface-custom-card:nth-child(odd) .iface-custom-preview {
+  border-radius: 22px 10px;
+  clip-path: polygon(0 0, 100% 0, 100% 88%, 0 100%);
+}
+
+.iface-custom-card:nth-child(even) .iface-custom-preview {
+  border-radius: 50%;
+  aspect-ratio: 1;
+}
+
+/* —— Global cards: stop forcing one silhouette —— */
+.glow-card {
+  border-radius: 20px;
+}
+
+.app-shell .glow-card:nth-of-type(3n + 1) {
+  border-radius: 24px 16px 28px 16px;
+}
+
+.app-shell .glow-card:nth-of-type(3n + 2) {
+  border-radius: 18px 32px;
+}
+
+.app-shell .glow-card:nth-of-type(3n) {
+  border-radius: 28px 28px 14px 28px;
+}
+
+/* Symbols page tiles — mix sizes/shapes via existing grid */
+.symbols-card:nth-child(4n + 1) {
+  border-radius: 22px 10px;
+  grid-row: span 1;
+}
+
+.symbols-card:nth-child(4n + 2) {
+  border-radius: 999px;
+}
+
+.symbols-card:nth-child(4n + 3) {
+  border-radius: 16px 28px 16px 28px;
+}
+
+.symbols-card:nth-child(4n) {
+  border-radius: 20px;
+  clip-path: polygon(0 0, 100% 8%, 100% 100%, 0 92%);
+}
+
+/* Copy-trade / engine panels: floating islands */
+.copy-engine-panel,
+.trade-engine-panel,
+.engine-panel {
+  border-radius: 24px 24px 18px 32px;
+}
+
+/* Dock stays pill — intentional contrast vs islands */
+.lay-dock {
+  border-radius: 999px !important;
+}
+
+.lay-dock-ico {
+  border-radius: 50% !important;
+}
+
+/* Home architecture controls — mix circles / soft squares / pills */
+.arch-poster-btn:nth-child(odd),
+.arch-ov-btn:nth-child(odd),
+.arch-spatial-btn:nth-child(odd),
+.arch-rail-btn:nth-child(odd),
+.arch-glyph-btn:nth-child(odd) {
+  border-radius: 50% !important;
+}
+
+.arch-poster-btn:nth-child(even),
+.arch-ov-btn:nth-child(even),
+.arch-spatial-btn:nth-child(even) {
+  border-radius: 14px !important;
+}
+
+.arch-mag-btn {
+  border-radius: 0 18px 18px 0 !important;
+}
+
+.arch-bento-tile:nth-child(odd) {
+  border-radius: 26px !important;
+}
+
+.arch-bento-tile:nth-child(even) {
+  border-radius: 14px 28px !important;
+}
+
+.arch-swiss-btn {
+  border-radius: 50% !important;
+}
+
+.arch-ed-btn {
+  border-radius: 999px !important;
+}
+
+.arch-con-key:nth-child(odd) {
+  border-radius: 14px 4px 14px 4px !important;
+}
+
+.arch-con-key:nth-child(even) {
+  border-radius: 999px !important;
+}
+
+/* Reduce “same box” override from polish layer on scan cards when shaped */
+.scan-shell-premium .scan-card.shape-island-squircle,
+.scan-shell-premium .scan-card.shape-island-pill,
+.scan-shell-premium .scan-card.shape-phase-orb,
+.scan-shell-premium .scan-card.shape-phase-diagonal,
+.scan-shell-premium .scan-card.shape-phase-hex,
+.scan-shell-premium .scan-card.shape-phase-feature {
+  margin-bottom: 0;
+}
+
+[data-animations='off'] .shape-hero-aura {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shape-hero-aura {
+    animation: none !important;
+  }
+}
