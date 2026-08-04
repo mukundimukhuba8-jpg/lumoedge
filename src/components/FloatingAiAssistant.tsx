@@ -154,6 +154,8 @@ export function FloatingAiAssistant({
         role="dialog"
         aria-label={title}
         aria-hidden={!open}
+        // Prevent invisible closed panel from eating Start / Scanner taps on iOS
+        inert={!open || closing ? true : undefined}
       >
         <div className="ai-term-glow" aria-hidden />
         <div className="ai-term-chrome">
