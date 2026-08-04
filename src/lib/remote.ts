@@ -36,7 +36,8 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 const FETCH_DB_TIMEOUT_MS = 15_000;
-const FETCH_DB_CACHE_MS = 4000;
+/** Longer cache — stops phones re-downloading the DB every few seconds */
+const FETCH_DB_CACHE_MS = 30_000;
 const FETCH_SESSION_TIMEOUT_MS = 8000;
 const FETCH_CLIENTS_TIMEOUT_MS = 15_000;
 const FETCH_ADMINS_TIMEOUT_MS = 12_000;

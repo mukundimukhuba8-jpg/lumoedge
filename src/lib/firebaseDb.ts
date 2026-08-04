@@ -282,9 +282,46 @@ function mergeWorkspace(
   };
 }
 
+/**
+ * Client phones: path-scoped reads — never download the base64 `images` map
+ * (that alone can be multiple MB and causes long blank loads + data burn).
+ */
+async function firebaseFetchDbLite(): Promise<RemoteDb | null> {
+  try {
+    const [auth, store, vault, clients, sessions, revokedKeys, updatedAt] =
+      await Promise.all([
+        getPath<RemoteDb['auth']>(`${ROOT}/auth`),
+        getPath<RemoteDb['store']>(`${ROOT}/store`),
+        getPath<RemoteDb['vault']>(`${ROOT}/vault`),
+        getPath<RemoteDb['clients']>(`${ROOT}/clients`),
+        getPath<RemoteDb['sessions']>(`${ROOT}/sessions`),
+        getPath<string[]>(`${ROOT}/revokedKeys`),
+        getPath<string>(`${ROOT}/updatedAt`),
+      ]);
+    return normalizeDb({
+      auth: auth || emptyDb().auth,
+      store: store || emptyDb().store,
+      vault: vault || [],
+      clients: clients || [],
+      sessions: sessions || {},
+      revokedKeys: revokedKeys || [],
+      images: {},
+      updatedAt: updatedAt || new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('[firebase] fetchDbLite failed', err);
+    return null;
+  }
+}
+
 export async function firebaseFetchDb(): Promise<RemoteDb | null> {
   if (!isFirebaseConfigured()) return null;
   try {
+    // Admin portal needs the full tree (incl. images). Clients must not.
+    const { isAdminPortalSession } = await import('./storage');
+    if (!isAdminPortalSession()) {
+      return firebaseFetchDbLite();
+    }
     const snap = await get(ref(getFirebaseDb(), ROOT));
     if (!snap.exists()) return emptyDb();
     return normalizeDb(snap.val());
@@ -466,8 +503,14 @@ function stripHeavyImages<T extends Record<string, unknown>>(obj: T): T {
 }
 
 export async function firebaseFetchClients(): Promise<RemoteDb['clients'] | null> {
-  const db = await firebaseFetchDb();
-  return db?.clients ?? null;
+  if (!isFirebaseConfigured()) return null;
+  try {
+    const clients = await getPath<RemoteDb['clients']>(`${ROOT}/clients`);
+    return dbList(clients);
+  } catch (err) {
+    console.warn('[firebase] fetchClients failed', err);
+    return null;
+  }
 }
 
 export async function firebaseFetchAdmins(): Promise<
