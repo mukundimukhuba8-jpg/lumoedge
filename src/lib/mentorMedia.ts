@@ -337,7 +337,13 @@ export function resolveCustomBackdrop(
   }
   const hit = getMediaSlot(media, customBg as MentorMediaSlotId);
   if (hit?.url) {
-    const src = resolveStoredMediaUrl(hit.url) || hit.url;
+    let src = resolveStoredMediaUrl(hit.url) || hit.url;
+    if (src.startsWith('img:')) {
+      const key = src.replace(/^img:/, '');
+      src = `/api/images/${encodeURIComponent(key)}`;
+    } else if (src && !src.startsWith('data:') && !src.startsWith('http') && !src.startsWith('/') && !src.startsWith('blob:')) {
+      src = `/api/images/${encodeURIComponent(src)}`;
+    }
     const kind =
       hit.kind === 'video' || looksLikeVideoUrl(src) ? 'video' : 'image';
     return { src, kind };

@@ -1,13 +1,14 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Bot, X } from 'lucide-react';
+import { Bot, Send, X } from 'lucide-react';
+import { defaultForexBootLines, isForexQuestion, lumoForexReply } from '../lib/forexAi';
 
 type Props = {
-  /** Full blob — split on newlines into terminal lines when `lines` omitted */
   message?: string;
-  /** Preferred: terminal lines typed one after another */
   lines?: string[];
   className?: string;
   title?: string;
+  eaName?: string;
+  isPaused?: boolean;
 };
 
 function normalizeLines(message: string | undefined, lines: string[] | undefined) {
@@ -21,25 +22,31 @@ function normalizeLines(message: string | undefined, lines: string[] | undefined
 
 /**
  * Floating orb → morphing AI terminal.
- * Accent inherits from CSS variables. Text types character-by-character.
+ * Forex / trading questions only — refuses people topics.
  */
 export function FloatingAiAssistant({
   message,
   lines,
   className,
   title = 'Lumo AI',
+  eaName = 'Lumo Edge',
+  isPaused = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
   const [display, setDisplay] = useState('');
   const [speaking, setSpeaking] = useState(false);
   const [done, setDone] = useState(false);
+  const [input, setInput] = useState('');
+  const [script, setScript] = useState<string[]>([]);
   const panelId = useId();
   const closeTimer = useRef<number | null>(null);
   const typeGen = useRef(0);
 
-  const script = useMemo(() => normalizeLines(message, lines), [message, lines]);
-  const scriptKey = script.join('\n');
+  const bootLines = useMemo(
+    () => lines?.length ? lines : message ? normalizeLines(message, undefined) : defaultForexBootLines(eaName, isPaused),
+    [lines, message, eaName, isPaused],
+  );
 
   const collapse = () => {
     if (!open || closing) return;
@@ -52,6 +59,8 @@ export function FloatingAiAssistant({
       setClosing(false);
       setDisplay('');
       setDone(false);
+      setInput('');
+      setScript([]);
     }, 300);
   };
 
@@ -60,6 +69,7 @@ export function FloatingAiAssistant({
       collapse();
       return;
     }
+    setScript(bootLines);
     setDisplay('');
     setDone(false);
     setSpeaking(true);
@@ -83,9 +93,8 @@ export function FloatingAiAssistant({
     };
   }, []);
 
-  // Typewriter
   useEffect(() => {
-    if (!open || closing) return;
+    if (!open || closing || !script.length) return;
     const gen = ++typeGen.current;
     setDisplay('');
     setDone(false);
@@ -107,21 +116,31 @@ export function FloatingAiAssistant({
       const completed = script.slice(0, line).map((l) => `> ${l}`);
       const partial = `> ${text.slice(0, char)}`;
       setDisplay([...completed, partial].join('\n'));
-
       if (char >= text.length) {
         line += 1;
         char = 0;
-        timer = window.setTimeout(tick, 320);
+        timer = window.setTimeout(tick, 300);
       } else {
         timer = window.setTimeout(tick, 18 + (char % 7) * 3);
       }
     };
 
-    timer = window.setTimeout(tick, 180);
+    timer = window.setTimeout(tick, 160);
     return () => {
       if (timer) window.clearTimeout(timer);
     };
-  }, [open, closing, scriptKey, script]);
+  }, [open, closing, script]);
+
+  const ask = () => {
+    const q = input.trim();
+    if (!q || speaking) return;
+    setInput('');
+    const reply = lumoForexReply(q);
+    const prefix = isForexQuestion(q)
+      ? [`You: ${q}`, reply]
+      : [`You: ${q}`, reply];
+    setScript(prefix);
+  };
 
   return (
     <div
@@ -143,7 +162,7 @@ export function FloatingAiAssistant({
           </span>
           <div className="ai-term-meta">
             <strong>{title}</strong>
-            <span>{speaking ? 'speaking…' : done ? 'online' : 'boot'}</span>
+            <span>{speaking ? 'speaking…' : done ? 'forex online' : 'boot'}</span>
           </div>
           <button
             type="button"
@@ -158,6 +177,25 @@ export function FloatingAiAssistant({
           {display}
           {open && !done ? <span className="ai-term-cursor" aria-hidden /> : null}
         </pre>
+        {open && done ? (
+          <form
+            className="ai-term-ask"
+            onSubmit={(e) => {
+              e.preventDefault();
+              ask();
+            }}
+          >
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask a forex question…"
+              aria-label="Ask forex question"
+            />
+            <button type="submit" aria-label="Send" disabled={!input.trim()}>
+              <Send size={14} />
+            </button>
+          </form>
+        ) : null}
       </div>
 
       <button

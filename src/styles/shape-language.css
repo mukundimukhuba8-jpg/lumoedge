@@ -418,14 +418,11 @@
   border-radius: 999px;
 }
 
-.iface-custom-card:nth-child(odd) .iface-custom-preview {
-  border-radius: 22px 10px;
-  clip-path: polygon(0 0, 100% 0, 100% 88%, 0 100%);
-}
-
-.iface-custom-card:nth-child(even) .iface-custom-preview {
-  border-radius: 50%;
-  aspect-ratio: 1;
+/* Background picker previews stay rectangular so uploads remain visible */
+.iface-custom-card .iface-custom-preview {
+  border-radius: 12px;
+  aspect-ratio: auto;
+  clip-path: none;
 }
 
 /* —— Global cards: stop forcing one silhouette —— */

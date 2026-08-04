@@ -28,11 +28,26 @@ import {
   type ThemeId,
 } from '../../lib/interfaceStyle';
 import {
-  ALL_MEDIA_SLOTS,
+  BACKGROUND_SLOTS,
   isPlaceholderMentorImage,
   type MentorMediaItem,
 } from '../../lib/mentorMedia';
-import { resolveStoredMediaUrl } from '../../lib/storage';
+import { getEaImage, resolveStoredMediaUrl } from '../../lib/storage';
+
+function resolveBgPreview(url: string): string {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  const stored = resolveStoredMediaUrl(raw);
+  if (stored) return stored;
+  if (raw.startsWith('img:')) {
+    const key = raw.replace(/^img:/, '');
+    return getEaImage(key) || getEaImage(raw) || `/api/images/${encodeURIComponent(key)}`;
+  }
+  if (raw.startsWith('/api/images/') || raw.startsWith('http') || raw.startsWith('data:')) {
+    return raw;
+  }
+  return getEaImage(raw) || `/api/images/${encodeURIComponent(raw)}`;
+}
 
 type Props = {
   open: boolean;
@@ -116,9 +131,9 @@ export function InterfaceStyleModal({
   mentorMedia = [],
 }: Props) {
   const [view, setView] = useState<'hub' | HubId>('hub');
-  const uploaded = ALL_MEDIA_SLOTS.map((slot) => ({
+  const uploaded = BACKGROUND_SLOTS.map((slot) => ({
     ...slot,
-    item: mentorMedia.find((m) => m.slot === slot.id),
+    item: (mentorMedia || []).find((m) => m.slot === slot.id),
   })).filter((s) => Boolean(s.item?.url));
 
   const activeHub = useMemo(() => HUB.find((h) => h.id === view), [view]);
@@ -363,7 +378,7 @@ export function InterfaceStyleModal({
           {uploaded.map((slot) => {
             const active = prefs.customBg === slot.id;
             const item = slot.item!;
-            const previewUrl = resolveStoredMediaUrl(item.url) || item.url;
+            const previewUrl = resolveBgPreview(item.url);
             return (
               <button
                 key={slot.id}
@@ -371,15 +386,18 @@ export function InterfaceStyleModal({
                 className={`iface-custom-card${active ? ' active' : ''}`}
                 onClick={() => setCustomBg(slot.id)}
               >
-                <div className="iface-custom-preview">
-                  {item.kind === 'video' ? (
-                    <video src={previewUrl} muted playsInline />
-                  ) : (
-                    <span
-                      className="iface-custom-preview-img"
-                      style={{ backgroundImage: `url(${previewUrl})` }}
-                    />
-                  )}
+                <div
+                  className="iface-custom-preview"
+                  style={
+                    item.kind !== 'video' && previewUrl
+                      ? { backgroundImage: `url(${previewUrl})` }
+                      : undefined
+                  }
+                >
+                  {item.kind === 'video' && previewUrl ? (
+                    <video src={previewUrl} muted playsInline autoPlay loop />
+                  ) : null}
+                  {!previewUrl ? <span className="muted">Loading…</span> : null}
                 </div>
                 <div className="iface-custom-meta">
                   {active ? <Check size={14} color="var(--electric)" /> : null}
@@ -391,7 +409,7 @@ export function InterfaceStyleModal({
         </div>
         {uploaded.length === 0 ? (
           <p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>
-            No custom uploads yet — your mentor can add them in Admin → Profile.
+            No background uploads yet — mentor can add them in Admin → Profile → Background Manager.
           </p>
         ) : null}
       </>
