@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   clampEaFloatPos,
-  defaultEaFloatPos,
   loadEaFloatPos,
   saveEaFloatPos,
+  topEaFloatPos,
   type EaFloatPos,
 } from '../lib/eaFloatPosition';
 import { isMentorProfileImage } from '../lib/mentorMedia';
@@ -159,6 +159,8 @@ type FloatProps = {
   eaTitle: string;
   avatarUrl: string;
   isPaused: boolean;
+  /** When true (e.g. just pressed Start), snap to top of screen. */
+  placeAtTop?: boolean;
   onOpen: () => void;
 };
 
@@ -173,9 +175,10 @@ export function EaStatusFloat({
   eaTitle,
   avatarUrl,
   isPaused,
+  placeAtTop = false,
   onOpen,
 }: FloatProps) {
-  const [pos, setPos] = useState<EaFloatPos>(() => loadEaFloatPos() || defaultEaFloatPos());
+  const [pos, setPos] = useState<EaFloatPos>(() => loadEaFloatPos() || topEaFloatPos());
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{
     pointerId: number;
@@ -191,6 +194,14 @@ export function EaStatusFloat({
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  // After Start — snap to top; user can drag anywhere afterward
+  useEffect(() => {
+    if (!visible || !placeAtTop) return;
+    const top = topEaFloatPos();
+    setPos(top);
+    saveEaFloatPos(top);
+  }, [visible, placeAtTop]);
 
   if (!visible) return null;
 

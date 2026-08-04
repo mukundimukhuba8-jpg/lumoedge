@@ -503,6 +503,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       },
       refreshBranding: (sync) => {
+        const nextDisplay =
+          sync.displayName && String(sync.displayName).trim()
+            ? sync.displayName
+            : sync.name && String(sync.name).trim()
+              ? sync.name
+              : session.bot.displayName;
+        const nextMain =
+          sync.mainText !== undefined && String(sync.mainText).trim()
+            ? sync.mainText
+            : session.bot.mainText;
+        // Union media slots — never wipe mentor backgrounds with an empty poll
+        const nextMedia =
+          sync.customMedia !== undefined
+            ? (() => {
+                const map = new Map(
+                  normalizeCustomMedia(session.bot.customMedia).map((m) => [m.slot, m]),
+                );
+                for (const m of normalizeCustomMedia(sync.customMedia)) {
+                  if (m.url) map.set(m.slot, m);
+                }
+                return [...map.values()];
+              })()
+            : session.bot.customMedia;
         persist({
           ...session,
           accessStatus: session.bot.licenseKey ? 'licensed' : session.accessStatus,
@@ -511,8 +534,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
             name: sync.name
               ? sync.name.replace(/\s+/g, '').toUpperCase()
               : session.bot.name,
-            displayName: sync.displayName ?? sync.name ?? session.bot.displayName,
-            mainText: sync.mainText ?? session.bot.mainText,
+            displayName: nextDisplay,
+            mainText: nextMain,
             // Mentor portal symbols always win when provided
             symbols:
               sync.symbols !== undefined
@@ -525,11 +548,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               sync.imageUrl !== undefined
                 ? sync.imageUrl || session.bot.imageUrl || ''
                 : session.bot.imageUrl || '',
-            customMedia: normalizeCustomMedia(
-              sync.customMedia !== undefined
-                ? sync.customMedia
-                : session.bot.customMedia,
-            ),
+            customMedia: normalizeCustomMedia(nextMedia),
           },
         });
       },

@@ -147,7 +147,7 @@ export function InterfaceStyleModal({
     let cancelled = false;
     void import('../../lib/clientBrandingSync').then(async ({ hydrateCustomMediaImages }) => {
       const next = await hydrateCustomMediaImages(mentorMedia);
-      if (!cancelled && next.length) setResolvedMedia(next);
+      if (!cancelled) setResolvedMedia(next.length ? next : normalizeCustomMedia(mentorMedia));
     });
     return () => {
       cancelled = true;

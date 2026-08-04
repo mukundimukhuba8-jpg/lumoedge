@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Copy, Loader2, MoreVertical, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Copy, Loader2, MoreVertical, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck, Cpu } from 'lucide-react';
 import { BackgroundManager } from '../../components/BackgroundManager';
 import { normalizeAdminRole } from '../../lib/adminQueue';
 import { normalizeClientStatus } from '../../lib/clientQueue';
@@ -1113,17 +1114,51 @@ export function ProfilePage() {
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div className="glow-card">
+        <h3 style={{ marginTop: 0 }}>Portal shortcuts</h3>
+        <p className="muted" style={{ marginTop: 0, marginBottom: 12 }}>
+          Your live portal — license keys, subscribers, and EAs stay in these sections (saved to cloud).
+        </p>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+            gap: 10,
+          }}
+        >
+          <Link to="/admin/licenses" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
+            <KeyRound size={16} /> License keys
+          </Link>
+          {isSuper ? (
+            <Link to="/admin/subscriptions" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
+              <CreditCard size={16} /> Subscriptions / people
+            </Link>
+          ) : null}
+          <Link to="/admin/eas" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
+            <Cpu size={16} /> Manage EAs
+          </Link>
+          {isSuper ? (
+            <Link to="/admin/approve" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
+              <UserCheck size={16} /> Approve mentors
+            </Link>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>Personal Information</h3>
-        <div className="field"><label>First Name</label><input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} /></div>
-        <div className="field"><label>Last Name</label><input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} /></div>
-        <div className="field"><label>Email Address</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-        <div className="field"><label>Phone Number</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Saved to your live account — tap Update Profile after editing names.
+        </p>
+        <div className="field"><label>First Name</label><input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} autoComplete="given-name" /></div>
+        <div className="field"><label>Last Name</label><input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} autoComplete="family-name" /></div>
+        <div className="field"><label>Email Address</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" /></div>
+        <div className="field"><label>Phone Number</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} autoComplete="tel" /></div>
         <div className="field"><label>Mentor Name</label><input value={form.mentorName} onChange={(e) => setForm({ ...form, mentorName: e.target.value })} /></div>
       </div>
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>Branding</h3>
         <p className="muted" style={{ marginTop: 0 }}>
-          Upload once — it syncs to every license key and client home (no need to regenerate keys).
+          Upload once — it syncs to every license key and client home (no need to regenerate keys). Names and backgrounds are saved to the live cloud, not a demo.
         </p>
         <div className="field"><label>EA Name (Displayed on App)</label><input value={form.eaDisplayName} onChange={(e) => setForm({ ...form, eaDisplayName: e.target.value })} /></div>
         <div className="field"><label>Main Text (Top of Home Page)</label><input value={form.mainText} onChange={(e) => setForm({ ...form, mainText: e.target.value })} /></div>

@@ -125,19 +125,56 @@ export async function hydrateCustomMediaImages(
   return out;
 }
 
-function findLicenseEntry(db: NonNullable<Awaited<ReturnType<typeof fetchDb>>>, key: string) {
-  for (const v of dbList<VaultLike>(db.vault)) {
-    if (keysMatch(String(v?.key || ''), key) && v?.status !== 'deleted') return v;
+type WorkspaceBag = {
+  licenses?: VaultLike[];
+  profile?: Record<string, unknown>;
+  eas?: Array<{ id: string; name?: string; symbols?: string[] }>;
+};
+
+function workspaceMap(
+  db: NonNullable<Awaited<ReturnType<typeof fetchDb>>>,
+): Record<string, WorkspaceBag> {
+  if (!db.store?.workspaces || typeof db.store.workspaces !== 'object') return {};
+  return db.store.workspaces as Record<string, WorkspaceBag>;
+}
+
+function attachWorkspace(
+  entry: VaultLike | null,
+  db: NonNullable<Awaited<ReturnType<typeof fetchDb>>>,
+): (VaultLike & { _ws?: WorkspaceBag }) | null {
+  if (!entry) return null;
+  const workspaces = workspaceMap(db);
+  const ownerId = String(entry.ownerAdminId || '');
+  // Prefer owner workspace; fall back to scanning licenses
+  if (ownerId && workspaces[ownerId]) {
+    return { ...entry, _ws: workspaces[ownerId] };
   }
-  if (db.store?.workspaces && typeof db.store.workspaces === 'object') {
-    for (const ws of Object.values(
-      db.store.workspaces as Record<string, { licenses?: VaultLike[]; profile?: Record<string, unknown>; eas?: Array<{ id: string; name?: string; symbols?: string[] }> }>,
-    )) {
-      const hit = (ws.licenses || []).find(
-        (l) => keysMatch(String(l?.key || ''), key) && l?.status !== 'deleted',
-      );
-      if (hit) return { ...hit, _ws: ws };
+  for (const ws of Object.values(workspaces)) {
+    const hit = (ws.licenses || []).find(
+      (l) => keysMatch(String(l?.key || ''), String(entry.key || '')) && l?.status !== 'deleted',
+    );
+    if (hit) return { ...entry, ...hit, _ws: ws };
+  }
+  return entry;
+}
+
+function findLicenseEntry(
+  db: NonNullable<Awaited<ReturnType<typeof fetchDb>>>,
+  key: string,
+): (VaultLike & { _ws?: WorkspaceBag }) | null {
+  // Always attach mentor workspace so profile.customMedia / names are available
+  // even when the vault row is found first (previously skipped _ws attach).
+  for (const v of dbList<VaultLike>(db.vault)) {
+    if (keysMatch(String(v?.key || ''), key) && v?.status !== 'deleted') {
+      return attachWorkspace(v, db);
     }
+  }
+  const workspaces = workspaceMap(db);
+  for (const ws of Object.values(workspaces)) {
+    const hit = (ws.licenses || []).find(
+      (l) => keysMatch(String(l?.key || ''), key) && l?.status !== 'deleted',
+    );
+    if (hit) return { ...hit, _ws: ws };
   }
   return null;
 }
@@ -236,14 +273,32 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
         ? { ...localImages, ...(db.images as Record<string, string>) }
         : localImages;
     const raw = db ? findLicenseEntry(db, normalizedKey) : null;
+    const ownerWs = db ? workspaceMap(db)[vaultHit.ownerAdminId] : undefined;
     const base = brandingFromVault(vaultHit, imageUrl);
-    const enriched = enrichBrandingFromWorkspace(base, raw);
+    // Force-merge mentor profile media even if vault short-circuit missed _ws
+    const enriched = enrichBrandingFromWorkspace(base, raw || { ...vaultHit, _ws: ownerWs });
+    const withProfileMedia = {
+      ...enriched,
+      customMedia: mergeCustomMedia(
+        enriched.customMedia,
+        ownerWs?.profile?.customMedia,
+        vaultHit.customMedia,
+      ),
+      displayName:
+        (!isGenericLumoLabel(enriched.displayName) && enriched.displayName) ||
+        String(ownerWs?.profile?.eaDisplayName || '') ||
+        enriched.displayName,
+      mainText:
+        enriched.mainText ||
+        String(ownerWs?.profile?.mainText || '') ||
+        '',
+    };
     const customMedia = await hydrateCustomMediaImages(
-      enriched.customMedia,
+      withProfileMedia.customMedia,
       vaultHit.ownerAdminId,
       dbImages,
     );
-    return { ...enriched, customMedia };
+    return { ...withProfileMedia, customMedia };
   }
 
   const db = await fetchDb();
