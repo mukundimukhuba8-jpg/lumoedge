@@ -3,9 +3,14 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { KeyRound, Loader2 } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
-import { INVALID_KEY_MESSAGE, isClaimableKey } from '../../lib/licenseClaim';
+import { INVALID_KEY_MESSAGE } from '../../lib/licenseClaim';
 import { resolveProfileImage } from '../../lib/mentorMedia';
-import { normalizeLicenseKey, pruneClientDeviceStorage } from '../../lib/storage';
+import {
+  keyFingerprint,
+  normalizeLicenseKey,
+  pruneClientDeviceStorage,
+  unrevokeLicenseKeys,
+} from '../../lib/storage';
 
 export function ActivateLicensePage() {
   const navigate = useNavigate();
@@ -42,19 +47,22 @@ export function ActivateLicensePage() {
   const onActivate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || busy) return;
-    const formatErr = isClaimableKey(key);
-    if (formatErr) {
+    const normalized = normalizeLicenseKey(key);
+    const fp = keyFingerprint(normalized);
+    if (!fp || fp.length < 8) {
       setError(INVALID_KEY_MESSAGE);
       return;
     }
+    // Clear stale local bans — cloud decide revoked / not found / wrong email
+    unrevokeLicenseKeys([normalized]);
     setBusy(true);
     setError('');
     setSlow(false);
     const slowTimer = window.setTimeout(() => setSlow(true), 3000);
     try {
-      const result = await claimLicense(key, user.email);
+      const result = await claimLicense(normalized, user.email);
       if (!result.ok) {
-        setError(result.error);
+        setError(result.error || INVALID_KEY_MESSAGE);
         return;
       }
       const lic = result.license;
@@ -101,8 +109,9 @@ export function ActivateLicensePage() {
         Activate your license
       </h1>
       <p className="muted" style={{ marginBottom: 24 }}>
-        Your account is approved. Enter your license key from admin to open the
-        app. Issued for {user?.email}.
+        Your account is approved. Enter the license key your admin sent you.
+        You must be logged in as the email the key was issued for:{' '}
+        <strong style={{ color: 'var(--text)' }}>{user?.email}</strong>
       </p>
 
       <form className="glow-card" onSubmit={onActivate} style={{ textAlign: 'left' }}>

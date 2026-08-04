@@ -695,9 +695,18 @@ export default async function handler(req, res) {
         return;
       }
 
+      // Normalize workspace rows (clientEmail) vs vault rows (email)
+      entry = {
+        ...entry,
+        email: entry.email || entry.clientEmail || '',
+        clientEmail: entry.clientEmail || entry.email || '',
+        ownerAdminId: entry.ownerAdminId || ownerId || '',
+      };
+
       const emailErr = validateEmailAccess(entry, email, vault, workspaces);
       if (emailErr) {
-        send(res, 403, { ok: false, error: KEY_ERR });
+        // Real reason — do not hide as "Invalid key" after the key was found
+        send(res, 403, { ok: false, error: emailErr });
         return;
       }
 

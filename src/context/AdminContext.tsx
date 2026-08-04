@@ -175,10 +175,15 @@ function hydrateLicenseRemote(remote: RemoteDb | null): StoreState | null {
   if (!remote) return null;
   const adminSession = isAdminPortalSession();
   if (Array.isArray(remote.revokedKeys)) {
-    saveRevokedKeysLocal([
-      ...loadRevokedKeys(),
-      ...remote.revokedKeys.map((k) => normalizeLicenseKey(k)),
-    ]);
+    const cloudRevoked = remote.revokedKeys
+      .map((k) => normalizeLicenseKey(k))
+      .filter(Boolean);
+    if (adminSession) {
+      saveRevokedKeysLocal([...loadRevokedKeys(), ...cloudRevoked]);
+    } else {
+      // Clients must mirror cloud — old local bans blocked keys after restore
+      saveRevokedKeysLocal(cloudRevoked);
+    }
   }
   if (adminSession && remote.vault) {
     // Keep every non-deleted vault key locally — never drop by revoked list during hydrate
