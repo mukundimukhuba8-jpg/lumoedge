@@ -267,6 +267,65 @@ export function normalizeAdminRole(raw) {
   return 'pending';
 }
 
+/** Never expose mentor passwords over the public API / client roster. */
+export function publicAdminRecord(admin) {
+  if (!admin || typeof admin !== 'object') return admin;
+  const out = { ...admin };
+  delete out.password;
+  return out;
+}
+
+export function publicAdminList(list) {
+  return toArray(list).map(publicAdminRecord);
+}
+
+export function publicDbSnapshot(db) {
+  if (!db || typeof db !== 'object') return db;
+  const next = { ...db };
+  if (next.auth && typeof next.auth === 'object') {
+    next.auth = {
+      ...next.auth,
+      admins: publicAdminList(next.auth.admins),
+      admin: next.auth.admin ? publicAdminRecord(next.auth.admin) : null,
+    };
+  }
+  return next;
+}
+
+/**
+ * Verify mentor email+password against Firebase/local roster.
+ * Returns a public admin record — never the password.
+ */
+export async function verifyMentorLogin(email, password) {
+  const normalized = String(email || '')
+    .trim()
+    .toLowerCase();
+  const pass = String(password || '');
+  if (!normalized || !pass) {
+    return { ok: false, error: 'invalid_credentials' };
+  }
+  const curAuth = (await firebaseRead('lumo/auth')) || { admins: [] };
+  const fbAdmins = toArray(curAuth.admins);
+  const hit = fbAdmins.find(
+    (a) => String(a?.email || '').trim().toLowerCase() === normalized,
+  );
+  if (!hit) {
+    return { ok: false, error: 'invalid_credentials' };
+  }
+  if (String(hit.password || '') !== pass) {
+    return { ok: false, error: 'invalid_credentials' };
+  }
+  const role = normalizeAdminRole(hit.role);
+  const admin = publicAdminRecord({ ...hit, email: normalized, role });
+  if (role === 'pending') {
+    return { ok: false, error: 'pending', admin };
+  }
+  if (role !== 'admin') {
+    return { ok: false, error: 'pending', admin };
+  }
+  return { ok: true, admin };
+}
+
 export function pickAdminRole(a, b) {
   const left = normalizeAdminRole(a);
   const right = normalizeAdminRole(b);

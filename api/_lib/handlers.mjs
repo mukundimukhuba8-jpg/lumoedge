@@ -10,6 +10,10 @@ import {
   mergeAdminsLive,
   mergeClients,
   normalizeAdminRole,
+  publicAdminList,
+  publicAdminRecord,
+  publicDbSnapshot,
+  verifyMentorLogin,
 } from './clientMerge.mjs';
 import { mergeDatabases } from './mergeDb.mjs';
 
@@ -113,7 +117,7 @@ export async function handleApi(req, res, pathname) {
     if (pathname === '/api/db' && req.method === 'GET') {
       const { db } = await loadDb();
       const mergedClients = await loadMergedClients(loadDb);
-      json(res, 200, { ...db, clients: mergedClients });
+      json(res, 200, publicDbSnapshot({ ...db, clients: mergedClients }));
       return true;
     }
 
@@ -121,7 +125,7 @@ export async function handleApi(req, res, pathname) {
       const body = await readBody(req);
       const { db, sha } = await loadDb();
       const saved = await saveDb(mergeDatabases(db, body), sha);
-      json(res, 200, saved.db);
+      json(res, 200, publicDbSnapshot(saved.db));
       return true;
     }
 
@@ -190,7 +194,29 @@ export async function handleApi(req, res, pathname) {
       const fbAdmins = toArray(curAuth?.admins);
       const { db } = await loadDb();
       const localAdmins = toArray(db.auth?.admins);
-      json(res, 200, mergeAdminsLive(fbAdmins, localAdmins));
+      json(res, 200, publicAdminList(mergeAdminsLive(fbAdmins, localAdmins)));
+      return true;
+    }
+
+    if (pathname === '/api/auth/login' && req.method === 'POST') {
+      const body = await readBody(req);
+      const email = String(body.email || '').trim();
+      const password = String(body.password || '');
+      if (!email || !password) {
+        json(res, 400, { error: 'email and password required' });
+        return true;
+      }
+      const result = await verifyMentorLogin(email, password);
+      if (!result.ok) {
+        const status = result.error === 'pending' ? 403 : 401;
+        json(res, status, {
+          ok: false,
+          error: result.error || 'invalid_credentials',
+          admin: result.admin || null,
+        });
+        return true;
+      }
+      json(res, 200, { ok: true, admin: result.admin });
       return true;
     }
 
@@ -235,14 +261,14 @@ export async function handleApi(req, res, pathname) {
       const fbAdmins = toArray((await firebaseRead('lumo/auth'))?.admins);
       const existingFb = fbAdmins.find((a) => String(a.email || '').toLowerCase() === email);
       if (existingFb) {
-        json(res, 200, existingFb);
+        json(res, 200, publicAdminRecord(existingFb));
         return true;
       }
       const { db, sha } = await loadDb();
       const admins = toArray(db.auth?.admins);
       const existing = admins.find((a) => String(a.email || '').toLowerCase() === email);
       if (existing) {
-        json(res, 200, existing);
+        json(res, 200, publicAdminRecord(existing));
         return true;
       }
       const entry = {
@@ -292,7 +318,7 @@ export async function handleApi(req, res, pathname) {
       } catch {
         // Firebase is the source of truth for live mentor registrations
       }
-      json(res, 201, entry);
+      json(res, 201, publicAdminRecord(entry));
       return true;
     }
 
@@ -339,7 +365,7 @@ export async function handleApi(req, res, pathname) {
         json(res, 502, { ok: false, error: 'approve_failed' });
         return true;
       }
-      json(res, 200, { ok: true, admin: fbUpdated });
+      json(res, 200, { ok: true, admin: publicAdminRecord(fbUpdated) });
       return true;
     }
 

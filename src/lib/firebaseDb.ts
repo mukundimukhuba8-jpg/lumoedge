@@ -61,18 +61,36 @@ function emptyDb(): RemoteDb {
   };
 }
 
+/** Strip mentor passwords before any client-side use of the roster. */
+export function stripAdminPassword<T extends Record<string, unknown>>(admin: T): T {
+  if (!admin || typeof admin !== 'object') return admin;
+  if (!('password' in admin)) return admin;
+  const { password: _drop, ...rest } = admin;
+  return rest as T;
+}
+
+export function stripAdminPasswords<T extends Record<string, unknown>>(
+  list: T[] | null | undefined,
+): T[] {
+  return dbList(list).map((a) => stripAdminPassword(a as T));
+}
+
 function normalizeDb(raw: unknown): RemoteDb {
   const base = emptyDb();
   if (!raw || typeof raw !== 'object') return base;
   const db = raw as Partial<RemoteDb>;
+  const auth = {
+    ...base.auth,
+    ...(db.auth || {}),
+    admins: stripAdminPasswords(dbList(db.auth?.admins) as Record<string, unknown>[]),
+  };
+  if (auth.admin && typeof auth.admin === 'object') {
+    auth.admin = stripAdminPassword(auth.admin as Record<string, unknown>);
+  }
   return {
     ...base,
     ...db,
-    auth: {
-      ...base.auth,
-      ...(db.auth || {}),
-      admins: dbList(db.auth?.admins),
-    },
+    auth,
     store: {
       workspaces:
         db.store?.workspaces && typeof db.store.workspaces === 'object'
@@ -537,7 +555,8 @@ export async function firebaseFetchAdmins(): Promise<
   if (!isFirebaseConfigured()) return null;
   try {
     const auth = await getPath<RemoteDb['auth']>(`${ROOT}/auth`);
-    return dbList(auth?.admins);
+    // Never keep plaintext mentor passwords in browser memory from Firebase
+    return stripAdminPasswords(dbList(auth?.admins) as Record<string, unknown>[]);
   } catch (err) {
     console.warn('[firebase] fetchAdmins failed', err);
     return null;
@@ -1013,7 +1032,11 @@ export function firebaseWatchAdmins(
     return onValue(
       r,
       (snap) => {
-        cb(dbList(snap.val()));
+        cb(
+          stripAdminPasswords(
+            dbList(snap.val()) as Record<string, unknown>[],
+          ) as RemoteDb['auth']['admins'],
+        );
       },
       () => undefined,
     );

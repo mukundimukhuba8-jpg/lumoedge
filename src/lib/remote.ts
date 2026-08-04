@@ -13,6 +13,7 @@ import {
   firebasePushDb,
   firebasePushSession,
   mergeAdminsLive,
+  stripAdminPasswords,
   type RemoteDb,
 } from './firebaseDb';
 import { isFirebaseConfigured } from './firebase';
@@ -336,10 +337,57 @@ async function fetchAdminsParallel(): Promise<RemoteDb['auth']['admins'] | null>
   );
   const [fb, api] = await Promise.all([fbWork, apiWork]);
   if (fb === null && api === null) return null;
-  return mergeAdminsLive(
-    (fb || []) as Parameters<typeof mergeAdminsLive>[0],
-    (api || []) as Parameters<typeof mergeAdminsLive>[1],
-  );
+  return stripAdminPasswords(
+    mergeAdminsLive(
+      (fb || []) as Parameters<typeof mergeAdminsLive>[0],
+      (api || []) as Parameters<typeof mergeAdminsLive>[1],
+    ) as Record<string, unknown>[],
+  ) as RemoteDb['auth']['admins'];
+}
+
+const MENTOR_LOGIN_TIMEOUT_MS = 12_000;
+
+/** Server-side mentor password verify — roster GETs never include passwords. */
+export async function loginMentorRemote(
+  email: string,
+  password: string,
+): Promise<{
+  ok: boolean;
+  error?: string;
+  admin?: Record<string, unknown> | null;
+} | null> {
+  const work = (async () => {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        admin?: Record<string, unknown> | null;
+      };
+      if (res.ok && data.ok && data.admin) {
+        return { ok: true as const, admin: data.admin };
+      }
+      if (res.status === 403 || data.error === 'pending') {
+        return {
+          ok: false as const,
+          error: 'pending',
+          admin: data.admin || null,
+        };
+      }
+      if (res.status === 401 || data.error === 'invalid_credentials') {
+        return { ok: false as const, error: 'invalid_credentials', admin: null };
+      }
+      return null;
+    } catch (err) {
+      console.warn('[remote] loginMentor failed', err);
+      return null;
+    }
+  })();
+  return fetchWithTimeout(work, MENTOR_LOGIN_TIMEOUT_MS);
 }
 
 async function fetchAdminsWithRetry(retries: number): Promise<RemoteDb['auth']['admins'] | null> {

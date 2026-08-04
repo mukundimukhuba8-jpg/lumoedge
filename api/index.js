@@ -963,7 +963,8 @@ export default async function handler(req, res) {
     if (pathname === '/api/db' && req.method === 'GET') {
       const { db } = await loadDb();
       const mergedClients = await loadMergedClients();
-      send(res, 200, { ...db, clients: mergedClients });
+      const { publicDbSnapshot } = await import('./_lib/clientMerge.mjs');
+      send(res, 200, publicDbSnapshot({ ...db, clients: mergedClients }));
       return;
     }
 
@@ -972,7 +973,8 @@ export default async function handler(req, res) {
       const { db, sha } = await loadDb();
       // Merge only — never replace whole lists with empties from a partial client sync
       const saved = await saveDb(mergeDatabases(db, body), sha);
-      send(res, 200, saved.db);
+      const { publicDbSnapshot } = await import('./_lib/clientMerge.mjs');
+      send(res, 200, publicDbSnapshot(saved.db));
       return;
     }
 
@@ -981,8 +983,26 @@ export default async function handler(req, res) {
       const fbAdmins = toArray(curAuth?.admins);
       const { db } = await loadDb();
       const localAdmins = toArray(db.auth?.admins);
-      const { mergeAdminsLive } = await import('./_lib/clientMerge.mjs');
-      send(res, 200, mergeAdminsLive(fbAdmins, localAdmins));
+      const { mergeAdminsLive, publicAdminList } = await import('./_lib/clientMerge.mjs');
+      // Roster only — never leak mentor passwords to the browser
+      send(res, 200, publicAdminList(mergeAdminsLive(fbAdmins, localAdmins)));
+      return;
+    }
+
+    if (pathname === '/api/auth/login' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { verifyMentorLogin } = await import('./_lib/clientMerge.mjs');
+      const result = await verifyMentorLogin(body.email, body.password);
+      if (!result.ok) {
+        const status = result.error === 'pending' ? 403 : 401;
+        send(res, status, {
+          ok: false,
+          error: result.error || 'invalid_credentials',
+          admin: result.admin || null,
+        });
+        return;
+      }
+      send(res, 200, { ok: true, admin: result.admin });
       return;
     }
 
@@ -1055,7 +1075,8 @@ export default async function handler(req, res) {
         send(res, 502, { ok: false, error: 'approve_failed' });
         return;
       }
-      send(res, 200, { ok: true, admin: fbUpdated });
+      const { publicAdminRecord } = await import('./_lib/clientMerge.mjs');
+      send(res, 200, { ok: true, admin: publicAdminRecord(fbUpdated) });
       return;
     }
 
@@ -1075,17 +1096,18 @@ export default async function handler(req, res) {
         send(res, 403, { error: 'This email is reserved for Super Admin.' });
         return;
       }
+      const { publicAdminRecord } = await import('./_lib/clientMerge.mjs');
       const fbAdmins = toArray((await firebaseRead('lumo/auth'))?.admins);
       const existingFb = fbAdmins.find((a) => String(a.email || '').toLowerCase() === email);
       if (existingFb) {
-        send(res, 200, existingFb);
+        send(res, 200, publicAdminRecord(existingFb));
         return;
       }
       const { db, sha } = await loadDb();
       const admins = toArray(db.auth?.admins);
       const existing = admins.find((a) => String(a.email || '').toLowerCase() === email);
       if (existing) {
-        send(res, 200, existing);
+        send(res, 200, publicAdminRecord(existing));
         return;
       }
       const entry = {
@@ -1135,7 +1157,7 @@ export default async function handler(req, res) {
       } catch {
         // Firebase is the source of truth for live mentor registrations
       }
-      send(res, 201, entry);
+      send(res, 201, publicAdminRecord(entry));
       return;
     }
 
