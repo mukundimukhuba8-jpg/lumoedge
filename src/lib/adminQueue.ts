@@ -23,23 +23,22 @@ export function isApprovedAdminRole(raw: unknown): boolean {
   return normalizeAdminRole(raw) === 'admin';
 }
 
-type AdminLike = { email?: string; role?: unknown; [key: string]: unknown };
+type AdminLike = { email?: string; role?: unknown; id?: string; password?: unknown; [key: string]: unknown };
 
 function listAdmins<T extends AdminLike>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
 
-/** Live Firebase pending must beat stale GitHub "admin" during sync. */
+/**
+ * Role merge for live sync — never demote an approved mentor back to pending.
+ * (Old "live pending beats backup admin" blocked approved mentors from logging in
+ * whenever Firebase briefly lagged or an approve write used the wrong id.)
+ */
 export function pickAdminRoleLive(liveRole: unknown, backupRole: unknown): AdminApprovalRole {
-  const live = normalizeAdminRole(liveRole);
-  const backup = normalizeAdminRole(backupRole);
-  if (live === 'super') return 'super';
-  if (live === 'admin') return 'admin';
-  if (backup === 'admin') return 'pending';
-  return pickAdminRole(live, backup);
+  return pickAdminRole(liveRole, backupRole);
 }
 
-/** Merge mentor lists — live (Firebase) first; backup only fills gaps or enriches fields. */
+/** Merge mentor lists — preserve Firebase id/password; never demote admin → pending. */
 export function mergeAdminsLive<T extends AdminLike>(live: T[], backup: T[]): T[] {
   const byEmail = new Map<string, T>();
   for (const item of listAdmins(live)) {
@@ -56,7 +55,14 @@ export function mergeAdminsLive<T extends AdminLike>(live: T[], backup: T[]): T[
       continue;
     }
     const merged = { ...prev, ...item, email } as T;
-    merged.role = pickAdminRoleLive(prev.role, item.role) as T['role'];
+    merged.role = pickAdminRole(prev.role, item.role) as T['role'];
+    // Keep the live Firebase id so approve-by-id keeps matching
+    if (prev.id) merged.id = prev.id;
+    const livePass = String(prev.password || '');
+    const backupPass = String(item.password || '');
+    if (livePass || backupPass) {
+      (merged as AdminLike).password = livePass || backupPass;
+    }
     for (const [k, v] of Object.entries(prev)) {
       const nextVal = (item as Record<string, unknown>)[k];
       if ((nextVal === '' || nextVal == null) && v !== '' && v != null) {
@@ -68,7 +74,7 @@ export function mergeAdminsLive<T extends AdminLike>(live: T[], backup: T[]): T[
   return Array.from(byEmail.values());
 }
 
-/** Sync mentor queue for Super Admin — never drop or auto-approve pending before explicit action. */
+/** Sync mentor queue for Super Admin — keep orphan pending; never demote admin. */
 export function mergeAdminsForApprovalSync<T extends AdminLike>(
   local: T[],
   remote: T[],
@@ -82,24 +88,12 @@ export function mergeAdminsForApprovalSync<T extends AdminLike>(
     byEmail.set(email, { ...a, email, role: normalizeAdminRole(a.role) } as T);
   }
 
+  // Keep local pending mentors that remote has not received yet
   for (const a of listAdmins(local)) {
     const email = String(a.email || '').trim().toLowerCase();
     if (!email || normalizeAdminRole(a.role) !== 'pending') continue;
-
     if (!byEmail.has(email)) {
       byEmail.set(email, { ...a, email, role: 'pending' } as T);
-      continue;
-    }
-
-    const remoteHit = listAdmins(remote).find(
-      (r) => String(r.email || '').trim().toLowerCase() === email,
-    );
-    const hit = byEmail.get(email)!;
-    if (
-      normalizeAdminRole(hit.role) === 'admin' &&
-      (!remoteHit || normalizeAdminRole(remoteHit.role) !== 'admin')
-    ) {
-      byEmail.set(email, { ...hit, role: 'pending' } as T);
     }
   }
 

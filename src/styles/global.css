@@ -2928,6 +2928,8 @@ a {
   gap: 4px;
   background: radial-gradient(circle at 50% 32%, #101828 0%, #0a0a0f 62%);
   overflow: hidden;
+  /* Never block Start / Scanner / login taps while splash is animating out */
+  pointer-events: none;
 }
 
 .welcome-glow {

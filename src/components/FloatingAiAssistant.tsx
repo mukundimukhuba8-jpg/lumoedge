@@ -154,6 +154,7 @@ export function FloatingAiAssistant({
         role="dialog"
         aria-label={title}
         aria-hidden={!open}
+        inert={!open || closing ? true : undefined}
       >
         <div className="ai-term-glow" aria-hidden />
         <div className="ai-term-chrome">

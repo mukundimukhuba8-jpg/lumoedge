@@ -181,7 +181,16 @@ export function pushScanHistory(email: string | undefined, item: ScanHistoryItem
   applyDailyResetIfNeeded();
   const all = loadJSON<HistoryStore>(HISTORY_KEY, {});
   const key = emailKey(email);
-  all[key] = [item, ...(all[key] || [])].slice(0, 40);
+  // Keep a tiny thumb only — full JPEG history froze Safari on saveJSON
+  const rawImage = String(item.imageDataUrl || '');
+  const slimImage =
+    rawImage.startsWith('data:') && rawImage.length > 80_000
+      ? rawImage.slice(0, 0) // drop oversized payload; preview not required for history list
+      : rawImage.length > 120_000
+        ? ''
+        : rawImage;
+  const slim: ScanHistoryItem = { ...item, imageDataUrl: slimImage };
+  all[key] = [slim, ...(all[key] || [])].slice(0, 8);
   saveJSON(HISTORY_KEY, all);
   return all[key];
 }
@@ -364,13 +373,28 @@ export function buildTpLadder(
   return tps;
 }
 
-/** Call server OpenAPI/OpenAI vision proxy */
-export async function runChartScan(imageDataUrl: string): Promise<ScanApiResult> {
+const SCAN_TIMEOUT_MS = 55_000;
+
+/** Call server OpenAPI/OpenAI vision proxy — always finishes (timeout / abort). */
+export async function runChartScan(
+  imageDataUrl: string,
+  signal?: AbortSignal,
+): Promise<ScanApiResult> {
+  const ac = new AbortController();
+  const onAbort = () => ac.abort();
+  if (signal) {
+    if (signal.aborted) {
+      return { ok: false, accuracy: 0, error: 'Scan cancelled.' };
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
+  const timer = window.setTimeout(() => ac.abort(), SCAN_TIMEOUT_MS);
   try {
     const res = await fetch('/api/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: imageDataUrl }),
+      signal: ac.signal,
     });
     const text = await res.text();
     let data: ScanApiResult;
@@ -395,11 +419,21 @@ export async function runChartScan(imageDataUrl: string): Promise<ScanApiResult>
     }
     return data;
   } catch (e) {
+    const aborted =
+      (e instanceof DOMException && e.name === 'AbortError') ||
+      (e instanceof Error && e.name === 'AbortError');
     return {
       ok: false,
       accuracy: 0,
-      error: e instanceof Error ? e.message : 'Scan request failed',
+      error: aborted
+        ? 'Scan timed out — try a clearer chart screenshot.'
+        : e instanceof Error
+          ? e.message
+          : 'Scan request failed',
     };
+  } finally {
+    window.clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
   }
 }
 

@@ -798,7 +798,8 @@ button.os-ctrl img,
   border-radius: 0;
   padding: 0;
   opacity: 0;
-  pointer-events: auto;
+  /* Display-only layer — must not eat Start / Scanner taps */
+  pointer-events: none;
   z-index: 3;
 }
 

@@ -273,14 +273,9 @@ export function pickAdminRole(a, b) {
   return adminRoleRank(left) >= adminRoleRank(right) ? left : right;
 }
 
-/** Live Firebase pending must beat stale GitHub "admin" during sync. */
+/** Never demote approved mentors — admin always beats pending. */
 export function pickAdminRoleLive(liveRole, backupRole) {
-  const live = normalizeAdminRole(liveRole);
-  const backup = normalizeAdminRole(backupRole);
-  if (live === 'super') return 'super';
-  if (live === 'admin') return 'admin';
-  if (backup === 'admin') return 'pending';
-  return pickAdminRole(live, backup);
+  return pickAdminRole(liveRole, backupRole);
 }
 
 export function mergeAdminsLive(live, backup) {
@@ -303,7 +298,12 @@ export function mergeAdminsLive(live, backup) {
       continue;
     }
     const merged = { ...prev, ...item, email };
-    merged.role = pickAdminRoleLive(prev.role, item.role);
+    merged.role = pickAdminRole(prev.role, item.role);
+    // Keep Firebase id so approve-by-id keeps matching
+    if (prev.id) merged.id = prev.id;
+    const livePass = String(prev.password || '');
+    const backupPass = String(item.password || '');
+    if (livePass || backupPass) merged.password = livePass || backupPass;
     for (const [k, v] of Object.entries(prev)) {
       const nextVal = item[k];
       if ((nextVal === '' || nextVal == null) && v !== '' && v != null) {
@@ -330,20 +330,55 @@ export async function firebasePatchAdminRole(idOrEmail, role, fallbackRecord = n
     return hit;
   });
 
+  // Id miss (local roster id ≠ Firebase id) — retry by fallback email, then upsert
+  if (!hit && fallbackRecord?.email) {
+    const email = String(fallbackRecord.email || '')
+      .trim()
+      .toLowerCase();
+    admins = admins.map((a) => {
+      if (String(a.email || '').trim().toLowerCase() !== email) return a;
+      hit = { ...a, role: pickAdminRole(a.role, role) };
+      return hit;
+    });
+  }
+
   if (!hit && fallbackRecord) {
+    const email = String(fallbackRecord.email || '')
+      .trim()
+      .toLowerCase();
     hit = {
       ...fallbackRecord,
-      email: String(fallbackRecord.email || '').trim().toLowerCase(),
+      email,
       role: pickAdminRole(fallbackRecord.role, role),
     };
-    admins = mergeAdminsLive(admins, [hit]);
+    // Safe email upsert — never route through demoting mergeAdminsLive
+    let found = false;
+    admins = admins.map((a) => {
+      if (String(a.email || '').trim().toLowerCase() !== email) return a;
+      found = true;
+      hit = {
+        ...a,
+        ...hit,
+        id: a.id || hit.id,
+        role: pickAdminRole(a.role, hit.role),
+      };
+      return hit;
+    });
+    if (!found) admins = [...admins, hit];
   }
 
   if (!hit) return null;
 
   const ok = await firebaseWrite('lumo/auth', { admins, admin: null });
   await firebaseWrite('lumo/updatedAt', new Date().toISOString()).catch(() => false);
-  return ok ? hit : null;
+  if (!ok) return null;
+  // Return the row actually written — never a pre-merge optimistic object
+  const email = String(hit.email || '')
+    .trim()
+    .toLowerCase();
+  return (
+    admins.find((a) => String(a.email || '').trim().toLowerCase() === email) || hit
+  );
 }
 
 export async function firebaseRegisterMentor(entry, workspace) {

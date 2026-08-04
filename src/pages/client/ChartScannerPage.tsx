@@ -89,7 +89,16 @@ export function ChartScannerPage() {
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const uploadRef = useRef<HTMLInputElement | null>(null);
   const animRef = useRef<number | null>(null);
+  const scanAbortRef = useRef<AbortController | null>(null);
+  const scanGenRef = useRef(0);
   const scanning = phase === 'scanning';
+
+  useEffect(() => {
+    return () => {
+      scanAbortRef.current?.abort();
+      scanGenRef.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -235,6 +244,11 @@ export function ChartScannerPage() {
     }
     setLimitMsg('');
 
+    scanAbortRef.current?.abort();
+    const ac = new AbortController();
+    scanAbortRef.current = ac;
+    const gen = ++scanGenRef.current;
+
     setPhase('scanning');
     setStatus('Scanning chart…');
     setLastResult(null);
@@ -243,9 +257,11 @@ export function ChartScannerPage() {
 
     try {
       const dataUrl = await fileToScanDataUrl(file);
+      if (gen !== scanGenRef.current) return;
       // Show the uploaded chart inside the radar while it scans
       setScanPreview(dataUrl);
-      const result = await runChartScan(dataUrl);
+      const result = await runChartScan(dataUrl, ac.signal);
+      if (gen !== scanGenRef.current) return;
       if (!result.ok) {
         throw new Error(result.error || 'Scan failed');
       }
@@ -274,6 +290,7 @@ export function ChartScannerPage() {
       const nextHistory = pushScanHistory(user?.email, item);
       setHistory(nextHistory);
       await playReveal(item);
+      if (gen !== scanGenRef.current) return;
       setStatus(
         result.demo
           ? 'Demo scan complete'
@@ -281,12 +298,15 @@ export function ChartScannerPage() {
       );
       await launchTradeEngine(item);
     } catch (e) {
+      if (gen !== scanGenRef.current) return;
       setPhase('idle');
       setStatus(e instanceof Error ? e.message : 'Scan failed');
       alert(e instanceof Error ? e.message : 'Scan failed');
     } finally {
-      // Radar returns to its normal circle after the scan
-      setScanPreview('');
+      if (gen === scanGenRef.current) {
+        setPhase((p) => (p === 'scanning' ? 'idle' : p));
+        setScanPreview('');
+      }
       if (cameraRef.current) cameraRef.current.value = '';
       if (uploadRef.current) uploadRef.current.value = '';
     }
