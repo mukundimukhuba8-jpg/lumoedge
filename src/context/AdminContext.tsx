@@ -427,13 +427,24 @@ async function syncPortalBrandingToClients(
     if (lic.status === 'deleted') return lic;
     const ea = easById.get(lic.eaId);
     const symbols = ea?.symbols?.length ? ea.symbols : lic.symbols;
+    // Profile EA display name is what mentors edit — prefer it for clients
+    const eaName =
+      pickNonEmptyStr(ws.profile.eaDisplayName, ea?.name, lic.eaName) || lic.eaName;
     return {
       ...lic,
       eaImage: imageRef || '',
-      mainText: ws.profile.mainText || lic.mainText,
-      eaName: ea?.name || ws.profile.eaDisplayName || lic.eaName,
+      mainText: pickNonEmptyStr(ws.profile.mainText, lic.mainText),
+      eaName,
       symbols,
-      customMedia: normalizeCustomMedia(ws.profile.customMedia),
+      customMedia: (() => {
+        const map = new Map(
+          normalizeCustomMedia(lic.customMedia).map((m) => [m.slot, m]),
+        );
+        for (const m of normalizeCustomMedia(ws.profile.customMedia)) {
+          if (m.url) map.set(m.slot, m);
+        }
+        return [...map.values()];
+      })(),
     };
   });
 
@@ -669,13 +680,30 @@ function workspaceDataFingerprint(ws: AdminWorkspace): string {
     .map((e) => `${e.id}:${e.name}:${e.ownerAdminId || ''}:${e.symbols.length}`)
     .sort()
     .join(',');
+  const mediaSig = normalizeCustomMedia(ws.profile.customMedia)
+    .map((m) => `${m.slot}:${m.url?.length || 0}`)
+    .sort()
+    .join(',');
   const prof = [
     ws.profile.mentorId || '',
+    ws.profile.firstName || '',
+    ws.profile.lastName || '',
+    ws.profile.phone || '',
+    ws.profile.mentorName || '',
     ws.profile.eaDisplayName || '',
     ws.profile.eaImage?.length || 0,
     ws.profile.mainText?.length || 0,
+    mediaSig,
   ].join(':');
   return `${lic}|${ea}|${prof}|${(ws.revokedKeys || []).length}|${(ws.deletedEaIds || []).length}`;
+}
+
+function pickNonEmptyStr(...vals: unknown[]): string {
+  for (const v of vals) {
+    const s = String(v ?? '').trim();
+    if (s) return String(v);
+  }
+  return '';
 }
 
 /** Merge remote image refs without rewriting the full local map every poll. */
@@ -811,15 +839,27 @@ function mergeWorkspaceKeepAll(a: AdminWorkspace, b: AdminWorkspace): AdminWorks
     profile: {
       ...a.profile,
       ...b.profile,
+      // Never let an empty cloud poll wipe live names / branding
+      firstName: pickNonEmptyStr(b.profile?.firstName, a.profile?.firstName),
+      lastName: pickNonEmptyStr(b.profile?.lastName, a.profile?.lastName),
+      email: pickNonEmptyStr(b.profile?.email, a.profile?.email),
+      phone: pickNonEmptyStr(b.profile?.phone, a.profile?.phone),
+      mentorName: pickNonEmptyStr(b.profile?.mentorName, a.profile?.mentorName),
+      eaDisplayName: pickNonEmptyStr(b.profile?.eaDisplayName, a.profile?.eaDisplayName),
+      mainText: pickNonEmptyStr(b.profile?.mainText, a.profile?.mainText),
       eaImage:
         (a.profile?.eaImage && String(a.profile.eaImage).trim()) ||
         (b.profile?.eaImage && String(b.profile.eaImage).trim()) ||
         '',
-      customMedia: normalizeCustomMedia(
-        b.profile?.customMedia?.length
-          ? b.profile.customMedia
-          : a.profile?.customMedia,
-      ),
+      customMedia: (() => {
+        const map = new Map(
+          normalizeCustomMedia(a.profile?.customMedia).map((m) => [m.slot, m]),
+        );
+        for (const m of normalizeCustomMedia(b.profile?.customMedia)) {
+          if (m.url) map.set(m.slot, m);
+        }
+        return [...map.values()];
+      })(),
     },
     revokedKeys: Array.from(new Set([...(a.revokedKeys || []), ...(b.revokedKeys || [])])),
   });
@@ -3582,6 +3622,30 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             saveJSON(STORE_KEY, next);
             return next;
           });
+
+          // Keep drawer / auth name in sync with Profile Settings (live app memory)
+          const fullName = [branded.profile.firstName, branded.profile.lastName]
+            .map((s) => String(s || '').trim())
+            .filter(Boolean)
+            .join(' ');
+          if (fullName || branded.profile.email) {
+            setAuth((prev) => {
+              if (!prev.admin || prev.admin.id !== adminId) return prev;
+              const nextAuth = {
+                ...prev,
+                admin: {
+                  ...prev.admin,
+                  fullName: fullName || prev.admin.fullName,
+                  email: branded.profile.email || prev.admin.email,
+                  phone: branded.profile.phone || prev.admin.phone,
+                  mentorName: branded.profile.mentorName || prev.admin.mentorName,
+                  eaName: branded.profile.eaDisplayName || prev.admin.eaName,
+                },
+              };
+              saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+              return nextAuth;
+            });
+          }
 
           void (async () => {
             try {

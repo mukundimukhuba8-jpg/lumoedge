@@ -6,6 +6,8 @@ export type EaFloatPos = { x: number; y: number };
 
 const SIZE = 64;
 const MARGIN = 8;
+/** Clearance under iOS status / notch */
+const TOP_Y = 56;
 
 export function loadEaFloatPos(): EaFloatPos | null {
   if (typeof window === 'undefined') return null;
@@ -36,14 +38,17 @@ export function saveEaFloatPos(pos: EaFloatPos) {
   }
 }
 
-export function defaultEaFloatPos(): EaFloatPos {
-  if (typeof window === 'undefined') return { x: 14, y: 120 };
-  const w = window.innerWidth;
-  const h = window.innerHeight;
+/** Default / Start position — top of the screen (user asked for top after Start). */
+export function topEaFloatPos(): EaFloatPos {
+  if (typeof window === 'undefined') return { x: 14, y: TOP_Y };
   return clampEaFloatPos({
-    x: Math.max(MARGIN, Math.min(w / 2 - 210, w - SIZE - MARGIN)),
-    y: h - SIZE - 92,
+    x: MARGIN + 6,
+    y: TOP_Y + (typeof window !== 'undefined' ? 0 : 0),
   });
+}
+
+export function defaultEaFloatPos(): EaFloatPos {
+  return topEaFloatPos();
 }
 
 export function clampEaFloatPos(pos: EaFloatPos): EaFloatPos {

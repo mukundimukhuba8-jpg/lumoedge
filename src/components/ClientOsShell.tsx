@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { EaBackdrop } from './EaBackdrop';
 import { EaStatusCard, EaStatusFloat } from './EaStatusCard';
@@ -61,6 +61,8 @@ export function ClientOsShell() {
   const [prefs, setPrefs] = useState(() => loadInterfacePrefs());
   const [panelKey, setPanelKey] = useState(location.pathname);
   const [eaInfoOpen, setEaInfoOpen] = useState(false);
+  const [placeFloatTop, setPlaceFloatTop] = useState(false);
+  const wasPaused = useRef(isPaused);
 
   useEffect(() => subscribeInterfacePrefs(() => setPrefs(loadInterfacePrefs())), []);
 
@@ -71,6 +73,17 @@ export function ClientOsShell() {
   useEffect(() => {
     setPanelKey(location.pathname);
   }, [location.pathname]);
+
+  // Start → LIVE float appears at top of screen
+  useEffect(() => {
+    if (wasPaused.current && !isPaused) {
+      setPlaceFloatTop(true);
+      const t = window.setTimeout(() => setPlaceFloatTop(false), 400);
+      wasPaused.current = isPaused;
+      return () => window.clearTimeout(t);
+    }
+    wasPaused.current = isPaused;
+  }, [isPaused]);
 
   const custom = resolveCustomBackdrop(
     prefs.customBg,
@@ -130,12 +143,13 @@ export function ClientOsShell() {
 
         <OsDock />
 
-        {/* LIVE float — Start/Pause toggles it; drag anywhere; tap opens details */}
+        {/* LIVE float — Start puts it at top; drag anywhere; tap opens details */}
         <EaStatusFloat
           visible={!isPaused}
           eaTitle={eaTitle}
           avatarUrl={avatarUrl}
           isPaused={isPaused}
+          placeAtTop={placeFloatTop}
           onOpen={() => setEaInfoOpen(true)}
         />
 
