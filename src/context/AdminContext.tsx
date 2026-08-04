@@ -542,6 +542,12 @@ async function syncPortalBrandingToClients(
             getEaImage(imageKeyFromPublicUrl(item.url));
       if (bytes && bytes.startsWith('data:')) {
         imagePayload[mediaKeyId] = bytes;
+      } else if (
+        item.url.startsWith('http') ||
+        item.url.startsWith('/api/')
+      ) {
+        // Hosted background URL — same durable pattern as profile picture
+        imagePayload[mediaKeyId] = item.url;
       }
     }
     const payload: Parameters<typeof pushDb>[0] = {
@@ -569,6 +575,11 @@ async function syncPortalBrandingToClients(
             getEaImage(imageKeyFromPublicUrl(item.url));
       if (bytes && bytes.startsWith('data:')) {
         imagePayload[mediaKeyId] = bytes;
+      } else if (
+        item.url.startsWith('http') ||
+        item.url.startsWith('/api/')
+      ) {
+        imagePayload[mediaKeyId] = item.url;
       }
     }
     await pushDb({
@@ -3832,6 +3843,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                         getEaImage(imageKeyFromPublicUrl(item.url));
                   if (bytes && bytes.startsWith('data:')) {
                     imagePayload[mediaKeyId] = bytes;
+                  } else if (
+                    item.url.startsWith('http') ||
+                    item.url.startsWith('/api/')
+                  ) {
+                    imagePayload[mediaKeyId] = item.url;
                   }
                 }
                 void pushDb({

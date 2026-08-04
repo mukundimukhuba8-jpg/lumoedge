@@ -1236,7 +1236,9 @@ export function ProfilePage() {
         onMediaChange={setCustomMedia}
         onSync={async (nextMedia) => {
           setCustomMedia(nextMedia);
-          await updateProfile({ ...form, customMedia: nextMedia });
+          // Only patch media — spreading the whole form re-uploads the profile
+          // picture and freezes the portal on every background save.
+          await updateProfile({ customMedia: nextMedia });
         }}
       />
 
