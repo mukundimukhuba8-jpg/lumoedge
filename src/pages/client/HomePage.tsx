@@ -104,14 +104,22 @@ export function HomePage() {
 
   useEffect(() => {
     if (!user?.email || !bot.licenseKey) return;
-    const sync = () => {
+    let cancelled = false;
+    let lastSync = 0;
+    const sync = (force = false) => {
+      const now = Date.now();
+      // Cap branding sync — was every 8s and burned mobile data
+      if (!force && now - lastSync < 60_000) return;
+      lastSync = now;
       void import('../../lib/clientBrandingSync').then(
         async ({ fetchClientBranding, resolveBrandingImageUrl }) => {
+          if (cancelled) return;
           const branding = await fetchClientBranding(bot.licenseKey);
-          if (!branding) return;
+          if (!branding || cancelled) return;
           const imageUrl = branding.imageUrl
             ? await resolveBrandingImageUrl(branding.imageUrl)
             : '';
+          if (cancelled) return;
           refreshBranding({
             ...branding,
             displayName:
@@ -127,14 +135,22 @@ export function HomePage() {
         },
       );
     };
-    sync();
+    sync(true);
+    const onFocus = () => sync(true);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') sync(true);
+    });
     let unwatch = () => {};
     void import('../../lib/firebaseDb').then(({ firebaseWatchUpdates }) => {
-      unwatch = firebaseWatchUpdates(sync);
+      // Debounced: mentor updates still sync, but not a full pull every few seconds
+      unwatch = firebaseWatchUpdates(() => sync(false));
     });
-    const id = window.setInterval(sync, 8000);
+    const id = window.setInterval(() => sync(false), 90_000);
     return () => {
+      cancelled = true;
       window.clearInterval(id);
+      window.removeEventListener('focus', onFocus);
       unwatch();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

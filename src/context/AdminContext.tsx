@@ -1543,7 +1543,7 @@ function mergeSubscriberQueue(
 const AdminContext = createContext<Ctx | null>(null);
 /** Splash stays visible briefly, but never blocks the app on slow networks */
 const SPLASH_MIN_MS = 0;
-const SPLASH_MAX_MS = 1200;
+const SPLASH_MAX_MS = 400;
 
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(() => migrateAuth());
@@ -1702,9 +1702,18 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Keep subscription list fresh — admin portal + waiting clients on phones
+  // Subscription queue — only poll when admin portal is open, or client is waiting
   useEffect(() => {
     if (booting) return;
+    const needsQueue =
+      isAdminPortalSession() ||
+      (typeof window !== 'undefined' &&
+        (window.location.pathname.startsWith('/waiting') ||
+          window.location.pathname.startsWith('/activate')));
+    if (!needsQueue) {
+      setClientsLoading(false);
+      return;
+    }
     const tick = async () => {
       const list = await fetchClients();
       if (list) {
@@ -1718,7 +1727,9 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       setClientsLoading(false);
     };
     void tick();
-    const id = window.setInterval(tick, 8000);
+    // Admin: 12s. Waiting clients: 20s. Never every 8s on licensed /app.
+    const every = isAdminPortalSession() ? 12_000 : 20_000;
+    const id = window.setInterval(tick, every);
     return () => window.clearInterval(id);
   }, [booting]);
 
