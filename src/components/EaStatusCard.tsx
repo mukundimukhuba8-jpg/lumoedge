@@ -180,6 +180,7 @@ export function EaStatusFloat({
 }: FloatProps) {
   const [pos, setPos] = useState<EaFloatPos>(() => loadEaFloatPos() || topEaFloatPos());
   const [dragging, setDragging] = useState(false);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
   const drag = useRef<{
     pointerId: number;
     startX: number;
@@ -203,6 +204,13 @@ export function EaStatusFloat({
     saveEaFloatPos(top);
   }, [visible, placeAtTop]);
 
+  useEffect(() => {
+    const el = btnRef.current;
+    if (!el) return;
+    el.style.left = `${pos.x}px`;
+    el.style.top = `${pos.y}px`;
+  }, [pos.x, pos.y]);
+
   if (!visible) return null;
 
   const onPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
@@ -216,7 +224,6 @@ export function EaStatusFloat({
       originY: pos.y,
       moved: false,
     };
-    setDragging(true);
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
@@ -225,8 +232,17 @@ export function EaStatusFloat({
     const dx = e.clientX - d.startX;
     const dy = e.clientY - d.startY;
     if (!d.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-    d.moved = true;
-    setPos(clampEaFloatPos({ x: d.originX + dx, y: d.originY + dy }));
+    if (!d.moved) {
+      d.moved = true;
+      setDragging(true);
+    }
+    // Move via DOM — avoid React re-render every frame (was freezing taps)
+    const next = clampEaFloatPos({ x: d.originX + dx, y: d.originY + dy });
+    const el = btnRef.current;
+    if (el) {
+      el.style.left = `${next.x}px`;
+      el.style.top = `${next.y}px`;
+    }
   };
 
   const endDrag = (e: ReactPointerEvent<HTMLButtonElement>) => {
@@ -240,11 +256,13 @@ export function EaStatusFloat({
     drag.current = null;
     setDragging(false);
     if (d.moved) {
-      setPos((p) => {
-        const next = clampEaFloatPos(p);
-        saveEaFloatPos(next);
-        return next;
+      const el = btnRef.current;
+      const next = clampEaFloatPos({
+        x: el ? parseFloat(el.style.left) || d.originX : d.originX,
+        y: el ? parseFloat(el.style.top) || d.originY : d.originY,
       });
+      setPos(next);
+      saveEaFloatPos(next);
       return;
     }
     onOpen();
@@ -252,6 +270,7 @@ export function EaStatusFloat({
 
   return (
     <button
+      ref={btnRef}
       type="button"
       className={`ea-float-orb${isPaused ? ' is-paused' : ' is-live'}${
         dragging ? ' is-dragging' : ''

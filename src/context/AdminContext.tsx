@@ -2012,13 +2012,21 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       ? undefined
       : window.setInterval(() => void syncWorkspace(), 20000);
     let unwatch: (() => void) | undefined;
+    let debounceTimer: number | undefined;
     if (useFirebaseWatch) {
       void import('../lib/firebaseDb').then(({ firebaseWatchUpdates }) => {
-        unwatch = firebaseWatchUpdates(() => void syncWorkspace());
+        // Debounce — publish bumps updatedAt often; syncing every time freezes taps
+        unwatch = firebaseWatchUpdates(() => {
+          if (document.visibilityState === 'hidden') return;
+          if (licensePublishInFlight > 0) return;
+          if (debounceTimer) window.clearTimeout(debounceTimer);
+          debounceTimer = window.setTimeout(() => void syncWorkspace(), 2000);
+        });
       });
     }
     return () => {
       if (poll) window.clearInterval(poll);
+      if (debounceTimer) window.clearTimeout(debounceTimer);
       unwatch?.();
     };
   }, [booting, auth.admin?.id]);
@@ -2349,8 +2357,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       );
       warmLicenseCache();
       resyncLicenses();
-      // Republish + restore pending people so live keys activate again
-      await restoreLicensesFromCloud().catch(() => undefined);
+      // Background only — never block UI / taps on restore
+      void restoreLicensesFromCloud().catch(() => undefined);
     })();
   }, [booting, auth.admin?.id, warmLicenseCache, resyncLicenses, restoreLicensesFromCloud]);
 
@@ -3264,22 +3272,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         upsertVault(licenseToVaultEntry(record));
         licenseLog('generate', 'saved locally', { key, clientEmail });
 
-        // Must land in Firebase before clients can activate — await publish
-        try {
-          unrevokeLicenseKeys([key]);
-          await pushLicensesToRemote(adminId, nextWs);
-        } catch (err) {
-          licenseError('generate', 'cloud push failed', {
+        // Local key immediately — cloud publish in background so UI never freezes
+        unrevokeLicenseKeys([key]);
+        void pushLicensesToRemote(adminId, nextWs).catch((err) => {
+          licenseError('generate', 'cloud push failed (background)', {
             error: err instanceof Error ? err.message : String(err),
             key,
             clientEmail,
           });
-          return {
-            ok: false,
-            error:
-              'Key saved on this device but cloud sync failed. Open Generate License again to restore, then retry.',
-          };
-        }
+        });
 
         licenseLog('generate', 'success', { key, clientEmail });
         return { ok: true, license: { ...record, eaImage: displayBytes || eaImage } };

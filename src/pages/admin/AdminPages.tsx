@@ -539,7 +539,6 @@ export function GenerateLicensePage() {
     generateLicense,
     deleteLicense,
     profile,
-    restoreLicensesFromCloud,
     refreshClientQueue,
   } = useAdmin();
   const [eaId, setEaId] = useState('');
@@ -549,7 +548,6 @@ export function GenerateLicensePage() {
   const [search, setSearch] = useState('');
   const [lastKey, setLastKey] = useState('');
   const [generating, setGenerating] = useState(false);
-  const [restoring, setRestoring] = useState(false);
   const [status, setStatus] = useState<{
     type: 'error' | 'success';
     title: string;
@@ -558,29 +556,11 @@ export function GenerateLicensePage() {
   const [copied, setCopied] = useState(false);
   const effectiveEaId = eaId || eas[0]?.id || '';
   const selected = eas.find((e) => e.id === effectiveEaId) ?? eas[0];
-  const restoredOnce = useRef(false);
 
-  // Auto-restore keys + pending subscriptions when opening this page
+  // Light refresh only — full restore runs in background on admin boot
   useEffect(() => {
-    if (restoredOnce.current) return;
-    restoredOnce.current = true;
-    setRestoring(true);
-    void (async () => {
-      try {
-        const lic = await restoreLicensesFromCloud();
-        await refreshClientQueue();
-        if (lic.ok) {
-          setStatus({
-            type: 'success',
-            title: `Restored ${lic.licenses ?? 0} license key(s) to cloud`,
-            detail: 'Pending subscriptions refreshed. Clients can activate again.',
-          });
-        }
-      } finally {
-        setRestoring(false);
-      }
-    })();
-  }, [restoreLicensesFromCloud, refreshClientQueue]);
+    void refreshClientQueue();
+  }, [refreshClientQueue]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -596,12 +576,6 @@ export function GenerateLicensePage() {
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
-      {restoring ? (
-        <div className="glow-card" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <Loader2 size={18} className="spin" style={{ color: 'var(--electric)' }} />
-          <span>Restoring license keys and pending subscriptions…</span>
-        </div>
-      ) : null}
       {eas.length === 0 ? (
         <div className="glow-card" style={{ borderColor: 'rgba(245,158,11,0.4)' }}>
           <strong style={{ color: 'var(--orange)' }}>Create an EA first</strong>
@@ -1525,7 +1499,6 @@ export function SubscriptionsPage() {
     approveClient,
     addApprovedSubscriber,
     refreshClientQueue,
-    restoreLicensesFromCloud,
     markClientPaid,
     deleteClient,
     stats,
@@ -1557,21 +1530,21 @@ export function SubscriptionsPage() {
   const paidPending = pending.filter((c) => c.paymentClaimed).length;
 
   useEffect(() => {
+    // Queue only — full license restore is background on boot (keeps taps smooth)
     void (async () => {
       setRefreshing(true);
       try {
-        await restoreLicensesFromCloud();
         const result = await refreshClientQueue();
         if (result.ok) {
           setRefreshMsg(
-            `Restored — ${result.pending ?? 0} pending, ${result.approved ?? 0} approved`,
+            `${result.pending ?? 0} pending · ${result.approved ?? 0} approved`,
           );
         }
       } finally {
         setRefreshing(false);
       }
     })();
-  }, [refreshClientQueue, restoreLicensesFromCloud]);
+  }, [refreshClientQueue]);
 
   const onAddManual = async () => {
     if (manualSaving) return;
