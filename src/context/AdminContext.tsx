@@ -16,6 +16,7 @@ import {
   fetchDb,
   fetchImagesMap,
   invalidateFetchDbCache,
+  loginMentorRemote,
   patchClient,
   postClient,
   postMentorRegistration,
@@ -1178,13 +1179,22 @@ function healAllWorkspacesFromVault(prev: StoreState): StoreState {
   return next;
 }
 
+function withoutAdminPassword(admin: AdminUser): AdminUser {
+  const { password: _drop, ...rest } = admin;
+  return rest;
+}
+
+function withoutAdminPasswords(list: AdminUser[]): AdminUser[] {
+  return list.map(withoutAdminPassword);
+}
+
 function saveCachedAdminRoster(list: AdminUser[]) {
   if (!list.length) return;
-  saveJSON(ADMIN_ROSTER_CACHE_KEY, list);
+  saveJSON(ADMIN_ROSTER_CACHE_KEY, withoutAdminPasswords(list));
 }
 
 function loadCachedAdminRoster(): AdminUser[] {
-  return loadJSON<AdminUser[]>(ADMIN_ROSTER_CACHE_KEY, []);
+  return withoutAdminPasswords(loadJSON<AdminUser[]>(ADMIN_ROSTER_CACHE_KEY, []));
 }
 
 function migrateAuth(): AuthState {
@@ -1198,7 +1208,9 @@ function migrateAuth(): AuthState {
           ? v3.admins
           : cachedRoster
     ).map((a) => ({ ...a, role: normalizeAdminRole(a.role) })) as AdminUser[];
-    return { ...v3, admins, portalOpen: false };
+    // Session user never keeps a password; roster may keep a same-device register secret
+    const admin = v3.admin ? withoutAdminPassword(v3.admin) : null;
+    return { ...v3, admin, admins, portalOpen: false };
   }
   const v1 = loadJSON<{
     portalOpen?: boolean;
@@ -2526,94 +2538,102 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
 
         approvalLog('mentor', 'login_attempt', { email: normalized });
-        const remoteAdmins = await fetchMentorRosterForLogin(auth.admins);
-        if (!remoteAdmins) {
-          approvalWarn('mentor', 'login_fetch_timeout', { email: normalized });
-          console.warn('[mentor-auth] Login roster unavailable for', normalized);
-          return MENTOR_AUTH_MSG.unavailable;
+
+        // Server verifies password — roster GETs no longer include passwords
+        const remoteLogin = await loginMentorRemote(normalized, password);
+        if (remoteLogin?.ok && remoteLogin.admin) {
+          const remoteAdmin = remoteLogin.admin as AdminUser;
+          const mentor = withoutAdminPassword({
+            ...remoteAdmin,
+            id: String(remoteAdmin.id || ''),
+            email: normalized,
+            role: 'admin',
+            fullName: String(remoteAdmin.fullName || ''),
+          });
+          const remoteAdmins = await fetchMentorRosterForLogin(auth.admins);
+          const roster = mergeAdminsForApprovalSync(
+            auth.admins,
+            remoteAdmins || [mentor],
+          ) as AdminUser[];
+          setAuth((prev) => {
+            const nextAdmins = withoutAdminPasswords(
+              mergeAdminsForApprovalSync(prev.admins, [
+                ...(remoteAdmins || []),
+                mentor,
+              ]) as AdminUser[],
+            );
+            const nextAuth = {
+              ...prev,
+              admins: nextAdmins,
+              admin: null,
+              portalOpen: false,
+            };
+            saveJSON(AUTH_KEY, nextAuth);
+            return nextAuth;
+          });
+          if (!store.workspaces[mentor.id]) {
+            saveStore(
+              {
+                ...store,
+                workspaces: {
+                  ...store.workspaces,
+                  [mentor.id]: createEmptyWorkspace(mentor),
+                },
+              },
+              mentor.id,
+            );
+          }
+          saveAuth({
+            ...auth,
+            admins: withoutAdminPasswords(roster),
+            admin: mentor,
+            portalOpen: true,
+          });
+          approvalLog('mentor', 'login_success', {
+            email: normalized,
+            id: mentor.id,
+            source: 'api',
+          });
+          return null;
+        }
+        if (remoteLogin && !remoteLogin.ok) {
+          if (remoteLogin.error === 'pending') {
+            return mentorPendingLoginMessage();
+          }
+          return MENTOR_AUTH_MSG.invalidCredentials;
         }
 
-        const roster = mergeAdminsForApprovalSync(
-          auth.admins,
-          remoteAdmins,
-        ) as AdminUser[];
-
-        const remoteHit = remoteAdmins.find(
+        // API unreachable — last-resort same-device local password (registration on this browser)
+        const localHit = auth.admins.find(
           (a) => a.email.toLowerCase() === normalized,
         );
-        const localHit =
-          roster.find((a) => a.email.toLowerCase() === normalized) ||
-          auth.admins.find((a) => a.email.toLowerCase() === normalized);
-        const hit = remoteHit || localHit;
-        if (!hit) {
-          return MENTOR_AUTH_MSG.invalidCredentials;
+        if (localHit && String(localHit.password || '') === password) {
+          const role = normalizeAdminRole(localHit.role);
+          if (role === 'pending' || role !== 'admin') {
+            return mentorPendingLoginMessage();
+          }
+          const mentor = withoutAdminPassword({
+            ...localHit,
+            role: 'admin',
+            email: normalized,
+          });
+          saveAuth({
+            ...auth,
+            admins: withoutAdminPasswords(auth.admins),
+            admin: mentor,
+            portalOpen: true,
+          });
+          approvalLog('mentor', 'login_success', {
+            email: normalized,
+            id: mentor.id,
+            source: 'local_fallback',
+          });
+          return null;
         }
 
-        // Admin wins — local approve must not be blocked by lagging Firebase pending
-        const role = pickAdminRole(remoteHit?.role, localHit?.role);
-        const passwordOk = [remoteHit, localHit, hit].some(
-          (c) => c && String(c.password || '') === password,
-        );
-        if (!passwordOk) {
-          // Wrong password — never mask as "awaiting approval"
-          return MENTOR_AUTH_MSG.invalidCredentials;
-        }
-        if (role === 'pending') {
-          return mentorPendingLoginMessage();
-        }
-        if (role !== 'admin') {
-          return mentorPendingLoginMessage();
-        }
-
-        const mentor: AdminUser = {
-          ...hit,
-          ...(localHit || {}),
-          ...(remoteHit || {}),
-          // Prefer Firebase id when present (approve/patch match)
-          id: String(remoteHit?.id || localHit?.id || hit.id),
-          role: 'admin',
-          email: normalized,
-          password,
-        };
-
-        // Persist roster after auth decision — never demote pre-login
-        setAuth((prev) => {
-          const nextAdmins = mergeAdminsForApprovalSync(prev.admins, [
-            ...remoteAdmins,
-            mentor,
-          ]) as AdminUser[];
-          const nextAuth = {
-            ...prev,
-            admins: nextAdmins,
-            admin: null,
-            portalOpen: false,
-          };
-          saveJSON(AUTH_KEY, nextAuth);
-          return nextAuth;
-        });
-
-        if (!store.workspaces[mentor.id]) {
-          saveStore(
-            {
-              ...store,
-              workspaces: {
-                ...store.workspaces,
-                [mentor.id]: createEmptyWorkspace(mentor),
-              },
-            },
-            mentor.id,
-          );
-        }
-        const { password: _p, ...user } = mentor;
-        saveAuth({ ...auth, admins: roster, admin: user, portalOpen: true });
-        // Heal Firebase if it still says pending after a successful local approve
-        if (normalizeAdminRole(remoteHit?.role) === 'pending') {
-          void patchAdminRole(mentor.email, 'admin', mentor as unknown as Record<string, unknown>).catch(
-            () => undefined,
-          );
-        }
-        approvalLog('mentor', 'login_success', { email: normalized, id: user.id });
-        return null;
+        approvalWarn('mentor', 'login_fetch_timeout', { email: normalized });
+        console.warn('[mentor-auth] Login API unavailable for', normalized);
+        return MENTOR_AUTH_MSG.unavailable;
         } catch (err) {
           approvalError('mentor', 'login_exception', {
             email: email.trim().toLowerCase(),
@@ -2669,6 +2689,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             ...(serverEntry as AdminUser),
             email,
             role: 'pending',
+            // Same-device offline login fallback only — never returned by API roster
+            password: form.password,
           };
           const workspace = createEmptyWorkspace(entry);
           const nextAdmins = mergeAdmins(auth.admins, [entry]) as AdminUser[];
