@@ -58,6 +58,7 @@ import {
   saveRevokedKeysLocal,
   saveVaultLocal,
   stripVaultEntryForLocal,
+  unrevokeLicenseKeys,
   upsertClientVault,
   upsertVault,
   isAdminPortalSession,
@@ -2153,18 +2154,21 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     try {
       invalidateFetchDbCache();
       const db = await fetchDb();
+      const cloudVault = dbList<VaultLicense>(db?.vault).filter(
+        (v) => v.status === 'active' || v.status === 'assigned',
+      );
+      // Unban any live cloud keys so clients can activate again
+      if (cloudVault.length) {
+        unrevokeLicenseKeys(cloudVault.map((v) => v.key));
+      }
       if (db?.vault && licensePublishInFlight === 0) {
-        const revoked = loadRevokedKeys();
         saveMergedVaultForMentor(
           adminId,
-          dbList<VaultLicense>(db.vault).filter(
-            (v) =>
-              v.status !== 'deleted' &&
-              !revoked.some((k) => keysMatch(k, v.key)),
-          ),
+          dbList<VaultLicense>(db.vault).filter((v) => v.status !== 'deleted'),
         );
       }
       const hydrated = hydrateLicenseRemote(db);
+      let healedWs: AdminWorkspace | null = null;
       setStore((prev) => {
         const base = hydrated ?? prev;
         const isSuper = adminId === SUPER_ADMIN_ID;
@@ -2173,22 +2177,58 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           adminId,
           vaultForMentor(adminId, isSuper),
         );
+        const licenseHeal = healLicensesFromVault<LicenseRecord>(
+          healed.workspace,
+          adminId,
+          vaultForMentor(adminId, isSuper),
+          [],
+          { includeAllVault: isSuper },
+        );
+        healedWs = {
+          ...healed.workspace,
+          licenses: licenseHeal.licenses,
+          revokedKeys: (healed.workspace.revokedKeys || []).filter(
+            (k) => !licenseHeal.licenses.some((l) => keysMatch(l.key, k)),
+          ),
+        };
         const next = healAllWorkspacesFromVault({
           ...base,
           workspaces: {
             ...base.workspaces,
-            [adminId]: healed.workspace,
+            [adminId]: healedWs,
           },
         });
         saveJSON(STORE_KEY, next);
         return next;
       });
+
+      // Republish local+healed keys to Firebase (fixes keys that only lived on device)
+      const wsNow =
+        healedWs ||
+        loadJSON<StoreState>(STORE_KEY, { workspaces: {} }).workspaces[adminId];
+      if (wsNow?.licenses?.length) {
+        unrevokeLicenseKeys(wsNow.licenses.map((l) => l.key));
+        await pushLicensesToRemote(adminId, wsNow).catch((err) => {
+          licenseError('restore', 'republish failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+
+      // Pending subscriptions / people
+      void repairClientQueueRemote().catch(() => undefined);
       const list = await fetchClients();
       if (list) {
         const remoteDeleted = await fetchRemoteDeletedClients();
-        setClients((prev) =>
-          mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted),
-        );
+        setClients((prev) => {
+          const merged = mergeSubscriberQueue(
+            prev,
+            list as ClientRequest[],
+            remoteDeleted,
+          );
+          saveCachedClientQueue(merged);
+          return merged;
+        });
       }
       const licenses =
         loadJSON<StoreState>(STORE_KEY, { workspaces: {} }).workspaces[adminId]?.licenses
@@ -2293,8 +2333,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       );
       warmLicenseCache();
       resyncLicenses();
+      // Republish + restore pending people so live keys activate again
+      await restoreLicensesFromCloud().catch(() => undefined);
     })();
-  }, [booting, auth.admin?.id, warmLicenseCache, resyncLicenses]);
+  }, [booting, auth.admin?.id, warmLicenseCache, resyncLicenses, restoreLicensesFromCloud]);
 
   const patchWorkspace = useCallback(
     (adminId: string, updater: (ws: AdminWorkspace) => AdminWorkspace, seed?: AdminUser) => {
@@ -3206,13 +3248,22 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         upsertVault(licenseToVaultEntry(record));
         licenseLog('generate', 'saved locally', { key, clientEmail });
 
-        void pushLicensesToRemote(adminId, nextWs).catch((err) => {
-          licenseError('generate', 'cloud push failed (background)', {
+        // Must land in Firebase before clients can activate — await publish
+        try {
+          unrevokeLicenseKeys([key]);
+          await pushLicensesToRemote(adminId, nextWs);
+        } catch (err) {
+          licenseError('generate', 'cloud push failed', {
             error: err instanceof Error ? err.message : String(err),
             key,
             clientEmail,
           });
-        });
+          return {
+            ok: false,
+            error:
+              'Key saved on this device but cloud sync failed. Open Generate License again to restore, then retry.',
+          };
+        }
 
         licenseLog('generate', 'success', { key, clientEmail });
         return { ok: true, license: { ...record, eaImage: displayBytes || eaImage } };
@@ -3419,7 +3470,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
         if (localHit && !localHit.ok) {
           licenseWarn('claim', 'local rejected', { error: localHit.error });
-          return { ok: false, error: INVALID_KEY_MESSAGE };
+          // Surface real policy errors (wrong email / already used) — not "Invalid key"
+          return { ok: false, error: localHit.error || INVALID_KEY_MESSAGE };
         }
 
         // Key already in database — activate instantly, sync assignment in background
@@ -3430,7 +3482,24 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
 
         // First visit: one fast server read + bind
-        const server = await claimLicenseRemote(normalizedKey, normalizedEmail);
+        let server = await claimLicenseRemote(normalizedKey, normalizedEmail);
+        if (!server.ok && server.retryable) {
+          invalidateFetchDbCache();
+          const remote = await fetchDb();
+          if (remote) {
+            const merged = hydrateLicenseRemote(remote);
+            if (merged) setStore(merged);
+            localHit = attemptClaim(
+              (merged ?? store).workspaces,
+              loadRemoteImages(),
+            );
+            if (localHit?.ok) return finishClaim(localHit.license);
+            if (localHit && !localHit.ok) {
+              return { ok: false, error: localHit.error || INVALID_KEY_MESSAGE };
+            }
+          }
+          server = await claimLicenseRemote(normalizedKey, normalizedEmail);
+        }
         if (server.ok) {
           const lic = {
             ...server.license,
@@ -3443,11 +3512,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
         if (server.status && server.status >= 400 && server.status < 500 && !server.retryable) {
           licenseWarn('claim', 'server rejected', { error: server.error, status: server.status });
-          return { ok: false, error: INVALID_KEY_MESSAGE };
+          return {
+            ok: false,
+            error:
+              server.error && server.error !== INVALID_KEY_MESSAGE
+                ? server.error
+                : INVALID_KEY_MESSAGE,
+          };
         }
 
         licenseError('claim', 'failed', { email: normalizedEmail, key: normalizedKey, error: server.error });
-        return { ok: false, error: INVALID_KEY_MESSAGE };
+        return { ok: false, error: server.error || INVALID_KEY_MESSAGE };
       },
       resyncLicenses,
       warmLicenseCache,

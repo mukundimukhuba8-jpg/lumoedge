@@ -314,6 +314,17 @@ export function isRevokedKey(key: string) {
   return loadRevokedKeys().some((k) => keyFingerprint(k) === fp);
 }
 
+/** Remove live keys from the local revoked list so they can activate again. */
+export function unrevokeLicenseKeys(keys: string[]) {
+  if (!keys.length) return loadRevokedKeys();
+  const before = loadRevokedKeys();
+  const next = before.filter((r) => !keys.some((k) => keysMatch(r, k)));
+  if (next.length !== before.length) {
+    saveRevokedKeys(next);
+  }
+  return next;
+}
+
 const IMAGE_STORE = 'ub-web/ea-images-v1';
 
 export function imagePublicUrl(id: string) {

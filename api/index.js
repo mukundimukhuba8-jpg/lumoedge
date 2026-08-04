@@ -277,23 +277,29 @@ async function publishLicensesToFirebase(adminId, vaultEntries, workspace, revok
       }
     }
 
-    const curRevoked = toArray(await firebaseRead('lumo/revokedKeys'));
-    const mergedRevoked = [
-      ...new Set([...curRevoked, ...toArray(revokedKeys)].map((k) => String(k || '').toUpperCase())),
-    ].filter(Boolean);
-    const revokedNorm = new Set(
-      mergedRevoked.map((k) =>
-        String(k || '')
-          .trim()
-          .toUpperCase()
-          .replace(/[^A-Z0-9]/g, ''),
-      ),
-    );
-    const mergedVault = mergeVault(curVault, vaultEntries).filter((v) => {
-      const norm = String(v?.key || '')
+    const fingerprint = (k) =>
+      String(k || '')
         .trim()
         .toUpperCase()
         .replace(/[^A-Z0-9]/g, '');
+    // Live keys being published must leave the revoked list — otherwise restore
+    // can never reactivate keys that were falsely banned.
+    const liveNorms = new Set(
+      toArray(vaultEntries)
+        .filter((v) => v && v.status !== 'deleted' && fingerprint(v.key))
+        .map((v) => fingerprint(v.key)),
+    );
+    const curRevoked = toArray(await firebaseRead('lumo/revokedKeys'));
+    const mergedRevoked = [
+      ...new Set([...curRevoked, ...toArray(revokedKeys)].map((k) => String(k || '').toUpperCase())),
+    ]
+      .filter(Boolean)
+      .filter((k) => !liveNorms.has(fingerprint(k)));
+    const revokedNorm = new Set(mergedRevoked.map((k) => fingerprint(k)).filter(Boolean));
+    const mergedVault = mergeVault(curVault, vaultEntries).filter((v) => {
+      const norm = fingerprint(v?.key);
+      // Keep live publish rows even if they were previously revoked
+      if (liveNorms.has(norm)) return true;
       return norm && !revokedNorm.has(norm);
     });
     const curWs = (await firebaseRead(`lumo/store/workspaces/${adminId}`)) || {};
@@ -301,10 +307,8 @@ async function publishLicensesToFirebase(adminId, vaultEntries, workspace, revok
     const nextWs = mergedWorkspaces[adminId];
     if (Array.isArray(nextWs.licenses)) {
       nextWs.licenses = nextWs.licenses.filter((l) => {
-        const norm = String(l?.key || '')
-          .trim()
-          .toUpperCase()
-          .replace(/[^A-Z0-9]/g, '');
+        const norm = fingerprint(l?.key);
+        if (liveNorms.has(norm) && l.status !== 'deleted') return true;
         return norm && !revokedNorm.has(norm) && l.status !== 'deleted';
       });
     }
