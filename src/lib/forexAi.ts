@@ -1,15 +1,16 @@
 /** Lumo assistant — forex/trading only. Rejects personal / people topics. */
 
 const FOREX_HINT =
-  /\b(forex|fx|trade|trading|eurusd|gbpusd|usdjpy|xauusd|gold|silver|pair|pairs|pip|pips|lot|lots|leverage|broker|mt5|metatrader|chart|candle|support|resistance|trend|bullish|bearish|entry|sl|tp|stop\s*loss|take\s*profit|scalp|swing|market|liquidity|spread|swap|margin|ea|expert\s*advisor|signal|buy|sell|long|short|volatility|session|london|ny|tokyo|rsi|macd|ema|sma|fibonacci|order\s*block)\b/i;
+  /\b(forex|fx|trade|trading|eurusd|gbpusd|usdjpy|xauusd|gold|silver|pair|pairs|pip|pips|lot|lots|leverage|broker|mt5|metatrader|chart|candle|support|resistance|trend|bullish|bearish|entry|sl|tp|stop\s*loss|take\s*profit|scalp|swing|market|liquidity|spread|swap|margin|ea|expert\s*advisor|signal|buy|sell|long|short|volatility|session|london|ny|tokyo|rsi|macd|ema|sma|fibonacci|order\s*block|unlimited\s*bull)\b/i;
 
 const PEOPLE_HINT =
-  /\b(who\s+is|who\s+are|person|people|celebrity|girlfriend|boyfriend|wife|husband|family|friend|president|politician|actor|singer|age|birthday|address|phone|email\s+of|personal|private\s+life|dating|relationship)\b/i;
+  /\b(who\s+is|who\s+are|who'?s|person|people|celebrity|girlfriend|boyfriend|wife|husband|family|friend|friends|president|politician|actor|actress|singer|influencer|age|birthday|address|phone\s*number|email\s+of|personal|private\s+life|dating|relationship|about\s+him|about\s+her|about\s+them|tell\s+me\s+about)\b/i;
 
 export function isForexQuestion(input: string): boolean {
   const q = String(input || '').trim();
   if (!q) return false;
-  if (PEOPLE_HINT.test(q) && !FOREX_HINT.test(q)) return false;
+  // People topics are always out of scope — even if a pair name is mentioned.
+  if (PEOPLE_HINT.test(q)) return false;
   return FOREX_HINT.test(q);
 }
 
@@ -18,7 +19,7 @@ export function lumoForexReply(input: string): string {
   if (!q) {
     return 'Ask me about forex pairs, charts, risk, or trade setups.';
   }
-  if (PEOPLE_HINT.test(q) && !FOREX_HINT.test(q)) {
+  if (PEOPLE_HINT.test(q)) {
     return 'I only answer forex and trading questions — not questions about people.';
   }
   if (!FOREX_HINT.test(q)) {

@@ -132,6 +132,7 @@ export function ClientOsShell() {
 
         <OsDock />
 
+        {/* Persistent circled avatar until STOP/pause; tap opens typed circle card */}
         <EaStatusFloat
           visible={!isPaused || eaInfoOpen}
           eaTitle={eaTitle}
@@ -150,6 +151,7 @@ export function ClientOsShell() {
           onTogglePause={() => {
             const wasPaused = isPaused;
             togglePause();
+            // STOP hides the float; START keeps the typed popup open
             if (!wasPaused) setEaInfoOpen(false);
           }}
         />
