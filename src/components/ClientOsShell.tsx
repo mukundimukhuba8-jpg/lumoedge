@@ -7,7 +7,6 @@ import { OsDock } from './OsDock';
 import { useApp } from '../context/AppContext';
 import { CopyTradeProvider } from '../context/CopyTradeContext';
 import { mentorIdForLicense } from '../lib/copyTrade';
-import { subscribeOpenEaStatusCard } from '../lib/eaStatusUi';
 import {
   loadInterfacePrefs,
   subscribeInterfacePrefs,
@@ -64,7 +63,6 @@ export function ClientOsShell() {
   const [eaInfoOpen, setEaInfoOpen] = useState(false);
 
   useEffect(() => subscribeInterfacePrefs(() => setPrefs(loadInterfacePrefs())), []);
-  useEffect(() => subscribeOpenEaStatusCard(() => setEaInfoOpen(true)), []);
 
   useEffect(() => {
     if (user?.email) startMt5KeepAlive(user.email);

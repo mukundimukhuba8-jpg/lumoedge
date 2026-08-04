@@ -17,7 +17,6 @@ import {
 } from '../../lib/mentorMedia';
 import { clearMt5Session } from '../../lib/mt5Session';
 import { getEaImage, isStreamableMediaUrl } from '../../lib/storage';
-import { openEaStatusCard } from '../../lib/eaStatusUi';
 import { OsHomeLayout } from './HomeLayouts';
 import { InterfaceStyleModal } from './InterfaceStyleModal';
 
@@ -207,7 +206,6 @@ export function HomePage() {
         onHomeTap={onHomeTap}
         onMetaTrader={() => navigate('/app/metatrader')}
         onScanner={() => navigate('/app/scanner')}
-        onAvatarTap={() => openEaStatusCard()}
       />
 
       <InterfaceStyleModal
