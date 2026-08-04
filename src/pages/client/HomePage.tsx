@@ -204,7 +204,7 @@ export function HomePage() {
         mainText={bot.mainText || eaTitle}
         isPaused={isPaused}
         accentRgb={accentRgb}
-        onPauseToggle={togglePause}
+        onPauseToggle={() => setEaInfoOpen(true)}
         onSymbols={openSymbols}
         onStyle={() => setStyleOpen(true)}
         onDelete={confirmDelete}

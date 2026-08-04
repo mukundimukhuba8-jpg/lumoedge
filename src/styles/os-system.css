@@ -164,8 +164,7 @@
 .iface-layout-row,
 .iface-theme-card,
 .iface-effect-card,
-.iface-setting-row,
-.ea-status-card {
+.iface-setting-row {
   background: var(--os-card-bg) !important;
   border: 1px solid var(--os-card-border) !important;
   border-radius: var(--os-radius-md) !important;
@@ -176,9 +175,12 @@
 }
 
 .os-surface-lg,
-.scan-shell-premium .shape-phase-feature,
-.ea-status-card {
+.scan-shell-premium .shape-phase-feature {
   border-radius: var(--os-radius-lg) !important;
+}
+
+.ea-status-card {
+  border-radius: 50% !important;
 }
 
 .os-pill,
