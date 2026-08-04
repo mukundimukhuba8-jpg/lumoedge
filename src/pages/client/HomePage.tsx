@@ -136,21 +136,28 @@ export function HomePage() {
       );
     };
     sync(true);
-    const onFocus = () => sync(true);
+    // Respect 60s cap on focus — force sync was freezing taps after every switch
+    const onFocus = () => sync(false);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') sync(false);
+    };
     window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') sync(true);
-    });
+    document.addEventListener('visibilitychange', onVis);
     let unwatch = () => {};
+    let watchTimer: number | undefined;
     void import('../../lib/firebaseDb').then(({ firebaseWatchUpdates }) => {
-      // Debounced: mentor updates still sync, but not a full pull every few seconds
-      unwatch = firebaseWatchUpdates(() => sync(false));
+      unwatch = firebaseWatchUpdates(() => {
+        if (watchTimer) window.clearTimeout(watchTimer);
+        watchTimer = window.setTimeout(() => sync(false), 2500);
+      });
     });
     const id = window.setInterval(() => sync(false), 90_000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      if (watchTimer) window.clearTimeout(watchTimer);
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVis);
       unwatch();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
