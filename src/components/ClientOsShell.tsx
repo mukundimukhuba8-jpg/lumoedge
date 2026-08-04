@@ -132,9 +132,9 @@ export function ClientOsShell() {
 
         <OsDock />
 
-        {/* Persistent circled avatar until STOP/pause; tap opens typed circle card */}
+        {/* LIVE float — Start/Pause toggles it; drag anywhere; tap opens details */}
         <EaStatusFloat
-          visible={!isPaused || eaInfoOpen}
+          visible={!isPaused}
           eaTitle={eaTitle}
           avatarUrl={avatarUrl}
           isPaused={isPaused}
@@ -149,10 +149,9 @@ export function ClientOsShell() {
           mt5Linked={mt5Linked}
           onClose={() => setEaInfoOpen(false)}
           onTogglePause={() => {
-            const wasPaused = isPaused;
             togglePause();
-            // STOP hides the float; START keeps the typed popup open
-            if (!wasPaused) setEaInfoOpen(false);
+            // Always close details — LIVE float appears/hides from pause state
+            setEaInfoOpen(false);
           }}
         />
 

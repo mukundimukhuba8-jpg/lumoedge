@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  clampEaFloatPos,
+  defaultEaFloatPos,
+  loadEaFloatPos,
+  saveEaFloatPos,
+  type EaFloatPos,
+} from '../lib/eaFloatPosition';
 import { isMentorProfileImage } from '../lib/mentorMedia';
 
 type Props = {
@@ -155,10 +162,11 @@ type FloatProps = {
   onOpen: () => void;
 };
 
+const DRAG_THRESHOLD = 8;
+
 /**
- * Persistent floating EA avatar (the circled face).
- * Stays on screen while the EA is live; tap opens the full circular popup.
- * Hidden after STOP / pause.
+ * Persistent LIVE float — drag anywhere; tap (without drag) opens status card.
+ * Stays while EA is live; hidden after STOP / pause.
  */
 export function EaStatusFloat({
   visible,
@@ -167,18 +175,88 @@ export function EaStatusFloat({
   isPaused,
   onOpen,
 }: FloatProps) {
+  const [pos, setPos] = useState<EaFloatPos>(() => loadEaFloatPos() || defaultEaFloatPos());
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    moved: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    const onResize = () => setPos((p) => clampEaFloatPos(p));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   if (!visible) return null;
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: pos.x,
+      originY: pos.y,
+      moved: false,
+    };
+    setDragging(true);
+  };
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const d = drag.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    d.moved = true;
+    setPos(clampEaFloatPos({ x: d.originX + dx, y: d.originY + dy }));
+  };
+
+  const endDrag = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const d = drag.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // already released
+    }
+    drag.current = null;
+    setDragging(false);
+    if (d.moved) {
+      setPos((p) => {
+        const next = clampEaFloatPos(p);
+        saveEaFloatPos(next);
+        return next;
+      });
+      return;
+    }
+    onOpen();
+  };
+
   return (
     <button
       type="button"
-      className={`ea-float-orb${isPaused ? ' is-paused' : ' is-live'}`}
-      onClick={onOpen}
-      aria-label={`Open ${eaTitle} status`}
+      className={`ea-float-orb${isPaused ? ' is-paused' : ' is-live'}${
+        dragging ? ' is-dragging' : ''
+      }`}
+      style={{ left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      aria-label={`${eaTitle} LIVE — drag to move, tap for status`}
+      title="Drag to move · Tap for status"
     >
       {!isPaused ? <span className="ea-float-pulse" aria-hidden /> : null}
       <span className="ea-float-orb-face">
         {isMentorProfileImage(avatarUrl) ? (
-          <img src={avatarUrl} alt="" />
+          <img src={avatarUrl} alt="" draggable={false} />
         ) : (
           <span aria-hidden>{(eaTitle || 'L').slice(0, 1)}</span>
         )}
