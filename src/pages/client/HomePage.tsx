@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
 import { useApp } from '../../context/AppContext';
@@ -15,14 +15,15 @@ import {
   isPlaceholderMentorImage,
   isGenericLumoLabel,
 } from '../../lib/mentorMedia';
-import { clearMt5Session, getMt5Token } from '../../lib/mt5Session';
+import { clearMt5Session } from '../../lib/mt5Session';
 import { getEaImage, isStreamableMediaUrl } from '../../lib/storage';
+import { openEaStatusCard } from '../../lib/eaStatusUi';
 import { OsHomeLayout } from './HomeLayouts';
 import { InterfaceStyleModal } from './InterfaceStyleModal';
 
 export function HomePage() {
   const navigate = useNavigate();
-  const { bot, isPaused, togglePause, deleteBot, user, refreshBranding } = useApp();
+  const { bot, isPaused, deleteBot, user, refreshBranding } = useApp();
   const { openPortal } = useAdmin();
 
   const profileAvatar = resolveProfileImage(bot.imageUrl, bot.customMedia);
@@ -86,11 +87,6 @@ export function HomePage() {
 
   const [styleOpen, setStyleOpen] = useState(false);
   const [stylePrefs, setStylePrefs] = useState<InterfacePrefs>(() => loadInterfacePrefs());
-  const [eaInfoOpen, setEaInfoOpen] = useState(false);
-  const mt5Linked = useMemo(() => {
-    if (!eaInfoOpen) return false;
-    return Boolean(getMt5Token(user?.email));
-  }, [eaInfoOpen, user?.email]);
   const taps = useRef(0);
   const timer = useRef<number | null>(null);
   const eaTitle =
@@ -204,81 +200,15 @@ export function HomePage() {
         mainText={bot.mainText || eaTitle}
         isPaused={isPaused}
         accentRgb={accentRgb}
-        onPauseToggle={() => setEaInfoOpen(true)}
+        onPauseToggle={() => openEaStatusCard()}
         onSymbols={openSymbols}
         onStyle={() => setStyleOpen(true)}
         onDelete={confirmDelete}
         onHomeTap={onHomeTap}
         onMetaTrader={() => navigate('/app/metatrader')}
         onScanner={() => navigate('/app/scanner')}
-        onAvatarTap={() => setEaInfoOpen(true)}
+        onAvatarTap={() => openEaStatusCard()}
       />
-
-      {eaInfoOpen ? (
-        <div
-          className="ea-status-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label="EA status"
-          onClick={() => setEaInfoOpen(false)}
-        >
-          <div className="ea-status-card pop-in" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              className="ea-status-x"
-              aria-label="Close"
-              onClick={() => setEaInfoOpen(false)}
-            >
-              ×
-            </button>
-            <div className="ea-status-avatar-wrap">
-              {!isPaused ? <span className="ea-status-live-ring" aria-hidden /> : null}
-              <div className="ea-status-avatar-ring">
-                {displayAvatar ? (
-                  <img src={displayAvatar} alt="" />
-                ) : (
-                  <span className="ea-status-avatar-empty" aria-hidden />
-                )}
-              </div>
-            </div>
-            <span className={`ea-status-pill${isPaused ? ' off' : ''}`}>
-              <span className="ea-status-dot" />
-              {isPaused ? 'STOPPED' : 'ACTIVATED'}
-            </span>
-            <h2 className="ea-status-name">{eaTitle}</h2>
-            <button
-              type="button"
-              className={`ea-status-toggle${isPaused ? ' start' : ''}`}
-              onClick={togglePause}
-            >
-              {isPaused ? 'START EA' : 'STOP EA'}
-            </button>
-            <div className="ea-status-terminal">
-              {mt5Linked ? (
-                isPaused ? (
-                  <>
-                    <div>&gt; {eaTitle} is stopped</div>
-                    <div>&gt; Press START EA to resume taking trades</div>
-                  </>
-                ) : (
-                  <>
-                    <div>&gt; {eaTitle} is connected and ready to take trades</div>
-                    <div>&gt; Trades will be sent to your MetaTrader account</div>
-                  </>
-                )
-              ) : (
-                <>
-                  <div>&gt; MetaTrader is not connected</div>
-                  <div>&gt; Open the MetaTrader tab and link your broker account</div>
-                  <div>&gt; {eaTitle} will take trades once connected</div>
-                </>
-              )}
-              <div>&gt;</div>
-              <div>&gt;</div>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <InterfaceStyleModal
         open={styleOpen}

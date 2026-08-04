@@ -1,22 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { EaBackdrop } from './EaBackdrop';
+import { EaStatusCard, EaStatusFloat } from './EaStatusCard';
 import { FloatingAiAssistant } from './FloatingAiAssistant';
 import { OsDock } from './OsDock';
 import { useApp } from '../context/AppContext';
 import { CopyTradeProvider } from '../context/CopyTradeContext';
 import { mentorIdForLicense } from '../lib/copyTrade';
+import { subscribeOpenEaStatusCard } from '../lib/eaStatusUi';
 import {
   loadInterfacePrefs,
   subscribeInterfacePrefs,
 } from '../lib/interfaceStyle';
 import {
+  isGenericLumoLabel,
   isPlaceholderMentorImage,
   resolveCustomBackdrop,
   resolveProfileImage,
 } from '../lib/mentorMedia';
-import { startMt5KeepAlive } from '../lib/mt5Session';
-import { findInVault } from '../lib/storage';
+import { getMt5Token, startMt5KeepAlive } from '../lib/mt5Session';
+import { findInVault, resolveStoredMediaUrl } from '../lib/storage';
 
 function assistantLines(pathname: string, eaName: string, isPaused: boolean) {
   if (pathname.startsWith('/app/scanner')) {
@@ -24,7 +27,8 @@ function assistantLines(pathname: string, eaName: string, isPaused: boolean) {
       'Connecting to Unlimited Bull...',
       'License verified.',
       'Chart Scanner online.',
-      'Upload an MT5 chart to analyse.',
+      'Forex chart analysis standing by.',
+      'Ask about pairs, setups, or risk — not people.',
       'AI ready.',
     ];
   }
@@ -33,7 +37,8 @@ function assistantLines(pathname: string, eaName: string, isPaused: boolean) {
       'Connecting to Unlimited Bull...',
       'License verified.',
       'MetaTrader bridge standing by.',
-      'Link your broker to send trades.',
+      'Forex execution path ready.',
+      'Ask about pairs or risk — not people.',
       'AI ready.',
     ];
   }
@@ -42,6 +47,7 @@ function assistantLines(pathname: string, eaName: string, isPaused: boolean) {
     'License verified.',
     `${eaName} ${isPaused ? 'is paused' : 'is online'}.`,
     'Trading engine standing by.',
+    'Ask about pairs, charts, or risk — not people.',
     'AI ready.',
   ];
 }
@@ -51,12 +57,14 @@ function assistantLines(pathname: string, eaName: string, isPaused: boolean) {
  * Pages must not render their own shell / dock / ambient layers.
  */
 export function ClientOsShell() {
-  const { user, bot, isPaused } = useApp();
+  const { user, bot, isPaused, togglePause } = useApp();
   const location = useLocation();
   const [prefs, setPrefs] = useState(() => loadInterfacePrefs());
   const [panelKey, setPanelKey] = useState(location.pathname);
+  const [eaInfoOpen, setEaInfoOpen] = useState(false);
 
   useEffect(() => subscribeInterfacePrefs(() => setPrefs(loadInterfacePrefs())), []);
+  useEffect(() => subscribeOpenEaStatusCard(() => setEaInfoOpen(true)), []);
 
   useEffect(() => {
     if (user?.email) startMt5KeepAlive(user.email);
@@ -72,12 +80,30 @@ export function ClientOsShell() {
     bot.customMedia,
   );
   const profileSrc = resolveProfileImage(bot.imageUrl, bot.customMedia);
+  const avatarUrl =
+    resolveStoredMediaUrl(profileSrc) ||
+    profileSrc ||
+    resolveStoredMediaUrl(bot.imageUrl || '') ||
+    '';
   const mentorBackdrop =
     custom?.src ||
     (profileSrc && !isPlaceholderMentorImage(profileSrc) ? profileSrc : '') ||
     (bot.imageUrl && !isPlaceholderMentorImage(bot.imageUrl) ? bot.imageUrl : '');
   const backdropSrc = mentorBackdrop;
   const backdropKind = custom?.kind || 'image';
+
+  const eaTitle = useMemo(() => {
+    return (
+      (bot.displayName && !isGenericLumoLabel(bot.displayName) ? bot.displayName : '') ||
+      (bot.name && !isGenericLumoLabel(bot.name) ? bot.name : '') ||
+      'Lumo Edge'
+    );
+  }, [bot.displayName, bot.name]);
+
+  const mt5Linked = useMemo(
+    () => Boolean(getMt5Token(user?.email)),
+    [user?.email, eaInfoOpen, isPaused],
+  );
 
   const ownerAdminId = bot.licenseKey ? mentorIdForLicense(bot.licenseKey) : '';
   const clientEaId = bot.licenseKey ? findInVault(bot.licenseKey)?.eaId || '' : '';
@@ -106,14 +132,34 @@ export function ClientOsShell() {
 
         <OsDock />
 
+        <EaStatusFloat
+          visible={!isPaused || eaInfoOpen}
+          eaTitle={eaTitle}
+          avatarUrl={avatarUrl}
+          isPaused={isPaused}
+          onOpen={() => setEaInfoOpen(true)}
+        />
+
+        <EaStatusCard
+          open={eaInfoOpen}
+          eaTitle={eaTitle}
+          avatarUrl={avatarUrl}
+          isPaused={isPaused}
+          mt5Linked={mt5Linked}
+          onClose={() => setEaInfoOpen(false)}
+          onTogglePause={() => {
+            const wasPaused = isPaused;
+            togglePause();
+            if (!wasPaused) setEaInfoOpen(false);
+          }}
+        />
+
         <FloatingAiAssistant
           className="os-shell-ai"
           title="Lumo AI"
-          lines={assistantLines(
-            location.pathname,
-            bot.displayName || bot.name || 'Lumo Edge',
-            isPaused,
-          )}
+          eaName={eaTitle}
+          isPaused={isPaused}
+          lines={assistantLines(location.pathname, eaTitle, isPaused)}
         />
       </div>
     </CopyTradeProvider>
