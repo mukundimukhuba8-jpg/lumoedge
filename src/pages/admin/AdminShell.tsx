@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -16,7 +16,8 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
-import { useAdmin } from '../../context/AdminContext';
+import { useAdminSession } from '../../context/AdminContext';
+import { setAdminDrawerOpen } from '../../lib/adminUiGate';
 
 type MenuRole = 'super' | 'admin';
 
@@ -45,7 +46,7 @@ function titleForPath(pathname: string, isSuper: boolean): string {
 }
 
 export function AdminShell() {
-  const { admin, logout } = useAdmin();
+  const { admin, logout } = useAdminSession();
   const navigate = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
@@ -54,7 +55,22 @@ export function AdminShell() {
     if (!admin || (admin.role !== 'super' && admin.role !== 'admin')) return [];
     const role: MenuRole = admin.role;
     return ALL_MENU.filter((item) => item.roles.includes(role));
-  }, [admin]);
+  }, [admin?.role]);
+
+  useEffect(() => {
+    setAdminDrawerOpen(open);
+    return () => setAdminDrawerOpen(false);
+  }, [open]);
+
+  // Escape closes instantly without waiting on React trees
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
   if (!admin) return <Navigate to="/admin/login" replace />;
   if (admin.role !== 'super' && admin.role !== 'admin') {
@@ -64,11 +80,20 @@ export function AdminShell() {
   const isSuper = admin.role === 'super';
   const pageTitle = titleForPath(location.pathname, isSuper);
 
+  // Always mounted — CSS transform opens instantly (no portal remount freeze)
   const drawer =
-    open && typeof document !== 'undefined'
+    typeof document !== 'undefined'
       ? createPortal(
-          <div className="drawer-backdrop smooth-fade admin-drawer-backdrop">
-            <aside className="drawer smooth-drawer admin-drawer">
+          <div
+            className={`drawer-backdrop admin-drawer-backdrop${open ? ' is-open' : ''}`}
+            aria-hidden={!open}
+          >
+            <aside
+              className={`drawer admin-drawer${open ? ' is-open' : ''}`}
+              role="dialog"
+              aria-modal={open}
+              aria-label="Admin menu"
+            >
               <div className="admin-drawer-header">
                 <div className="admin-drawer-brand">
                   <span className="admin-drawer-logo title-blue">Lumo Admin</span>
@@ -116,6 +141,7 @@ export function AdminShell() {
                 type="button"
                 className="drawer-item admin-drawer-item admin-drawer-logout"
                 onClick={() => {
+                  setOpen(false);
                   logout();
                   navigate('/');
                 }}
@@ -128,9 +154,10 @@ export function AdminShell() {
             </aside>
             <button
               type="button"
-              style={{ flex: 1, background: 'transparent', border: 0 }}
+              className="admin-drawer-scrim"
               onClick={() => setOpen(false)}
               aria-label="Close"
+              tabIndex={open ? 0 : -1}
             />
           </div>,
           document.body,
@@ -151,7 +178,8 @@ export function AdminShell() {
         <strong className="admin-top-title admin-top-title-cyber">{pageTitle}</strong>
         <span className="admin-top-spacer" aria-hidden />
       </div>
-      <div className="page-enter page-slide admin-page-body admin-page-body-cyber" key={location.pathname}>
+      {/* No pathname key — remounting the whole page on every nav froze mobile */}
+      <div className="page-enter admin-page-body admin-page-body-cyber">
         <Outlet />
       </div>
       {drawer}

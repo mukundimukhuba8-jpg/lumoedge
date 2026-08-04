@@ -44,10 +44,13 @@ function mount() {
       </BrowserRouter>
     </StrictMode>,
   );
-  // First paint after React commits — hide HTML boot shell
+  // Hide HTML boot shell ASAP — never leave mobile on Loading…
+  markReady();
   requestAnimationFrame(() => {
+    markReady();
     requestAnimationFrame(markReady);
   });
+  window.setTimeout(markReady, 80);
 }
 
 mount();

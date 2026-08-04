@@ -4,9 +4,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
+import { isAdminDrawerOpen } from '../lib/adminUiGate';
+import { saveDashStats } from '../lib/adminDashCache';
 import {
   claimLicenseRemote,
   deleteClientRemote,
@@ -1568,7 +1571,15 @@ function mergeSubscriberQueue(
 
 const AdminContext = createContext<Ctx | null>(null);
 /** Splash is optional polish only — never wait on network */
-const SPLASH_MAX_MS = 180;
+const SPLASH_MAX_MS = 0;
+
+type AdminSessionCtx = {
+  admin: AdminUser | null;
+  portalOpen: boolean;
+  logout: () => void;
+};
+
+const AdminSessionContext = createContext<AdminSessionCtx | null>(null);
 
 function scheduleIdle(fn: () => void, timeout = 1200): () => void {
   const w = window as Window & {
@@ -1587,18 +1598,29 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(() => migrateAuth());
   // Light init — vault heal runs after first paint so cold boot doesn't freeze
   const [store, setStore] = useState<StoreState>(() => migrateStore(migrateAuth().admins));
-  const [clients, setClients] = useState<ClientRequest[]>(() => loadCachedClientQueue());
+  // Don't parse 900+ cached clients on the first paint — hydrate after UI is up
+  const [clients, setClients] = useState<ClientRequest[]>([]);
   const [clientsLoading, setClientsLoading] = useState(() => !hasCachedSubscriberQueue());
-  const [booting, setBooting] = useState(() => {
-    try {
-      return sessionStorage.getItem('lumo-was-ready') !== '1';
-    } catch {
-      return true;
-    }
-  });
+  const [booting, setBooting] = useState(false);
+  const clientsSaveTimer = useRef<number | null>(null);
 
   useEffect(() => {
-    saveCachedClientQueue(clients);
+    // Offline-first: paint shell, then load cached subscriber queue
+    return scheduleIdle(() => {
+      const cached = loadCachedClientQueue();
+      if (cached.length) setClients(cached);
+      setClientsLoading(false);
+    }, 200);
+  }, []);
+
+  useEffect(() => {
+    if (clientsSaveTimer.current) window.clearTimeout(clientsSaveTimer.current);
+    clientsSaveTimer.current = window.setTimeout(() => {
+      if (clients.length) saveCachedClientQueue(clients);
+    }, 900);
+    return () => {
+      if (clientsSaveTimer.current) window.clearTimeout(clientsSaveTimer.current);
+    };
   }, [clients]);
 
   useEffect(() => {
@@ -1609,11 +1631,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     pruneClientDeviceStorage();
   }, []);
 
-  // Defer heavy vault heal until the UI can paint
+  // Defer heavy vault heal until the UI can paint / drawer is free
   useEffect(() => {
     return scheduleIdle(() => {
+      if (isAdminDrawerOpen()) return;
       setStore((prev) => healAllWorkspacesFromVault(prev));
-    }, 800);
+    }, 1600);
   }, []);
 
   // Hydrate from disk-backed API so data survives new preview links
@@ -1640,7 +1663,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // First frame — never hold the splash for Firebase
+    // Instant — never block the dashboard on Firebase / splash polish
+    dismissSplash();
     const paintDismiss = window.requestAnimationFrame(() => dismissSplash());
     const hardCap = window.setTimeout(dismissSplash, SPLASH_MAX_MS);
 
@@ -1675,7 +1699,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             ),
           ),
         );
-        setStore((prev) => healAllWorkspacesFromVault(prev));
+        // Defer heal — syncing 200+ licenses on the main thread freezes the menu
+        scheduleIdle(() => {
+          if (!cancelled && !isAdminDrawerOpen()) {
+            setStore((prev) => healAllWorkspacesFromVault(prev));
+          }
+        }, 2000);
       }
       if (adminSession && db.store?.workspaces && typeof db.store.workspaces === 'object') {
         const remoteWs: StoreState['workspaces'] = {};
@@ -1703,68 +1732,75 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    void (async () => {
-      try {
-        if (isAdminPortalSession()) {
-          const dbPromise = fetchDb();
-          const clientsPromise = fetchClients();
-          const db = await dbPromise;
-          applyRemoteDb(db);
-          const list = await clientsPromise;
-          if (list) {
-            const remoteDeleted = await fetchRemoteDeletedClients();
-            setClients((prev) =>
-              mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted),
-            );
+    // Network sync after first paint — dashboard uses offline cache first
+    const cancelNet = scheduleIdle(() => {
+      if (cancelled) return;
+      void (async () => {
+        try {
+          if (isAdminPortalSession()) {
+            const [db, list] = await Promise.all([fetchDb(), fetchClients()]);
+            if (cancelled) return;
+            applyRemoteDb(db);
+            if (list) {
+              const remoteDeleted = await fetchRemoteDeletedClients();
+              if (cancelled) return;
+              setClients((prev) =>
+                mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted),
+              );
+            }
+          } else {
+            const list = await fetchClients();
+            if (list && !cancelled) {
+              const remoteDeleted = await fetchRemoteDeletedClients();
+              setClients((prev) => {
+                const merged = mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted);
+                if (clientQueueFingerprint(prev) === clientQueueFingerprint(merged)) return prev;
+                return merged;
+              });
+            }
           }
-        } else {
-          const list = await fetchClients();
-          if (list) {
-            const remoteDeleted = await fetchRemoteDeletedClients();
-            setClients((prev) => {
-              const merged = mergeSubscriberQueue(prev, list as ClientRequest[], remoteDeleted);
-              if (clientQueueFingerprint(prev) === clientQueueFingerprint(merged)) return prev;
-              return merged;
-            });
-          }
+        } catch {
+          // Offline or timed out — cached queue stays on screen
+        } finally {
+          setClientsLoading(false);
+          dismissSplash();
         }
-      } catch {
-        // Offline or timed out — cached queue stays on screen
-      } finally {
-        setClientsLoading(false);
-        dismissSplash();
-      }
-    })();
+      })();
+    }, 400);
 
     // Background refresh — never block the UI when cache already hydrated the lists
-    void (async () => {
-      if (!isAdminPortalSession()) return;
-      try {
-        const remoteAdmins = (await fetchAdmins()) as AdminUser[] | null;
-        if (!remoteAdmins?.length) return;
-        setAuth((prev) => {
-          const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
-          saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
-          return nextAuth;
-        });
-      } catch {
-        /* cached roster remains visible */
-      }
-    })();
+    const cancelAdmins = scheduleIdle(() => {
+      if (cancelled || !isAdminPortalSession()) return;
+      void (async () => {
+        try {
+          const remoteAdmins = (await fetchAdmins()) as AdminUser[] | null;
+          if (!remoteAdmins?.length || cancelled) return;
+          setAuth((prev) => {
+            const nextAuth = applyRemoteAdmins(prev, remoteAdmins);
+            saveJSON(AUTH_KEY, { ...nextAuth, portalOpen: false });
+            return nextAuth;
+          });
+        } catch {
+          /* cached roster remains visible */
+        }
+      })();
+    }, 900);
 
     // Admin images after UI is interactive — stops freeze on Generate License taps
     const cancelImages = scheduleIdle(() => {
-      if (cancelled || !isAdminPortalSession()) return;
+      if (cancelled || !isAdminPortalSession() || isAdminDrawerOpen()) return;
       void fetchImagesMap().then((images) => {
         if (cancelled || !images) return;
         mergeRemoteImages(images);
       });
-    }, 2000);
+    }, 3500);
 
     return () => {
       cancelled = true;
       window.clearTimeout(hardCap);
       window.cancelAnimationFrame(paintDismiss);
+      cancelNet();
+      cancelAdmins();
       cancelImages();
     };
   }, []);
@@ -1782,6 +1818,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       return;
     }
     const tick = async () => {
+      if (isAdminDrawerOpen()) return;
       const list = await fetchClients();
       if (list) {
         const remoteDeleted = await fetchRemoteDeletedClients();
@@ -1793,11 +1830,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       }
       setClientsLoading(false);
     };
-    void tick();
-    // Admin: 12s. Waiting clients: 20s. Never every 8s on licensed /app.
-    const every = isAdminPortalSession() ? 12_000 : 20_000;
+    // Delay first poll — cached dashboard is already on screen
+    const first = window.setTimeout(() => void tick(), isAdminPortalSession() ? 1500 : 400);
+    // Admin: 20s. Waiting clients: 20s. Never thrash phones.
+    const every = 20_000;
     const id = window.setInterval(tick, every);
-    return () => window.clearInterval(id);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(id);
+    };
   }, [booting]);
 
   // Keep mentor registration queue fresh for Super Admin approval
@@ -1871,6 +1912,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     let syncing = false;
     const syncWorkspace = async () => {
       if (document.visibilityState === 'hidden') return;
+      // Don't compete with the sidebar — menu must stay instant on phones
+      if (isAdminDrawerOpen()) return;
       if (syncing) return;
       syncing = true;
       try {
@@ -2455,6 +2498,60 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     [store.workspaces],
   );
 
+  const logout = useCallback(() => {
+    setAuth((prev) => {
+      const next = { ...prev, admin: null, portalOpen: false };
+      saveJSON(AUTH_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const sessionValue = useMemo<AdminSessionCtx>(
+    () => ({
+      admin: auth.admin,
+      portalOpen: auth.portalOpen,
+      logout,
+    }),
+    [auth.admin, auth.portalOpen, logout],
+  );
+
+  // Offline-first dashboard cache — shell paints cached numbers while sync runs
+  useEffect(() => {
+    const adminId = auth.admin?.id;
+    if (!adminId) return;
+    const isSuper = auth.admin?.role === 'super' || adminId === SUPER_ADMIN_ID;
+    const workspace = normalizeWorkspace(
+      store.workspaces[adminId],
+      auth.admin ?? undefined,
+    );
+    const portalLicenses = licensesVisibleInPortal(workspace, adminId, isSuper);
+    const activeLicenses = portalLicenses.filter(
+      (l) => l.status === 'active' || l.status === 'assigned',
+    ).length;
+    const ownClientEmails = new Set(
+      portalLicenses
+        .filter((l) => l.status === 'active' || l.status === 'assigned')
+        .map((l) => l.clientEmail.toLowerCase()),
+    );
+    saveDashStats({
+      adminId,
+      activeLicenses,
+      totalClients: isSuper ? clients.length : ownClientEmails.size,
+      pendingClients: isSuper
+        ? countClientQueue(clients).pending
+        : workspace.licenses.filter((l) => l.status === 'assigned').length,
+      deletedLicenses: (workspace.revokedKeys || []).length,
+      approvedClients: isSuper ? countClientQueue(clients).approved : 0,
+      firstName:
+        workspace.profile.firstName ||
+        auth.admin?.fullName?.split(' ')[0] ||
+        'Admin',
+      mentorId: workspace.profile.mentorId || adminId,
+      role: auth.admin?.role || 'admin',
+      at: Date.now(),
+    });
+  }, [auth.admin, store.workspaces, clients]);
+
   const value = useMemo<Ctx>(() => {
     const adminId = auth.admin?.id ?? '';
     const workspace = normalizeWorkspace(
@@ -2699,7 +2796,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           mentorRegistrationInflight.delete(email);
         }
       },
-      logout: () => saveAuth({ ...auth, admin: null, portalOpen: false }),
+      logout,
       approveAdmin: (id) => approveMentorByIds([id]),
       approveAdmins: (ids) => approveMentorByIds(ids),
       deleteAdmin: (id) => {
@@ -3941,14 +4038,22 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         approvedClients: isSuper ? countClientQueue(clients).approved : 0,
       },
     };
-  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, approveMentorByIds, resyncLicenses, warmLicenseCache, restoreEAsFromCloud, restoreLicensesFromCloud]);
+  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, approveMentorByIds, resyncLicenses, warmLicenseCache, restoreEAsFromCloud, restoreLicensesFromCloud, logout]);
 
   return (
-    <AdminContext.Provider value={value}>
-      {children}
-      {booting ? <WelcomeSplash /> : null}
-    </AdminContext.Provider>
+    <AdminSessionContext.Provider value={sessionValue}>
+      <AdminContext.Provider value={value}>
+        {children}
+        {booting ? <WelcomeSplash /> : null}
+      </AdminContext.Provider>
+    </AdminSessionContext.Provider>
   );
+}
+
+export function useAdminSession() {
+  const ctx = useContext(AdminSessionContext);
+  if (!ctx) throw new Error('useAdminSession missing provider');
+  return ctx;
 }
 
 export function useAdmin() {

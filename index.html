@@ -170,14 +170,16 @@
           });
         }
 
-        // Stuck first boot — offer reload instead of infinite "Loading…"
+        // Cap splash — never leave users on Loading… more than ~3s
         window.setTimeout(function () {
           if (ready || appAlive()) {
             hideShell();
             return;
           }
-          showShell('Taking longer than usual…', true);
-        }, 12000);
+          // Hide shell anyway so cached UI can paint; offer reload if still empty
+          hideShell();
+          if (!appAlive()) showShell('Taking longer than usual…', true);
+        }, 3000);
 
         function checkResume(force) {
           if (document.visibilityState && document.visibilityState !== 'visible') return;
