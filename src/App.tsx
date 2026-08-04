@@ -3,7 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AmbientEnvironment } from './components/AmbientEnvironment';
 import { ClientOsShell } from './components/ClientOsShell';
 import { ThemeEngine } from './components/ThemeEngine';
-import { useAdmin } from './context/AdminContext';
+import { useAdminSession } from './context/AdminContext';
 import { useApp } from './context/AppContext';
 import { AdminAuthPage } from './pages/admin/AdminAuthPage';
 import { AdminShell } from './pages/admin/AdminShell';
@@ -79,7 +79,8 @@ function ClientAppGate({ children }: { children: React.ReactNode }) {
 }
 
 function AdminGate({ children }: { children: React.ReactNode }) {
-  const { admin, portalOpen } = useAdmin();
+  // Session-only — avoid re-rendering the whole portal on every clients/store sync
+  const { admin, portalOpen } = useAdminSession();
   if (!admin && !portalOpen) return <Navigate to="/" replace />;
   if (!admin) return <Navigate to="/admin/login" replace />;
   if (admin.role !== 'super' && admin.role !== 'admin') {
@@ -89,7 +90,7 @@ function AdminGate({ children }: { children: React.ReactNode }) {
 }
 
 function SuperOnly({ children }: { children: React.ReactNode }) {
-  const { admin } = useAdmin();
+  const { admin } = useAdminSession();
   if (!admin) return <Navigate to="/admin/login" replace />;
   if (admin.role !== 'super') return <Navigate to="/admin/dashboard" replace />;
   return <>{children}</>;

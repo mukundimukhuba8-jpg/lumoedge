@@ -303,9 +303,40 @@ function mergeWorkspace(
 /**
  * Client phones: path-scoped reads — never download the base64 `images` map
  * (that alone can be multiple MB and causes long blank loads + data burn).
+ *
+ * Mentor portals: only their workspace + vault — never the global 900+ clients
+ * list or every other mentor's workspace (that froze phones after login).
  */
 async function firebaseFetchDbLite(): Promise<RemoteDb | null> {
   try {
+    const { isAdminPortalSession, isSuperAdminSession, portalSessionAdminId } =
+      await import('./storage');
+    const mentorId = portalSessionAdminId();
+    const mentorScoped =
+      isAdminPortalSession() && Boolean(mentorId) && !isSuperAdminSession();
+
+    if (mentorScoped) {
+      const [auth, workspace, vault, revokedKeys, updatedAt] = await Promise.all([
+        getPath<RemoteDb['auth']>(`${ROOT}/auth`),
+        getPath<unknown>(`${ROOT}/store/workspaces/${mentorId}`),
+        getPath<RemoteDb['vault']>(`${ROOT}/vault`),
+        getPath<string[]>(`${ROOT}/revokedKeys`),
+        getPath<string>(`${ROOT}/updatedAt`),
+      ]);
+      return normalizeDb({
+        auth: auth || emptyDb().auth,
+        store: {
+          workspaces: workspace ? { [mentorId]: workspace } : {},
+        },
+        vault: vault || [],
+        clients: [],
+        sessions: {},
+        revokedKeys: revokedKeys || [],
+        images: {},
+        updatedAt: updatedAt || new Date().toISOString(),
+      });
+    }
+
     const [auth, store, vault, clients, sessions, revokedKeys, updatedAt] =
       await Promise.all([
         getPath<RemoteDb['auth']>(`${ROOT}/auth`),
