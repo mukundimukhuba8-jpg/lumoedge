@@ -7,6 +7,7 @@ import { normalizeClientStatus } from '../../lib/clientQueue';
 import { MENTOR_AUTH_MSG } from '../../lib/mentorAuthUi';
 import { isRegistrationEmail } from '../../lib/registrationEmail';
 import { useAdmin, type ClientRequest } from '../../context/AdminContext';
+import { loadDashStats } from '../../lib/adminDashCache';
 import { resolveProfileImage, isPlaceholderMentorImage, normalizeCustomMedia } from '../../lib/mentorMedia';
 import { compressImageFile, blobUrlToDataUrl, resolveStoredMediaUrl } from '../../lib/storage';
 import { pushScanAdminReset } from '../../lib/chartScan';
@@ -197,10 +198,38 @@ function ScanAdminTools({ approvedEmails }: { approvedEmails: string[] }) {
 }
 
 export function DashboardPage() {
-  const { profile, stats, admin, eas, licenses, clientRequests } = useAdmin();
+  const { profile, stats, admin, eas, licenses, clientRequests, clientsLoading } = useAdmin();
   const isSuper = admin?.role === 'super';
+  const cached = admin?.id ? loadDashStats(admin.id) : null;
   const isEmpty = eas.length === 0 && licenses.length === 0;
-  const firstName = profile.firstName || admin?.fullName?.split(' ')[0] || 'Admin';
+  // Offline-first: cached stats paint immediately; live values take over after hydrate
+  const useLive =
+    !clientsLoading ||
+    licenses.length > 0 ||
+    eas.length > 0 ||
+    stats.totalClients > 0 ||
+    stats.activeLicenses > 0;
+  const activeLicenses = useLive
+    ? stats.activeLicenses
+    : (cached?.activeLicenses ?? stats.activeLicenses);
+  const totalClients = useLive
+    ? stats.totalClients
+    : (cached?.totalClients ?? stats.totalClients);
+  const pendingClients = useLive
+    ? stats.pendingClients
+    : (cached?.pendingClients ?? stats.pendingClients);
+  const deletedLicenses = useLive
+    ? stats.deletedLicenses
+    : (cached?.deletedLicenses ?? stats.deletedLicenses);
+  const firstName =
+    profile.firstName ||
+    cached?.firstName ||
+    admin?.fullName?.split(' ')[0] ||
+    'Admin';
+  const mentorId = profile.mentorId || cached?.mentorId || admin?.id;
+  const showSkeleton =
+    clientsLoading && !cached && totalClients === 0 && activeLicenses === 0;
+
   return (
     <div className="admin-dashboard">
       <div className="glow-card admin-welcome-card">
@@ -209,7 +238,7 @@ export function DashboardPage() {
             <h2 className="admin-welcome-title">Welcome, {firstName}</h2>
             <div className="admin-welcome-meta">
               <span className="muted admin-welcome-label">MENTOR ID</span>
-              <span className="admin-id-pill">{profile.mentorId || admin?.id}</span>
+              <span className="admin-id-pill">{mentorId}</span>
             </div>
           </div>
           <span className={`admin-role-chip${isSuper ? ' admin-role-chip-super' : ''}`}>
@@ -226,16 +255,25 @@ export function DashboardPage() {
         </div>
       ) : null}
       <div className="stat-grid admin-stat-grid">
-        <Stat value={String(stats.activeLicenses)} label="Active Licenses" tone="cyan" />
-        <Stat value={String(stats.totalClients)} label="Total Clients" tone="blue" />
-        {isSuper ? (
-          <Stat value={String(stats.pendingClients)} label="Pending Approvals" tone="purple" />
-        ) : null}
-        <Stat
-          value={String(stats.deletedLicenses)}
-          label="Revoked Keys"
-          tone="pink"
-        />
+        {showSkeleton ? (
+          <>
+            <div className="stat-card admin-stat-card admin-stat-skeleton" aria-hidden />
+            <div className="stat-card admin-stat-card admin-stat-skeleton" aria-hidden />
+            {isSuper ? (
+              <div className="stat-card admin-stat-card admin-stat-skeleton" aria-hidden />
+            ) : null}
+            <div className="stat-card admin-stat-card admin-stat-skeleton" aria-hidden />
+          </>
+        ) : (
+          <>
+            <Stat value={String(activeLicenses)} label="Active Licenses" tone="cyan" />
+            <Stat value={String(totalClients)} label="Total Clients" tone="blue" />
+            {isSuper ? (
+              <Stat value={String(pendingClients)} label="Pending Approvals" tone="purple" />
+            ) : null}
+            <Stat value={String(deletedLicenses)} label="Revoked Keys" tone="pink" />
+          </>
+        )}
       </div>
       {isSuper ? (
         <ScanAdminTools

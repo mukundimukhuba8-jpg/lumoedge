@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
-import { useAdmin } from '../../context/AdminContext';
+import { useAdmin, useAdminSession } from '../../context/AdminContext';
 import { MENTOR_AUTH_MSG, MENTOR_LOGIN_UI_TIMEOUT_MS } from '../../lib/mentorAuthUi';
 import { useAppLogo } from '../../lib/appLogo';
 
 export function AdminAuthPage() {
   const navigate = useNavigate();
-  const { login, registerAdmin, admin } = useAdmin();
+  const { login, registerAdmin } = useAdmin();
+  // Session-only — avoid re-renders from 900+ client queue sync while typing
+  const { admin } = useAdminSession();
   const appLogo = useAppLogo();
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [showPassword, setShowPassword] = useState(false);

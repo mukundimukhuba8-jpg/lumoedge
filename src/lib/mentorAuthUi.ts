@@ -18,4 +18,5 @@ export const MENTOR_AUTH_MSG = {
   refreshSuccess: 'List restored from cloud.',
 } as const;
 
-export const MENTOR_LOGIN_UI_TIMEOUT_MS = 18_000;
+/** Keep under login API timeout so the spinner never feels stuck forever. */
+export const MENTOR_LOGIN_UI_TIMEOUT_MS = 14_000;
