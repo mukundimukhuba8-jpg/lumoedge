@@ -192,7 +192,7 @@ export function HomePage() {
   };
 
   return (
-    <div className={`app-shell home-layout-${stylePrefs.layout} os-home-shell`}>
+    <div className={`os-panel home-layout-${stylePrefs.layout} os-home-shell`}>
       {fxClass ? <div className={`iface-fx ${fxClass}`} aria-hidden /> : null}
 
       <OsHomeLayout

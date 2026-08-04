@@ -567,18 +567,23 @@ export function applyInterfaceTheme(prefs: InterfacePrefs = loadInterfacePrefs()
   root.style.setProperty('--theme-glow', `rgba(${accentRgb}, 0.35)`);
   root.style.setProperty('--glass', theme.panel);
   root.style.setProperty('--input', theme.elevated);
-  root.style.setProperty(
-    '--ambient-a',
-    `rgba(${accentRgb}, 0.18)`,
-  );
-  root.style.setProperty(
-    '--ambient-b',
-    `rgba(${accentRgb}, 0.08)`,
-  );
+  root.style.setProperty('--ambient-a', `rgba(${accentRgb}, 0.18)`);
+  root.style.setProperty('--ambient-b', `rgba(${accentRgb}, 0.08)`);
+  root.style.setProperty('--os-card-border', `rgba(${accentRgb}, 0.28)`);
+  root.style.setProperty('--os-glow', `0 0 22px rgba(${accentRgb}, 0.28)`);
+  root.style.setProperty('--pink', theme.magenta || theme.purple);
+  root.style.setProperty('--os-accent', accent);
 
   root.style.background = theme.bg;
   document.body.style.background = theme.bg;
-  document.querySelectorAll('.app-shell').forEach((el) => {
-    if (el instanceof HTMLElement) el.style.background = theme.bg;
+  document.querySelectorAll('.app-shell, .os-shell').forEach((el) => {
+    if (el instanceof HTMLElement) {
+      // Keep shell transparent so ambient + backdrop stay continuous.
+      if (el.classList.contains('os-shell')) {
+        el.style.background = 'transparent';
+      } else if (el.classList.contains('lumo-app')) {
+        el.style.background = theme.bg;
+      }
+    }
   });
 }

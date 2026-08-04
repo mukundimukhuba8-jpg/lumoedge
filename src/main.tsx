@@ -8,6 +8,7 @@ import './styles/global.css';
 import './styles/os-layouts.css';
 import './styles/ui-polish.css';
 import './styles/shape-language.css';
+import './styles/os-system.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

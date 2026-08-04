@@ -5,9 +5,7 @@ import {
   ChevronUp,
   Bot,
   Camera,
-  Home,
   Minus,
-  Monitor,
   Plus,
   ScanSearch,
   TrendingDown,
@@ -17,7 +15,6 @@ import {
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { FloatingAiAssistant } from '../../components/FloatingAiAssistant';
 import { TradeEnginePanel } from '../../components/TradeEnginePanel';
 import {
   DAILY_SCAN_LIMIT,
@@ -296,7 +293,7 @@ export function ChartScannerPage() {
   };
 
   return (
-    <div className="app-shell scan-shell scan-shell-premium">
+    <div className="os-panel scan-shell scan-shell-premium">
       <div className="scan-page">
         <header className="scan-header">
           <button
@@ -653,37 +650,7 @@ export function ChartScannerPage() {
           </div>
         ) : null}
 
-        <FloatingAiAssistant
-          className="scan-ai-orb"
-          title="Scanner AI"
-          message="Chart Scanner AI is active. Upload an MT5 chart screenshot to scan."
-        />
       </div>
-
-      <nav className="lay-dock" aria-label="Main">
-        <button type="button" className="lay-dock-item" onClick={() => navigate('/app')}>
-          <span className="lay-dock-ico">
-            <Home size={20} />
-          </span>
-          <span>Home</span>
-        </button>
-        <button type="button" className="lay-dock-item active">
-          <span className="lay-dock-ico">
-            <ScanSearch size={20} />
-          </span>
-          <span>Scanner</span>
-        </button>
-        <button
-          type="button"
-          className="lay-dock-item"
-          onClick={() => navigate('/app/metatrader')}
-        >
-          <span className="lay-dock-ico">
-            <Monitor size={20} />
-          </span>
-          <span>MetaTrader</span>
-        </button>
-      </nav>
 
       {engineOpen && engineSnap ? (
         <TradeEnginePanel
