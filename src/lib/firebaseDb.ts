@@ -314,12 +314,17 @@ async function firebaseFetchDbLite(): Promise<RemoteDb | null> {
   }
 }
 
-export async function firebaseFetchDb(): Promise<RemoteDb | null> {
+/**
+ * Default: lite path-scoped reads (no base64 `images` map).
+ * Full root + images only when explicitly requested — pulling megabytes of
+ * images on every poll freezes mobile Safari while the admin works.
+ */
+export async function firebaseFetchDb(opts?: {
+  includeImages?: boolean;
+}): Promise<RemoteDb | null> {
   if (!isFirebaseConfigured()) return null;
   try {
-    // Admin portal needs the full tree (incl. images). Clients must not.
-    const { isAdminPortalSession } = await import('./storage');
-    if (!isAdminPortalSession()) {
+    if (!opts?.includeImages) {
       return firebaseFetchDbLite();
     }
     const snap = await get(ref(getFirebaseDb(), ROOT));
@@ -327,6 +332,19 @@ export async function firebaseFetchDb(): Promise<RemoteDb | null> {
     return normalizeDb(snap.val());
   } catch (err) {
     console.warn('[firebase] fetchDb failed', err);
+    return null;
+  }
+}
+
+/** One-shot image map pull — call after first paint, never on the boot critical path. */
+export async function firebaseFetchImages(): Promise<Record<string, string> | null> {
+  if (!isFirebaseConfigured()) return null;
+  try {
+    const { isAdminPortalSession } = await import('./storage');
+    if (!isAdminPortalSession()) return {};
+    return (await getPath<Record<string, string>>(`${ROOT}/images`)) || {};
+  } catch (err) {
+    console.warn('[firebase] fetchImages failed', err);
     return null;
   }
 }

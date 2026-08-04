@@ -63,16 +63,23 @@ export function invalidateFetchDbCache() {
   fetchDbCache = { at: 0, value: null, inflight: null };
 }
 
-export async function fetchDb(): Promise<RemoteDb | null> {
+export async function fetchDb(opts?: {
+  includeImages?: boolean;
+}): Promise<RemoteDb | null> {
   const now = Date.now();
-  if (fetchDbCache.value && now - fetchDbCache.at < FETCH_DB_CACHE_MS) {
+  // Image-bearing pulls bypass the lite cache so they never poison poll results
+  if (
+    !opts?.includeImages &&
+    fetchDbCache.value &&
+    now - fetchDbCache.at < FETCH_DB_CACHE_MS
+  ) {
     return fetchDbCache.value;
   }
-  if (fetchDbCache.inflight) return fetchDbCache.inflight;
+  if (!opts?.includeImages && fetchDbCache.inflight) return fetchDbCache.inflight;
 
   const work = async (): Promise<RemoteDb | null> => {
     if (isFirebaseConfigured()) {
-      const fb = await firebaseFetchDb();
+      const fb = await firebaseFetchDb(opts);
       if (fb) return fb;
     }
     try {
@@ -82,6 +89,10 @@ export async function fetchDb(): Promise<RemoteDb | null> {
     }
   };
 
+  if (opts?.includeImages) {
+    return fetchWithTimeout(work(), FETCH_DB_TIMEOUT_MS);
+  }
+
   fetchDbCache.inflight = fetchWithTimeout(work(), FETCH_DB_TIMEOUT_MS).then((result) => {
     fetchDbCache.value = result;
     fetchDbCache.at = Date.now();
@@ -89,6 +100,24 @@ export async function fetchDb(): Promise<RemoteDb | null> {
     return result;
   });
   return fetchDbCache.inflight;
+}
+
+/** Admin-only: hydrate local image cache after UI is interactive. */
+export async function fetchImagesMap(): Promise<Record<string, string> | null> {
+  if (isFirebaseConfigured()) {
+    try {
+      const { firebaseFetchImages } = await import('./firebaseDb');
+      return await firebaseFetchImages();
+    } catch {
+      /* fall through */
+    }
+  }
+  try {
+    const db = await req<RemoteDb>('/api/db');
+    return db?.images && typeof db.images === 'object' ? db.images : {};
+  } catch {
+    return null;
+  }
 }
 
 export type PublishLicensesResult =
