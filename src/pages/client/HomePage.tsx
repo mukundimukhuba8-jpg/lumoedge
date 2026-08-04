@@ -17,13 +17,12 @@ import {
 } from '../../lib/mentorMedia';
 import { clearMt5Session } from '../../lib/mt5Session';
 import { getEaImage, isStreamableMediaUrl } from '../../lib/storage';
-import { openEaStatusCard } from '../../lib/eaStatusUi';
 import { OsHomeLayout } from './HomeLayouts';
 import { InterfaceStyleModal } from './InterfaceStyleModal';
 
 export function HomePage() {
   const navigate = useNavigate();
-  const { bot, isPaused, deleteBot, user, refreshBranding } = useApp();
+  const { bot, isPaused, togglePause, deleteBot, user, refreshBranding } = useApp();
   const { openPortal } = useAdmin();
 
   const profileAvatar = resolveProfileImage(bot.imageUrl, bot.customMedia);
@@ -200,14 +199,13 @@ export function HomePage() {
         mainText={bot.mainText || eaTitle}
         isPaused={isPaused}
         accentRgb={accentRgb}
-        onPauseToggle={() => openEaStatusCard()}
+        onPauseToggle={() => togglePause()}
         onSymbols={openSymbols}
         onStyle={() => setStyleOpen(true)}
         onDelete={confirmDelete}
         onHomeTap={onHomeTap}
         onMetaTrader={() => navigate('/app/metatrader')}
         onScanner={() => navigate('/app/scanner')}
-        onAvatarTap={() => openEaStatusCard()}
       />
 
       <InterfaceStyleModal

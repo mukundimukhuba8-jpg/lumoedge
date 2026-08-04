@@ -763,11 +763,9 @@ h1, h2, h3,
   opacity: 0.45;
 }
 
-/* Persistent EA float — circled avatar until STOP/pause */
+/* Persistent EA float — circled LIVE avatar, drag anywhere */
 .ea-float-orb {
   position: fixed;
-  left: max(14px, calc(50% - 210px));
-  bottom: calc(92px + env(safe-area-inset-bottom, 0px));
   z-index: 52;
   width: 64px;
   height: 64px;
@@ -776,10 +774,22 @@ h1, h2, h3,
   border-radius: 50%;
   background: transparent;
   color: var(--text);
-  cursor: pointer;
+  cursor: grab;
   display: grid;
   place-items: center;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+.ea-float-orb.is-dragging {
+  cursor: grabbing;
+  z-index: 80;
+}
+
+.ea-float-orb.is-dragging .ea-float-orb-face {
+  transform: scale(1.06);
 }
 
 .ea-float-orb-face {
@@ -846,8 +856,13 @@ h1, h2, h3,
   background: #ef4444;
 }
 
-.ea-float-orb:active {
+.ea-float-orb:active:not(.is-dragging) {
   transform: scale(0.96);
+}
+
+.ea-float-orb img {
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
 .iface-custom-row {

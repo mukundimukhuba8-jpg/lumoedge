@@ -35,7 +35,8 @@ export type LayoutActions = {
   onHomeTap: () => void;
   onMetaTrader: () => void;
   onScanner: () => void;
-  onAvatarTap: () => void;
+  /** Deprecated — status popup opens only from the LIVE float. */
+  onAvatarTap?: () => void;
 };
 
 type ActionDef = {
@@ -155,16 +156,17 @@ function AvatarButton({
   a: LayoutActions;
   className: string;
 }) {
+  // Profile picture is display-only — EA status popup opens from LIVE float only.
   return (
-    <button type="button" className={className} onClick={a.onAvatarTap} aria-label="EA profile">
+    <div className={className} aria-hidden={!isMentorProfileImage(a.eaImage)}>
       {isMentorProfileImage(a.eaImage) ? (
-        <img src={a.eaImage} alt="" />
+        <img src={a.eaImage} alt="" draggable={false} />
       ) : (
         <span className="os-avatar-empty" aria-hidden>
           {(a.eaTitle || 'L').slice(0, 1)}
         </span>
       )}
-    </button>
+    </div>
   );
 }
 
