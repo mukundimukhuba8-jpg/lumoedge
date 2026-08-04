@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Activity,
   BarChart3,
@@ -10,10 +9,8 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  Home,
   Layers,
   Loader2,
-  Monitor,
   RefreshCw,
   Search,
   Server,
@@ -119,7 +116,6 @@ function saveMt5(email: string, data: ClientMt5) {
 }
 
 export function MetaTraderPage() {
-  const navigate = useNavigate();
   const { bot, user } = useApp();
   const eaTitle = bot.displayName || bot.name || 'Lumo Edge';
   const profileRef = resolveProfileImage(bot.imageUrl, bot.customMedia);
@@ -483,19 +479,7 @@ export function MetaTraderPage() {
   ];
 
   return (
-    <div className="app-shell mt5-shell mt5-cyber">
-      <div className="mt5-cyber-bg" aria-hidden>
-        <div className="mt5-cyber-grid" />
-        <div className="mt5-cyber-glow mt5-cyber-glow-a" />
-        <div className="mt5-cyber-glow mt5-cyber-glow-b" />
-        <div className="mt5-cyber-particles">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <span key={i} className="mt5-particle" />
-          ))}
-        </div>
-        <div className="mt5-cyber-lines" />
-      </div>
-
+    <div className="os-panel mt5-shell mt5-cyber">
       <div className="mt5-page">
         <header className="mt5-cyber-header">
           <div className="mt5-engine-badge" aria-hidden>
@@ -836,27 +820,6 @@ export function MetaTraderPage() {
           </section>
         ) : null}
       </div>
-
-      <nav className="lay-dock" aria-label="Main">
-        <button type="button" className="lay-dock-item" onClick={() => navigate('/app')}>
-          <span className="lay-dock-ico">
-            <Home size={20} />
-          </span>
-          <span>Home</span>
-        </button>
-        <button type="button" className="lay-dock-item" onClick={() => navigate('/app/scanner')}>
-          <span className="lay-dock-ico">
-            <Search size={20} />
-          </span>
-          <span>Scanner</span>
-        </button>
-        <button type="button" className="lay-dock-item active">
-          <span className="lay-dock-ico">
-            <Monitor size={20} />
-          </span>
-          <span>MetaTrader</span>
-        </button>
-      </nav>
     </div>
   );
 }

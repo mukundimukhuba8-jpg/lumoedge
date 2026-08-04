@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Home, Monitor, ScanSearch, Signal } from 'lucide-react';
+import { ArrowLeft, Signal } from 'lucide-react';
 import { CopyTradeEnginePanel } from '../../components/CopyTradeEnginePanel';
 import { useApp } from '../../context/AppContext';
 import {
@@ -78,7 +78,7 @@ export function SymbolsPage() {
   };
 
   return (
-    <div className="app-shell symbols-shell">
+    <div className="os-panel symbols-shell">
       <div className="page symbols-page cyber-page">
         <header className="symbols-header">
           <button
@@ -157,27 +157,6 @@ export function SymbolsPage() {
           </button>
         ) : null}
       </div>
-
-      <nav className="lay-dock" aria-label="Main">
-        <button type="button" className="lay-dock-item" onClick={() => navigate('/app')}>
-          <span className="lay-dock-ico">
-            <Home size={20} />
-          </span>
-          <span>Home</span>
-        </button>
-        <button type="button" className="lay-dock-item" onClick={() => navigate('/app/scanner')}>
-          <span className="lay-dock-ico">
-            <ScanSearch size={20} />
-          </span>
-          <span>Scanner</span>
-        </button>
-        <button type="button" className="lay-dock-item" onClick={() => navigate('/app/metatrader')}>
-          <span className="lay-dock-ico">
-            <Monitor size={20} />
-          </span>
-          <span>MetaTrader</span>
-        </button>
-      </nav>
     </div>
   );
 }

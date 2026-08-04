@@ -1,23 +1,10 @@
-import { Suspense, lazy, useEffect, useState } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { EaBackdrop } from './components/EaBackdrop';
+import { Suspense, lazy } from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { AmbientEnvironment } from './components/AmbientEnvironment';
+import { ClientOsShell } from './components/ClientOsShell';
 import { ThemeEngine } from './components/ThemeEngine';
-import { mentorIdForLicense } from './lib/copyTrade';
-import { CopyTradeProvider } from './context/CopyTradeContext';
 import { useAdmin } from './context/AdminContext';
 import { useApp } from './context/AppContext';
-import {
-  loadInterfacePrefs,
-  subscribeInterfacePrefs,
-} from './lib/interfaceStyle';
-import {
-  isPlaceholderMentorImage,
-  resolveCustomBackdrop,
-  resolveProfileImage,
-} from './lib/mentorMedia';
-import { startMt5KeepAlive } from './lib/mt5Session';
-import { findInVault } from './lib/storage';
 import { AdminAuthPage } from './pages/admin/AdminAuthPage';
 import { AdminShell } from './pages/admin/AdminShell';
 import { ActivateLicensePage } from './pages/client/ActivateLicensePage';
@@ -70,76 +57,37 @@ const ProfilePage = lazy(() =>
 );
 
 function RouteFallback() {
-  return null;
+  return (
+    <div className="os-route-fallback" aria-hidden>
+      <span className="os-route-fallback-dot" />
+    </div>
+  );
 }
 
 function ClientAppGate({ children }: { children: React.ReactNode }) {
-  const { user, accessStatus, bot, isPaused, requiresRepayment } = useApp();
-  const location = useLocation();
-  const [prefs, setPrefs] = useState(() => loadInterfacePrefs());
+  const { user, accessStatus, bot, requiresRepayment } = useApp();
   const licensed = accessStatus === 'licensed' || Boolean(bot.licenseKey?.trim());
 
-  useEffect(() => subscribeInterfacePrefs(() => setPrefs(loadInterfacePrefs())), []);
-
-  useEffect(() => {
-    if (user?.email && licensed) startMt5KeepAlive(user.email);
-  }, [user?.email, licensed]);
-
   if (!user) return <Navigate to="/" replace />;
-  // License key already entered — stay in the app, never bounce to payment
   if (!licensed && accessStatus === 'pending') return <Navigate to="/waiting" replace />;
   if (!licensed && (accessStatus === 'approved' || accessStatus === 'paid') && !requiresRepayment) {
     return <Navigate to="/activate" replace />;
   }
   if (!licensed) return <Navigate to="/" replace />;
 
-  const custom = resolveCustomBackdrop(
-    prefs.customBg,
-    bot.imageUrl || '',
-    bot.customMedia,
-  );
-  const profileSrc = resolveProfileImage(bot.imageUrl, bot.customMedia);
-  const mentorBackdrop =
-    custom?.src ||
-    (profileSrc && !isPlaceholderMentorImage(profileSrc) ? profileSrc : '') ||
-    (bot.imageUrl && !isPlaceholderMentorImage(bot.imageUrl) ? bot.imageUrl : '');
-  const backdropSrc = mentorBackdrop;
-  const backdropKind = custom?.kind || 'image';
-  // Broker page stays clean dark (admin portal theme) — no photo backdrop
-  const hideBackdrop = location.pathname.includes('metatrader');
-
-  const ownerAdminId = bot.licenseKey ? mentorIdForLicense(bot.licenseKey) : '';
-  const clientEaId = bot.licenseKey ? findInVault(bot.licenseKey)?.eaId || '' : '';
-
-  return (
-    <CopyTradeProvider
-      email={user?.email}
-      licenseKey={bot.licenseKey}
-      eaName={bot.displayName || bot.name || 'Lumo Edge'}
-      clientEaId={clientEaId}
-      isPaused={isPaused}
-      ownerAdminId={ownerAdminId}
-    >
-      {hideBackdrop ? null : backdropSrc ? <EaBackdrop src={backdropSrc} kind={backdropKind} /> : null}
-      <div className="page-enter page-slide" key={location.pathname}>
-        {children}
-      </div>
-    </CopyTradeProvider>
-  );
+  return <>{children}</>;
 }
 
 function AdminGate({ children }: { children: React.ReactNode }) {
   const { admin, portalOpen } = useAdmin();
   if (!admin && !portalOpen) return <Navigate to="/" replace />;
   if (!admin) return <Navigate to="/admin/login" replace />;
-  // Unapproved mentors can never reach the portal, even with stale state
   if (admin.role !== 'super' && admin.role !== 'admin') {
     return <Navigate to="/admin/login" replace />;
   }
   return <>{children}</>;
 }
 
-/** Platform tools — Super Admin only. Mentors stay in their private space. */
 function SuperOnly({ children }: { children: React.ReactNode }) {
   const { admin } = useAdmin();
   if (!admin) return <Navigate to="/admin/login" replace />;
@@ -166,104 +114,77 @@ export default function App() {
       <AmbientEnvironment />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
-        <Route path="/" element={<HomeRedirect />} />
-        <Route path="/waiting" element={<WaitingApprovalPage />} />
-        <Route path="/subscribe" element={<SubscribePage />} />
-        <Route path="/activate" element={<ActivateLicensePage />} />
-        <Route
-          path="/app"
-          element={
-            <ClientAppGate>
-              <HomePage />
-            </ClientAppGate>
-          }
-        />
-        <Route
-          path="/app/metatrader"
-          element={
-            <ClientAppGate>
-              <MetaTraderPage />
-            </ClientAppGate>
-          }
-        />
-        <Route
-          path="/app/scanner"
-          element={
-            <ClientAppGate>
-              <ChartScannerPage />
-            </ClientAppGate>
-          }
-        />
+          <Route path="/" element={<HomeRedirect />} />
+          <Route path="/waiting" element={<WaitingApprovalPage />} />
+          <Route path="/subscribe" element={<SubscribePage />} />
+          <Route path="/activate" element={<ActivateLicensePage />} />
 
-        <Route
-          path="/app/setup"
-          element={
-            <ClientAppGate>
-              <VpsSetupPage />
-            </ClientAppGate>
-          }
-        />
+          <Route
+            path="/app"
+            element={
+              <ClientAppGate>
+                <ClientOsShell />
+              </ClientAppGate>
+            }
+          >
+            <Route index element={<HomePage />} />
+            <Route path="metatrader" element={<MetaTraderPage />} />
+            <Route path="scanner" element={<ChartScannerPage />} />
+            <Route path="setup" element={<VpsSetupPage />} />
+            <Route path="symbols" element={<SymbolsPage />} />
+          </Route>
 
-        <Route
-          path="/app/symbols"
-          element={
-            <ClientAppGate>
-              <SymbolsPage />
-            </ClientAppGate>
-          }
-        />
+          <Route path="/admin/login" element={<AdminAuthPage />} />
+          <Route
+            path="/admin"
+            element={
+              <AdminGate>
+                <AdminShell />
+              </AdminGate>
+            }
+          >
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route
+              path="approve"
+              element={
+                <SuperOnly>
+                  <ApproveAdminsPage />
+                </SuperOnly>
+              }
+            />
+            <Route
+              path="subscriptions"
+              element={
+                <SuperOnly>
+                  <SubscriptionsPage />
+                </SuperOnly>
+              }
+            />
+            <Route
+              path="emails"
+              element={
+                <SuperOnly>
+                  <EmailCenterPage />
+                </SuperOnly>
+              }
+            />
+            <Route path="connect-ea" element={<ConnectEAPage />} />
+            <Route path="orders" element={<OpenOrdersPage />} />
+            <Route path="licenses" element={<GenerateLicensePage />} />
+            <Route path="eas" element={<ManageEAsPage />} />
+            <Route
+              path="setup"
+              element={
+                <SuperOnly>
+                  <SetupMethodsPage />
+                </SuperOnly>
+              }
+            />
+            <Route path="profile" element={<ProfilePage />} />
+          </Route>
 
-        <Route path="/admin/login" element={<AdminAuthPage />} />
-        <Route
-          path="/admin"
-          element={
-            <AdminGate>
-              <AdminShell />
-            </AdminGate>
-          }
-        >
-          <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route
-            path="approve"
-            element={
-              <SuperOnly>
-                <ApproveAdminsPage />
-              </SuperOnly>
-            }
-          />
-          <Route
-            path="subscriptions"
-            element={
-              <SuperOnly>
-                <SubscriptionsPage />
-              </SuperOnly>
-            }
-          />
-          <Route
-            path="emails"
-            element={
-              <SuperOnly>
-                <EmailCenterPage />
-              </SuperOnly>
-            }
-          />
-          <Route path="connect-ea" element={<ConnectEAPage />} />
-          <Route path="orders" element={<OpenOrdersPage />} />
-          <Route path="licenses" element={<GenerateLicensePage />} />
-          <Route path="eas" element={<ManageEAsPage />} />
-          <Route
-            path="setup"
-            element={
-              <SuperOnly>
-                <SetupMethodsPage />
-              </SuperOnly>
-            }
-          />
-          <Route path="profile" element={<ProfilePage />} />
-        </Route>
-
-        <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
     </div>

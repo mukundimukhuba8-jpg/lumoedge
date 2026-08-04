@@ -1,0 +1,470 @@
+/* ═══════════════════════════════════════════════════════════════
+   Global OS design system — one language for every client screen.
+   Tokens + chrome + shared components + content morph transitions.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --os-radius-xs: 10px;
+  --os-radius-sm: 14px;
+  --os-radius-md: 18px;
+  --os-radius-lg: 24px;
+  --os-radius-xl: 28px;
+  --os-radius-pill: 999px;
+
+  --os-space-1: 6px;
+  --os-space-2: 10px;
+  --os-space-3: 14px;
+  --os-space-4: 18px;
+  --os-space-5: 24px;
+  --os-space-6: 32px;
+
+  --os-card-bg: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.055),
+    rgba(8, 12, 20, 0.72)
+  );
+  --os-card-border: rgba(var(--accent-rgb), 0.28);
+  --os-card-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 16px 36px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --os-glow: 0 0 22px rgba(var(--accent-rgb), 0.28);
+  --os-press: 0.97;
+  --os-dock-h: calc(76px + env(safe-area-inset-bottom, 0px));
+}
+
+/* —— Continuous shell —— */
+.os-shell {
+  position: relative;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+  isolation: isolate;
+}
+
+.os-shell-fallback-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(var(--accent-rgb), 0.16), transparent 55%),
+    var(--bg);
+}
+
+.os-shell-stage {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--os-dock-h);
+  overflow: hidden;
+}
+
+.os-shell-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Content morph — workspace state change, not page push */
+.os-panel-morph {
+  animation: os-panel-morph 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: 50% 40%;
+  will-change: opacity, transform, filter;
+}
+
+@keyframes os-panel-morph {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+[data-animations='off'] .os-panel-morph {
+  animation: none !important;
+  filter: none !important;
+}
+
+/* Fixed dock — never part of transitioning content */
+.os-dock-fixed {
+  position: fixed !important;
+  left: 50% !important;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+  transform: translateX(-50%);
+  width: min(420px, calc(100% - 24px)) !important;
+  margin: 0 !important;
+  z-index: 50 !important;
+  border-radius: var(--os-radius-pill) !important;
+  border: 1px solid var(--os-card-border) !important;
+  background: rgba(10, 12, 18, 0.82) !important;
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(var(--accent-rgb), 0.16) !important;
+}
+
+.os-dock-fixed .lay-dock-item.active,
+.os-dock-fixed .lay-dock-item.active svg {
+  color: var(--electric) !important;
+}
+
+.os-shell-ai {
+  position: fixed;
+  right: max(14px, calc(50% - 220px));
+  bottom: calc(var(--os-dock-h) + 8px);
+  z-index: 55;
+}
+
+/* Kill nested app-shell sizing inside OS */
+.os-shell .app-shell,
+.os-shell .scan-shell,
+.os-shell .mt5-shell,
+.os-shell .symbols-shell,
+.os-shell .os-home-shell {
+  min-height: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+  background: transparent !important;
+  overflow: visible !important;
+}
+
+.os-shell .os-layout {
+  min-height: calc(100dvh - var(--os-dock-h)) !important;
+}
+
+.os-shell .os-layout-content {
+  padding-bottom: 8px;
+}
+
+/* —— Shared surface language —— */
+.os-surface,
+.glow-card,
+.scan-shell-premium .scan-card,
+.mt5-cyber .mt5-card,
+.mt5-cyber .glow-card,
+.symbols-shell .symbols-card,
+.iface-hub-card,
+.iface-layout-row,
+.iface-theme-card,
+.iface-effect-card,
+.iface-setting-row,
+.ea-status-card {
+  background: var(--os-card-bg) !important;
+  border: 1px solid var(--os-card-border) !important;
+  border-radius: var(--os-radius-md) !important;
+  box-shadow: var(--os-card-shadow) !important;
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  color: var(--text);
+}
+
+.os-surface-lg,
+.scan-shell-premium .shape-phase-feature,
+.ea-status-card {
+  border-radius: var(--os-radius-lg) !important;
+}
+
+.os-pill,
+.scan-count-pill,
+.scan-toggle,
+.mt5-live-pill,
+.ea-status-pill,
+.lay-dock {
+  border-radius: var(--os-radius-pill) !important;
+}
+
+/* Buttons — one tactile language */
+.os-shell .btn,
+.os-shell .scan-action,
+.os-shell .mt5-cyber .btn,
+.iface-sheet .btn {
+  border-radius: var(--os-radius-sm);
+  transition:
+    transform 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.os-shell .btn:active,
+.os-shell .scan-action:active:not(:disabled),
+.os-shell .lay-dock-item:active,
+.ai-orb:active {
+  transform: scale(var(--os-press));
+}
+
+.os-shell .btn-blue,
+.os-shell .scan-action {
+  border-color: rgba(var(--accent-rgb), 0.4);
+  color: var(--electric);
+  box-shadow: var(--os-glow);
+}
+
+.os-shell .btn-blue {
+  background: var(--electric);
+  color: #061018;
+}
+
+/* Icons / focus / switches inherit accent */
+.os-shell .scan-title .accent,
+.os-shell .scan-upload-label,
+.os-shell .mt5-cyber-title,
+.os-shell .symbols-title,
+.os-shell .title-blue,
+.os-shell .mt5-engine-badge,
+.os-shell .mt5-cyber-ea,
+.os-shell .symbols-title-ico {
+  color: var(--electric) !important;
+}
+
+.os-shell .mt5-engine-badge,
+.os-shell .mt5-live-pill.live,
+.os-shell .symbols-tab.active,
+.os-shell .symbols-card.selected {
+  border-color: rgba(var(--accent-rgb), 0.45) !important;
+  box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.2) !important;
+}
+
+.os-shell .mt5-engine-badge {
+  background: rgba(var(--accent-rgb), 0.14) !important;
+}
+
+.os-shell .scan-toggle.on,
+.iface-sheet .scan-toggle.on {
+  background: rgba(var(--accent-rgb), 0.35) !important;
+  border-color: var(--electric) !important;
+}
+
+.os-shell .scan-toggle.on span,
+.iface-sheet .scan-toggle.on span {
+  background: var(--electric) !important;
+}
+
+.os-shell .scan-accuracy-bar > div,
+.os-shell .bg-manager-progress > span,
+.os-shell progress::-webkit-progress-value {
+  background: linear-gradient(
+    90deg,
+    rgba(var(--accent-rgb), 0.55),
+    var(--electric)
+  ) !important;
+}
+
+.os-shell :focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.65);
+  outline-offset: 2px;
+}
+
+/* Headers — shared typography */
+.os-shell .scan-title,
+.os-shell .mt5-cyber-title,
+.os-shell .symbols-title,
+.iface-header strong {
+  font-family: var(--font-display);
+  letter-spacing: -0.03em;
+  font-weight: 750;
+}
+
+.os-shell .scan-header,
+.os-shell .mt5-cyber-header,
+.os-shell .symbols-header {
+  margin-bottom: var(--os-space-4);
+}
+
+/* Soften page-specific competing backgrounds */
+.os-shell .mt5-cyber-bg,
+.os-shell .mt5-cyber-particles,
+.os-shell .mt5-cyber-lines,
+.os-shell .mt5-cyber-grid {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.os-shell .mt5-cyber-glow {
+  background: rgba(var(--accent-rgb), 0.16) !important;
+}
+
+.os-shell .mt5-page,
+.os-shell .scan-page,
+.os-shell .symbols-page {
+  background: transparent !important;
+  padding-left: var(--os-space-4);
+  padding-right: var(--os-space-4);
+  padding-top: var(--os-space-4);
+}
+
+/* Scanner actions — same button family, not a different app */
+.os-shell .shape-action-circle,
+.os-shell .shape-action-capsule {
+  background: var(--accent-wash) !important;
+  border: 1px solid rgba(var(--accent-rgb), 0.4) !important;
+  color: var(--electric) !important;
+  box-shadow: var(--os-card-shadow) !important;
+}
+
+.os-shell .shape-island-squircle,
+.os-shell .shape-island-pill,
+.os-shell .shape-phase-orb,
+.os-shell .shape-phase-diagonal,
+.os-shell .shape-phase-hex,
+.os-shell .shape-phase-feature {
+  background: var(--os-card-bg) !important;
+  border: 1px solid var(--os-card-border) !important;
+  box-shadow: var(--os-card-shadow) !important;
+}
+
+/* Keep mild silhouette variety, but same surface identity */
+.os-shell .shape-island-squircle {
+  border-radius: var(--os-radius-xl) !important;
+}
+
+.os-shell .shape-island-pill {
+  border-radius: var(--os-radius-pill) !important;
+}
+
+.os-shell .shape-phase-orb {
+  border-radius: var(--os-radius-pill) !important;
+}
+
+.os-shell .shape-phase-diagonal,
+.os-shell .shape-phase-hex {
+  border-radius: var(--os-radius-lg) !important;
+  clip-path: none !important;
+}
+
+.os-shell .shape-phase-feature {
+  border-radius: var(--os-radius-xl) !important;
+}
+
+.os-shell .shape-open-strip {
+  border-top: 1px solid rgba(var(--accent-rgb), 0.22);
+}
+
+.os-shell .shape-history-item .scan-history-row {
+  background: var(--os-card-bg) !important;
+  border: 1px solid var(--os-card-border) !important;
+  border-radius: var(--os-radius-md) !important;
+  clip-path: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Settings / popups inherit same surface + accent */
+.iface-backdrop-os .iface-sheet {
+  background: rgba(10, 12, 18, 0.94) !important;
+  border: 1px solid var(--os-card-border) !important;
+  box-shadow: var(--os-card-shadow), var(--os-glow) !important;
+  border-radius: var(--os-radius-xl) var(--os-radius-xl) 0 0 !important;
+}
+
+.iface-hub-card,
+.iface-tool-premium {
+  border-radius: var(--os-radius-md) !important;
+  clip-path: none !important;
+  margin-left: 0 !important;
+  transform: none !important;
+}
+
+.iface-hub-1 {
+  border-radius: var(--os-radius-pill) !important;
+}
+
+.iface-hub-ico,
+.ai-orb-panel-icon,
+.scan-ai-dot,
+.lay-dock-ico {
+  color: var(--electric);
+  border-color: rgba(var(--accent-rgb), 0.35);
+  background: rgba(var(--accent-rgb), 0.14);
+}
+
+.ai-orb-ring {
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.35), transparent 42%),
+    var(--electric) !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 0 24px rgba(var(--accent-rgb), 0.55),
+    0 10px 24px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Prevent white flash / body paint on route change */
+html,
+body,
+#root,
+.app-shell.lumo-app {
+  background: var(--bg) !important;
+}
+
+.app-shell.lumo-app > .page-enter,
+.app-shell.lumo-app > .page-slide {
+  animation: none !important;
+  background: transparent !important;
+}
+
+/* Hide duplicate docks if a page still renders one */
+.os-shell .scan-shell > .lay-dock,
+.os-shell .mt5-shell > .lay-dock,
+.os-shell .symbols-shell > .lay-dock,
+.os-shell .os-layout-content > .lay-dock,
+.os-shell .os-dock:not(.os-dock-fixed) {
+  display: none !important;
+}
+
+.os-shell .scan-ai-orb {
+  display: none !important;
+}
+
+.arch-side-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(var(--accent-rgb), 0.45);
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.35);
+}
+
+.os-route-fallback {
+  min-height: 40dvh;
+  display: grid;
+  place-items: center;
+}
+
+.os-route-fallback-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--electric);
+  box-shadow: 0 0 18px rgba(var(--accent-rgb), 0.55);
+  animation: os-fallback-pulse 1s ease-in-out infinite;
+}
+
+@keyframes os-fallback-pulse {
+  0%, 100% { transform: scale(0.85); opacity: 0.55; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .os-panel-morph,
+  .os-route-fallback-dot {
+    animation: none !important;
+    filter: none !important;
+  }
+}

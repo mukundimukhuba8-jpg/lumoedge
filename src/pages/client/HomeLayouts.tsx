@@ -148,35 +148,6 @@ function LayoutBackdrop({
   );
 }
 
-function LayoutDock({
-  onHome,
-  onScanner,
-  onMetaTrader,
-  className,
-}: {
-  onHome: () => void;
-  onScanner: () => void;
-  onMetaTrader: () => void;
-  className?: string;
-}) {
-  return (
-    <nav className={`lay-dock os-dock os-dock-triple ${className || ''}`} aria-label="Primary">
-      <button type="button" className="lay-dock-item active os-ctrl" onClick={onHome}>
-        <Home size={20} />
-        <span>Home</span>
-      </button>
-      <button type="button" className="lay-dock-item os-ctrl" onClick={onScanner}>
-        <ScanSearch size={20} />
-        <span>Scanner</span>
-      </button>
-      <button type="button" className="lay-dock-item os-ctrl" onClick={onMetaTrader}>
-        <Monitor size={20} />
-        <span>MetaTrader</span>
-      </button>
-    </nav>
-  );
-}
-
 function AvatarButton({
   a,
   className,
@@ -236,12 +207,11 @@ function Shell({
   a,
   className,
   children,
-  dock = true,
-  dockClassName,
 }: {
   a: LayoutActions;
   className: string;
   children: ReactNode;
+  /** @deprecated Global ClientOsShell owns the dock. */
   dock?: boolean;
   dockClassName?: string;
 }) {
@@ -249,14 +219,6 @@ function Shell({
   return (
     <LayoutBackdrop className={className} url={bg.url} kind={bg.kind} accentRgb={a.accentRgb}>
       {children}
-      {dock ? (
-        <LayoutDock
-          onHome={a.onHomeTap}
-          onScanner={a.onScanner}
-          onMetaTrader={a.onMetaTrader}
-          className={dockClassName}
-        />
-      ) : null}
     </LayoutBackdrop>
   );
 }
@@ -416,17 +378,11 @@ function OffsetLayout(a: LayoutActions) {
 function SidebarLayout(a: LayoutActions) {
   const actions = actionDefs(a);
   return (
-    <Shell a={a} className="arch-sidebar" dock={false}>
-      <aside className="arch-side-rail" aria-label="Primary">
-        <button type="button" className="arch-side-nav active os-ctrl" onClick={a.onHomeTap} aria-label="Home">
-          <Home size={20} />
-        </button>
-        <button type="button" className="arch-side-nav os-ctrl" onClick={a.onScanner} aria-label="Scanner">
-          <ScanSearch size={20} />
-        </button>
-        <button type="button" className="arch-side-nav os-ctrl" onClick={a.onMetaTrader} aria-label="MetaTrader">
-          <Monitor size={20} />
-        </button>
+    <Shell a={a} className="arch-sidebar">
+      <aside className="arch-side-rail" aria-hidden>
+        <span className="arch-side-mark" />
+        <span className="arch-side-mark" />
+        <span className="arch-side-mark" />
       </aside>
       <div className="arch-side-main">
         <AvatarButton a={a} className="arch-side-hero" />
