@@ -134,6 +134,13 @@ export function ClientOsShell() {
   const ownerAdminId = bot.licenseKey ? mentorIdForLicense(bot.licenseKey) : '';
   const clientEaId = bot.licenseKey ? findInVault(bot.licenseKey)?.eaId || '' : '';
 
+  // Home layouts render their own BackdropMedia — keep shell backdrop off there
+  // so the video doesn't play twice (ghost layer behind the page).
+  const onHome =
+    location.pathname === '/app' ||
+    location.pathname === '/app/' ||
+    location.pathname === '/app/home';
+
   return (
     <CopyTradeProvider
       email={user?.email}
@@ -143,11 +150,13 @@ export function ClientOsShell() {
       isPaused={isPaused}
       ownerAdminId={ownerAdminId}
     >
-      <div className="os-shell">
-        {backdropSrc ? (
+      <div className={`os-shell${onHome ? ' os-shell-home' : ''}`}>
+        {!onHome && backdropSrc ? (
           <EaBackdrop src={backdropSrc} kind={backdropKind} />
-        ) : (
+        ) : !onHome ? (
           <div className="os-shell-fallback-bg" aria-hidden />
+        ) : (
+          <div className="os-shell-fallback-bg os-shell-home-bg" aria-hidden />
         )}
 
         <div className="os-shell-stage">

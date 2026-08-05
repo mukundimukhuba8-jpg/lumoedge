@@ -1306,12 +1306,6 @@
   filter: blur(2px);
 }
 
-.lay-orbit .os-layout-wash {
-  background:
-    radial-gradient(circle at 50% 28%, rgba(var(--os-accent-rgb), 0.22), transparent 40%),
-    linear-gradient(180deg, #050608 0%, #0a0e14 100%);
-}
-
 .lay-orbit-stage {
   flex: 1;
   display: flex;
@@ -1320,6 +1314,23 @@
   gap: 12px;
   padding: 14px 16px calc(18px + env(safe-area-inset-bottom, 0px));
   min-height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+}
+
+/* Solid lower veil so nothing ghosts under the controls */
+.lay-orbit .os-layout-wash {
+  background:
+    radial-gradient(circle at 50% 22%, rgba(var(--os-accent-rgb), 0.16), transparent 42%),
+    linear-gradient(180deg, rgba(5, 6, 8, 0.35) 0%, rgba(5, 6, 8, 0.72) 48%, #050608 78%) !important;
+}
+
+.lay-orbit[data-bg-kind='video'] .lay-bg-media {
+  /* Keep motion in the upper hero band only */
+  mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 88%);
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 88%);
 }
 
 .lay-orbit-head {
