@@ -33,20 +33,28 @@ export function HomePage() {
 
   useEffect(() => {
     const base = normalizeCustomMedia(bot.customMedia);
-    setPlayMedia(base);
-    // Skip hydrate when only streamable videos / empty — avoids Firebase blob pulls on .com
-    const needsImageHydrate = base.some(
-      (m) => m.kind === 'image' && m.url && !m.url.startsWith('http') && !m.url.startsWith('data:'),
-    );
-    if (!needsImageHydrate) return;
-    let cancelled = false;
-    void import('../../lib/clientBrandingSync').then(async ({ hydrateCustomMediaImages }) => {
-      const next = await hydrateCustomMediaImages(base);
-      if (!cancelled && next.length) setPlayMedia(next);
+    // Convert img: refs to streamable /api URLs synchronously — never await RTDB blobs
+    const streamed = base.map((m) => {
+      const url = String(m.url || '').trim();
+      if (!url) return m;
+      if (m.kind === 'video') {
+        if (url.startsWith('img:')) {
+          return {
+            ...m,
+            url: `/api/media/${encodeURIComponent(url.replace(/^img:/, ''))}`,
+          };
+        }
+        return m;
+      }
+      if (url.startsWith('img:')) {
+        return {
+          ...m,
+          url: `/api/images/${encodeURIComponent(url.replace(/^img:/, ''))}`,
+        };
+      }
+      return m;
     });
-    return () => {
-      cancelled = true;
-    };
+    setPlayMedia(streamed);
   }, [bot.customMedia]);
 
   const profileAvatar = resolveProfileImage(bot.imageUrl, playMedia);
@@ -140,13 +148,18 @@ export function HomePage() {
     if (!user?.email || !bot.licenseKey) return;
     let cancelled = false;
     let lastSync = 0;
+    let lastSig = '';
     const sync = (force = false) => {
       const now = Date.now();
       // Cap branding sync — was every 8s and burned mobile data
       if (!force && now - lastSync < 60_000) return;
       lastSync = now;
       void import('../../lib/clientBrandingSync').then(
-        async ({ fetchClientBranding, resolveBrandingImageUrl }) => {
+        async ({
+          fetchClientBranding,
+          resolveBrandingImageUrl,
+          brandingSignature,
+        }) => {
           if (cancelled) return;
           const branding = await fetchClientBranding(bot.licenseKey);
           if (!branding || cancelled) return;
@@ -154,7 +167,7 @@ export function HomePage() {
             ? await resolveBrandingImageUrl(branding.imageUrl)
             : '';
           if (cancelled) return;
-          refreshBranding({
+          const payload = {
             ...branding,
             displayName:
               branding.displayName && !isGenericLumoLabel(branding.displayName)
@@ -165,12 +178,18 @@ export function HomePage() {
                 ? branding.mainText
                 : undefined,
             ...(imageUrl ? { imageUrl } : {}),
-          });
+          };
+          const sig = brandingSignature(payload);
+          if (sig === lastSig) return;
+          lastSig = sig;
+          refreshBranding(payload);
         },
       );
     };
-    sync(true);
-    // Respect 60s cap on focus — force sync was freezing taps after every switch
+    // Defer past first paint — force sync on mount was freezing taps after re-login
+    const boot = window.setTimeout(() => {
+      if (!cancelled) sync(true);
+    }, 1400);
     const onFocus = () => sync(false);
     const onVis = () => {
       if (document.visibilityState === 'visible') sync(false);
@@ -182,12 +201,13 @@ export function HomePage() {
     void import('../../lib/firebaseDb').then(({ firebaseWatchUpdates }) => {
       unwatch = firebaseWatchUpdates(() => {
         if (watchTimer) window.clearTimeout(watchTimer);
-        watchTimer = window.setTimeout(() => sync(false), 2500);
+        watchTimer = window.setTimeout(() => sync(false), 4000);
       });
     });
-    const id = window.setInterval(() => sync(false), 90_000);
+    const id = window.setInterval(() => sync(false), 120_000);
     return () => {
       cancelled = true;
+      window.clearTimeout(boot);
       window.clearInterval(id);
       if (watchTimer) window.clearTimeout(watchTimer);
       window.removeEventListener('focus', onFocus);

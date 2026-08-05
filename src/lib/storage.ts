@@ -1,12 +1,11 @@
 import type { MentorMediaItem } from './mentorMedia';
 import { isFirebaseConfigured } from './firebase';
 import {
-  firebaseFetchImage,
   firebaseSaveImage,
   firebaseUploadDataUrl,
   isFirebaseImageRef,
 } from './firebaseDb';
-import { isPlaceholderMentorImage, looksLikeVideoUrl, normalizeCustomMedia } from './mentorMedia';
+import { isPlaceholderMentorImage, normalizeCustomMedia } from './mentorMedia';
 import { pushDb } from './remote';
 
 export function loadJSON<T>(key: string, fallback: T): T {
@@ -115,17 +114,16 @@ export function pruneClientDeviceStorage() {
   if (isAdminPortalSession()) return;
   try {
     localStorage.removeItem(CLIENT_STORE_KEY);
-    const images = loadJSON<Record<string, string>>(IMAGE_STORE, {});
+    const images = loadImageStore();
     const slim: Record<string, string> = {};
     for (const [id, url] of Object.entries(images)) {
       if (typeof url !== 'string' || !url) continue;
-      const isProfile = id.includes('profile-') || id.startsWith('img:profile-');
-      if (url.startsWith('data:') && url.length > 8000 && !isProfile) continue;
+      // Client phones: keep only streamable refs — drop base64 (froze Safari taps)
       if (url.startsWith('http') || url.startsWith('/') || url.startsWith('img:')) {
         slim[id] = url;
       }
     }
-    saveJSONSafe(IMAGE_STORE, slim);
+    writeImageStore(slim);
     const vault = loadVault();
     if (vault.length > 1) {
       saveVaultLocal(vault.slice(0, 1));
@@ -355,6 +353,20 @@ export function unrevokeLicenseKeys(keys: string[]) {
 
 const IMAGE_STORE = 'ub-web/ea-images-v1';
 
+/** In-memory cache — JSON.parse of the whole image map on every getEaImage froze phones. */
+let imageStoreCache: Record<string, string> | null = null;
+
+function loadImageStore(): Record<string, string> {
+  if (imageStoreCache) return imageStoreCache;
+  imageStoreCache = loadJSON<Record<string, string>>(IMAGE_STORE, {});
+  return imageStoreCache;
+}
+
+function writeImageStore(all: Record<string, string>) {
+  imageStoreCache = all;
+  saveJSONSafe(IMAGE_STORE, all);
+}
+
 export function imagePublicUrl(id: string) {
   return `/api/images/${encodeURIComponent(id)}`;
 }
@@ -396,15 +408,16 @@ export function saveEaImage(id: string, dataUrl: string) {
   try {
     const value = String(dataUrl);
     // Huge base64 blobs freeze Safari and blow localStorage — prefer http(s) refs
-    const tooLargeForLocal = value.startsWith('data:') && value.length > 450_000;
+    const tooLargeForLocal = value.startsWith('data:') && value.length > 280_000;
     if (!tooLargeForLocal) {
-      const all = loadJSON<Record<string, string>>(IMAGE_STORE, {});
+      const all = { ...loadImageStore() };
       all[id] = value;
-      saveJSONSafe(IMAGE_STORE, all);
+      writeImageStore(all);
     }
 
-    // Skip dual network dumps for giant payloads (Storage/RTDB upload handles those)
-    if (value.startsWith('data:') && value.length > 450_000) return;
+    // Skip dual network dumps for giant / data payloads (Storage/RTDB upload handles those).
+    // Client phones were freezing when every resolve wrote megabytes back to /api.
+    if (value.startsWith('data:')) return;
 
     void fetch('/api/db', {
       method: 'PUT',
@@ -508,7 +521,7 @@ async function pushDbImages(id: string, dataUrl: string) {
 /** Remove stock bull/logo art cached in local image store. */
 export function purgePlaceholderEaImages() {
   try {
-    const all = loadJSON<Record<string, string>>(IMAGE_STORE, {});
+    const all = { ...loadImageStore() };
     let changed = false;
     for (const [id, value] of Object.entries(all)) {
       if (isPlaceholderMentorImage(id) || isPlaceholderMentorImage(value)) {
@@ -516,7 +529,7 @@ export function purgePlaceholderEaImages() {
         changed = true;
       }
     }
-    if (changed) saveJSON(IMAGE_STORE, all);
+    if (changed) writeImageStore(all);
   } catch {
     // ignore
   }
@@ -548,13 +561,8 @@ export async function resolveDisplayImage(value: string): Promise<string> {
     if (fromLocal && !isPlaceholderMentorImage(fromLocal)) {
       if (isStreamableMediaUrl(fromLocal) || fromLocal.startsWith('data:')) return fromLocal;
     }
-    const apiUrl = imagePublicUrl(id);
-    void firebaseFetchImage(id).then((fromFb) => {
-      if (fromFb && !isPlaceholderMentorImage(fromFb) && !looksLikeVideoUrl(fromFb)) {
-        saveEaImage(id, fromFb);
-      }
-    });
-    return apiUrl;
+    // Stream via /api — never pull RTDB base64 into localStorage on client phones
+    return imagePublicUrl(id);
   }
   if (v.startsWith('/api/images/')) {
     return resolveStoredMediaUrl(v);
@@ -565,7 +573,7 @@ export async function resolveDisplayImage(value: string): Promise<string> {
 export function getEaImage(id: string): string {
   if (!id) return '';
   try {
-    const all = loadJSON<Record<string, string>>(IMAGE_STORE, {});
+    const all = loadImageStore();
     const key = id.replace(/^img:/, '');
     const hit = all[id] || all[key] || all[`img:${key}`] || '';
     return hit && !isPlaceholderMentorImage(hit) ? hit : '';

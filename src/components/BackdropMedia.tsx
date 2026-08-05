@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { looksLikeVideoUrl, type MentorMediaKind } from '../lib/mentorMedia';
 
 type Props = {
@@ -24,10 +24,27 @@ export function BackdropMedia({
   const isVideo = Boolean(
     media && (kind === 'video' || (!kind && looksLikeVideoUrl(media))),
   );
+  // Delay video mount on phones so first taps aren't crushed by decode
+  const [videoReady, setVideoReady] = useState(!isVideo);
+
+  useEffect(() => {
+    if (!isVideo) {
+      setVideoReady(true);
+      return;
+    }
+    setVideoReady(false);
+    const coarse =
+      typeof window !== 'undefined' &&
+      (window.matchMedia('(hover: none)').matches ||
+        window.matchMedia('(max-width: 480px)').matches);
+    const delay = coarse ? 900 : 200;
+    const t = window.setTimeout(() => setVideoReady(true), delay);
+    return () => window.clearTimeout(t);
+  }, [media, isVideo]);
 
   useEffect(() => {
     const el = videoRef.current;
-    if (!el || !isVideo) return;
+    if (!el || !isVideo || !videoReady) return;
 
     let gestureBound = false;
     el.muted = true;
@@ -76,13 +93,13 @@ export function BackdropMedia({
       document.removeEventListener('visibilitychange', onVisibility);
       if (gestureBound) document.removeEventListener('pointerdown', onPointer);
     };
-  }, [media, isVideo]);
+  }, [media, isVideo, videoReady]);
 
   if (!media) return null;
 
   return (
     <div className={className} aria-hidden data-backdrop-kind={isVideo ? 'video' : 'image'}>
-      {isVideo ? (
+      {isVideo && videoReady ? (
         <video
           key={media}
           ref={videoRef}
@@ -95,11 +112,13 @@ export function BackdropMedia({
           preload="metadata"
           disablePictureInPicture
         />
-      ) : (
+      ) : !isVideo ? (
         <div
           className={imageClassName}
           style={{ backgroundImage: `url(${media})` }}
         />
+      ) : (
+        <div className={imageClassName} />
       )}
       {washClassName ? <div className={washClassName} /> : null}
     </div>
