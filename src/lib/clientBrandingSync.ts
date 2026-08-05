@@ -89,47 +89,92 @@ export async function hydrateCustomMediaImages(
     if (!url) continue;
 
     const key = mediaKeyFromUrl(url, ownerAdminId, item.slot);
+
+    // Videos must STREAM — never firebaseFetch / saveEaImage full blobs (freezes .com phones)
+    if (item.kind === 'video') {
+      if (isStreamableMediaUrl(url) || url.startsWith('http') || url.startsWith('blob:')) {
+        out.push({ ...item, url });
+        continue;
+      }
+      if (key) {
+        out.push({ ...item, url: `/api/media/${encodeURIComponent(key)}` });
+        continue;
+      }
+      if (url.startsWith('img:')) {
+        out.push({
+          ...item,
+          url: `/api/media/${encodeURIComponent(url.replace(/^img:/, ''))}`,
+        });
+        continue;
+      }
+      out.push({ ...item, url });
+      continue;
+    }
+
     const fromMap =
       (key && (dbImages?.[key] || dbImages?.[`img:${key}`])) ||
       (key && (getEaImage(key) || getEaImage(`img:${key}`))) ||
       '';
 
     if (fromMap && (fromMap.startsWith('data:') || isStreamableMediaUrl(fromMap))) {
-      if (key) saveEaImage(key, fromMap);
-      out.push({ ...item, url: fromMap.startsWith('data:') ? (key ? `img:${key}` : url) : fromMap });
+      // Skip storing huge data:video disguised as image
+      if (fromMap.startsWith('data:video/')) {
+        out.push({
+          ...item,
+          kind: 'video',
+          url: key ? `/api/media/${encodeURIComponent(key)}` : url,
+        });
+        continue;
+      }
+      if (key && fromMap.startsWith('data:image/')) saveEaImage(key, fromMap);
+      out.push({
+        ...item,
+        url: fromMap.startsWith('data:') ? (key ? `img:${key}` : url) : fromMap,
+      });
       continue;
     }
 
     if (key) {
       const fromFb = await firebaseFetchImage(key).catch(() => '');
       if (fromFb && !isPlaceholderMentorImage(fromFb)) {
-        saveEaImage(key, fromFb);
-        out.push({
-          ...item,
-          url:
-            fromFb.startsWith('http') || fromFb.startsWith('/')
-              ? fromFb
-              : `img:${key}`,
-        });
-        continue;
+        if (fromFb.startsWith('data:video/') || looksLikeVideoPayload(fromFb)) {
+          out.push({
+            ...item,
+            kind: 'video',
+            url:
+              fromFb.startsWith('http') || fromFb.startsWith('/')
+                ? fromFb
+                : `/api/media/${encodeURIComponent(key)}`,
+          });
+          continue;
+        }
+        if (fromFb.startsWith('data:image/') || fromFb.startsWith('http') || fromFb.startsWith('/')) {
+          if (fromFb.startsWith('data:image/')) saveEaImage(key, fromFb);
+          out.push({
+            ...item,
+            url:
+              fromFb.startsWith('http') || fromFb.startsWith('/')
+                ? fromFb
+                : `img:${key}`,
+          });
+          continue;
+        }
       }
-      // Keep a fetchable public URL — videos stream better from /api/media
       if (url.startsWith('img:')) {
-        url =
-          item.kind === 'video'
-            ? `/api/media/${encodeURIComponent(key)}`
-            : imagePublicUrl(key);
+        url = imagePublicUrl(key);
       } else if (!url.startsWith('http') && !url.startsWith('/') && !url.startsWith('data:')) {
-        url =
-          item.kind === 'video'
-            ? `/api/media/${encodeURIComponent(key || url)}`
-            : imagePublicUrl(key || url);
+        url = imagePublicUrl(key || url);
       }
     }
 
     out.push({ ...item, url });
   }
   return out;
+}
+
+function looksLikeVideoPayload(value: string): boolean {
+  const v = value.toLowerCase();
+  return v.startsWith('data:video/') || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(v);
 }
 
 type WorkspaceBag = {
