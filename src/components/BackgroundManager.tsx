@@ -128,7 +128,11 @@ export function BackgroundManager({ adminId, customMedia, onSync, onMediaChange 
 
       setProgress({ pct: 100, stage: 'Complete' });
       const label = BACKGROUND_SLOTS.find((s) => s.id === slot)?.label || slot;
-      setMessage(`${label} uploaded — synced to all clients.`);
+      setMessage(
+        url.startsWith('http') || url.startsWith('/')
+          ? `${label} uploaded — synced to all clients.`
+          : `${label} saved — syncing to clients in the background.`,
+      );
     } catch (err) {
       setLocalMedia(before);
       onMediaChange?.(before);

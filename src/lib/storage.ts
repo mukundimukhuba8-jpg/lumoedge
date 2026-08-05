@@ -472,14 +472,13 @@ export async function publishMentorMediaImage(
   saveEaImage(id, dataUrl);
   saveEaImage(`img:${id}`, dataUrl);
 
-  await Promise.race([
-    firebaseSaveImage(id, dataUrl),
-    new Promise<void>((resolve) => window.setTimeout(resolve, 12_000)),
-  ]).catch(() => undefined);
-
+  // Soft timeout only — never throw. Profile pics already use this policy;
+  // backgrounds used to hard-reject after 25s and wipe the upload UI.
   const published = await Promise.race([
     publishEaImage(id, dataUrl),
-    new Promise<string>((resolve) => window.setTimeout(() => resolve(`img:${id}`), timeoutMs)),
+    new Promise<string>((resolve) =>
+      window.setTimeout(() => resolve(`img:${id}`), timeoutMs),
+    ),
   ]);
 
   if (published.startsWith('img:')) return published;
