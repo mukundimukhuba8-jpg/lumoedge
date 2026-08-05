@@ -7,9 +7,15 @@ export type LayoutId =
   | 'dominant'
   | 'vertical'
   | 'desktop'
-  | 'rail';
+  | 'rail'
+  | 'connect'
+  | 'pills'
+  | 'tiles'
+  | 'orbit'
+  | 'stack'
+  | 'frame';
 
-/** Map legacy layout IDs into the new 6 compositions. */
+/** Map legacy layout IDs into the current compositions. */
 const LEGACY_LAYOUT_MAP: Record<string, LayoutId> = {
   'full-poster': 'hero',
   'hero-overlay': 'hero',
@@ -385,6 +391,42 @@ export const LAYOUTS: {
     label: 'Rail',
     description: 'Left icon rail + wide hero canvas',
     schema: 'rail',
+  },
+  {
+    id: 'connect',
+    label: 'Connect',
+    description: 'Avatar + circular Start + Connect Robot strip',
+    schema: 'connect',
+  },
+  {
+    id: 'pills',
+    label: 'Pills',
+    description: 'Equal Remove / Start / Symbols pill row',
+    schema: 'pills',
+  },
+  {
+    id: 'tiles',
+    label: 'Tiles',
+    description: 'Signals / List / History square grid',
+    schema: 'tiles',
+  },
+  {
+    id: 'orbit',
+    label: 'Orbit',
+    description: 'Glowing circle avatar + mentor chips',
+    schema: 'orbit',
+  },
+  {
+    id: 'stack',
+    label: 'Stack',
+    description: 'Left action stack + right robots panel',
+    schema: 'stack',
+  },
+  {
+    id: 'frame',
+    label: 'Frame',
+    description: 'Framed avatar + equal square controls',
+    schema: 'frame',
   },
 ];
 
