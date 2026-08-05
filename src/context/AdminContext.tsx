@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { isAdminDrawerOpen } from '../lib/adminUiGate';
+import { isAdminUiBusy } from '../lib/adminUiGate';
 import { saveDashStats } from '../lib/adminDashCache';
 import {
   claimLicenseRemote,
@@ -1658,7 +1658,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   // Defer vault heal — mentors only heal their own workspace
   useEffect(() => {
     return scheduleIdle(() => {
-      if (isAdminDrawerOpen()) return;
+      if (isAdminUiBusy()) return;
       const mentorId = portalAdminId();
       if (mentorId && !isSuperAdminSession()) {
         setStore((prev) => healMentorWorkspaceInStore(prev, mentorId));
@@ -1730,7 +1730,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         );
         // Defer heal — syncing licenses on the main thread freezes the menu
         scheduleIdle(() => {
-          if (cancelled || isAdminDrawerOpen()) return;
+          if (cancelled || isAdminUiBusy()) return;
           const mentorId = portalAdminId();
           if (mentorId && !isSuperAdminSession()) {
             setStore((prev) => healMentorWorkspaceInStore(prev, mentorId));
@@ -1828,7 +1828,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
     // Admin images after UI is interactive — stops freeze on Generate License taps
     const cancelImages = scheduleIdle(() => {
-      if (cancelled || !isAdminPortalSession() || isAdminDrawerOpen()) return;
+      if (cancelled || !isAdminPortalSession() || isAdminUiBusy()) return;
       void fetchImagesMap().then((images) => {
         if (cancelled || !images) return;
         mergeRemoteImages(images);
@@ -1859,7 +1859,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       return;
     }
     const tick = async () => {
-      if (isAdminDrawerOpen()) return;
+      if (isAdminUiBusy()) return;
       const list = await fetchClients();
       if (list) {
         const remoteDeleted = await fetchRemoteDeletedClients();
@@ -1887,6 +1887,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (booting || !isAdminPortalSession() || !isSuperAdminSession()) return;
     const syncAdmins = async () => {
+      if (isAdminUiBusy()) return;
       if (mentorAdminSyncInflight) return;
       mentorAdminSyncInflight = true;
       try {
@@ -1931,8 +1932,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       }
     };
     const scheduleSyncAdmins = () => {
+      if (isAdminUiBusy()) return;
       window.clearTimeout(mentorAdminSyncTimer);
-      mentorAdminSyncTimer = window.setTimeout(() => void syncAdmins(), 350);
+      mentorAdminSyncTimer = window.setTimeout(() => {
+        if (isAdminUiBusy()) return;
+        void syncAdmins();
+      }, 350);
     };
     void syncAdmins();
     const id = window.setInterval(scheduleSyncAdmins, 8000);
@@ -1955,7 +1960,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const syncWorkspace = async () => {
       if (document.visibilityState === 'hidden') return;
       // Don't compete with the sidebar — menu must stay instant on phones
-      if (isAdminDrawerOpen()) return;
+      if (isAdminUiBusy()) return;
       if (syncing) return;
       syncing = true;
       try {
@@ -2506,12 +2511,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const mentorId = auth.admin.id;
     let cancelled = false;
     const cancel = scheduleIdle(() => {
-      if (cancelled || isAdminDrawerOpen()) return;
+      if (cancelled || isAdminUiBusy()) return;
       invalidateFetchDbCache();
       void (async () => {
         try {
           const db = await fetchDb();
-          if (cancelled || isAdminDrawerOpen()) return;
+          if (cancelled || isAdminUiBusy()) return;
           const remoteWs = db?.store?.workspaces?.[mentorId] as
             | AdminWorkspace
             | undefined;
@@ -2540,7 +2545,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         // Super Admin can deep-restore later; mentors stay on the light path
         if (!cancelled && isSuperAdminSession()) {
           scheduleIdle(() => {
-            if (cancelled || isAdminDrawerOpen()) return;
+            if (cancelled || isAdminUiBusy()) return;
             void restoreLicensesFromCloud().catch(() => undefined);
           }, 4000);
         }
