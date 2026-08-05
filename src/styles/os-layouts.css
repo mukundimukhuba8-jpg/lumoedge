@@ -888,18 +888,22 @@ html[data-layout='hero']:not([data-dock-reveal='1']) .os-shell-stage {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Keep translateX(-50%) — dock is left:50%, so dropping X-centering
+   parks the menu on the right edge (visible even when "hidden"). */
 html[data-layout='hero']:not([data-dock-reveal='1']) .os-dock-fixed {
-  transform: translateY(120%);
-  opacity: 0;
-  pointer-events: none;
-  transition: transform 0.28s ease, opacity 0.28s ease;
+  transform: translateX(-50%) translateY(140%) !important;
+  opacity: 0 !important;
+  visibility: hidden;
+  pointer-events: none !important;
+  transition: transform 0.28s ease, opacity 0.28s ease, visibility 0.28s;
 }
 
 html[data-layout='hero'][data-dock-reveal='1'] .os-dock-fixed {
-  transform: none;
-  opacity: 1;
-  pointer-events: auto;
-  transition: transform 0.28s ease, opacity 0.28s ease;
+  transform: translateX(-50%) translateY(0) !important;
+  opacity: 1 !important;
+  visibility: visible;
+  pointer-events: auto !important;
+  transition: transform 0.28s ease, opacity 0.28s ease, visibility 0.28s;
 }
 
 html[data-layout='split'] {
