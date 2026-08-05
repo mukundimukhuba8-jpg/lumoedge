@@ -2,59 +2,65 @@ import { ALL_MEDIA_SLOTS, type MentorMediaSlotId } from './mentorMedia';
 import { loadJSON, saveJSON } from './storage';
 
 export type LayoutId =
-  | 'full-poster'
-  | 'magazine'
-  | 'bento'
-  | 'layered'
-  | 'timeline'
-  | 'offset'
-  | 'sidebar'
-  | 'split-canvas'
-  | 'hero-overlay'
-  | 'mosaic'
-  | 'carousel'
-  | 'floating-windows'
-  | 'folded'
-  | 'edge'
-  | 'swiss'
-  | 'rail'
-  | 'editorial'
-  | 'glyph'
-  | 'spatial'
-  | 'console';
+  | 'hero'
+  | 'split'
+  | 'dominant'
+  | 'vertical'
+  | 'desktop'
+  | 'rail';
 
-/** Map legacy layout IDs into the architecture set. */
+/** Map legacy layout IDs into the new 6 compositions. */
 const LEGACY_LAYOUT_MAP: Record<string, LayoutId> = {
-  classic: 'full-poster',
-  bold: 'mosaic',
-  minimal: 'swiss',
-  expanded: 'hero-overlay',
-  dashboard: 'mosaic',
-  terminal: 'console',
-  focus: 'layered',
-  vortex: 'bento',
-  phantom: 'layered',
-  apex: 'edge',
-  'ai-core': 'full-poster',
-  orbital: 'bento',
-  'infinite-canvas': 'spatial',
-  holographic: 'layered',
-  'floating-island': 'floating-windows',
-  reactor: 'console',
-  cinematic: 'full-poster',
-  neural: 'timeline',
-  'glass-layer': 'layered',
-  'command-center': 'mosaic',
-  'minimal-luxury': 'swiss',
-  'zero-gravity': 'floating-windows',
-  prism: 'folded',
-  'hex-mesh': 'bento',
-  'pulse-wave': 'rail',
-  satellite: 'split-canvas',
-  vault: 'folded',
+  'full-poster': 'hero',
+  'hero-overlay': 'hero',
+  classic: 'hero',
+  cinematic: 'hero',
+  'ai-core': 'hero',
+  eclipse: 'hero',
+  expanded: 'hero',
+  'split-canvas': 'split',
+  satellite: 'split',
+  magazine: 'split',
+  sidebar: 'split',
+  layered: 'dominant',
+  folded: 'dominant',
+  focus: 'dominant',
+  phantom: 'dominant',
+  holographic: 'dominant',
+  'glass-layer': 'dominant',
+  timeline: 'vertical',
+  editorial: 'vertical',
+  neural: 'vertical',
+  offset: 'vertical',
+  'floating-windows': 'desktop',
+  'floating-island': 'desktop',
+  'zero-gravity': 'desktop',
+  spatial: 'desktop',
+  mosaic: 'desktop',
+  bold: 'desktop',
+  dashboard: 'desktop',
+  'command-center': 'desktop',
+  rail: 'rail',
+  edge: 'rail',
+  swiss: 'rail',
+  glyph: 'rail',
+  console: 'rail',
+  terminal: 'rail',
+  mecha: 'rail',
   spectrum: 'rail',
-  mecha: 'console',
-  eclipse: 'hero-overlay',
+  'pulse-wave': 'rail',
+  apex: 'rail',
+  bento: 'split',
+  vortex: 'split',
+  orbital: 'split',
+  'hex-mesh': 'split',
+  carousel: 'vertical',
+  'infinite-canvas': 'desktop',
+  reactor: 'rail',
+  vault: 'dominant',
+  prism: 'dominant',
+  'minimal-luxury': 'rail',
+  minimal: 'rail',
 };
 
 export type EffectId = 'profit-matrix' | 'star-field' | 'fire-mode' | 'trader-night' | 'none';
@@ -134,7 +140,7 @@ const KEY = 'ub-web/interface-style-v1';
 const PREF_LISTENERS = new Set<() => void>();
 
 export const DEFAULT_PREFS: InterfacePrefs = {
-  layout: 'full-poster',
+  layout: 'hero',
   effect: 'none',
   accent: 'silver',
   customBg: 'default',
@@ -203,145 +209,140 @@ export const THEMES: {
   {
     id: 'cyber-blue',
     label: 'Cyber Blue',
-    description: 'Electric blue neon — default Lumo Edge.',
+    description: 'Electric blue night OS',
     tokens: {
       electric: '#3b82f6',
       cyan: '#22d3ee',
       purple: '#6366f1',
-      magenta: '#ec4899',
-      bg: '#06080f',
-      panel: '#0e1220',
-      elevated: '#121828',
-      border: 'rgba(59, 130, 246, 0.35)',
-      cardBorder: 'rgba(34, 211, 238, 0.45)',
-      glow: 'rgba(59, 130, 246, 0.35)',
+      magenta: '#818cf8',
+      bg: '#04060c',
+      panel: '#0a101c',
+      elevated: '#121a2a',
+      border: 'rgba(59,130,246,0.28)',
+      cardBorder: 'rgba(59,130,246,0.35)',
+      glow: 'rgba(59,130,246,0.35)',
     },
   },
   {
     id: 'neon-purple',
     label: 'Neon Purple',
-    description: 'Violet pulse with magenta highlights.',
+    description: 'Violet neon cockpit',
     tokens: {
       electric: '#a855f7',
       cyan: '#c084fc',
       purple: '#7c3aed',
-      magenta: '#f472b6',
-      bg: '#08060f',
-      panel: '#120e1e',
-      elevated: '#181028',
-      border: 'rgba(168, 85, 247, 0.38)',
-      cardBorder: 'rgba(192, 132, 252, 0.5)',
-      glow: 'rgba(168, 85, 247, 0.38)',
+      magenta: '#e879f9',
+      bg: '#08050f',
+      panel: '#120a1c',
+      elevated: '#1a1028',
+      border: 'rgba(168,85,247,0.3)',
+      cardBorder: 'rgba(168,85,247,0.38)',
+      glow: 'rgba(168,85,247,0.35)',
     },
   },
   {
     id: 'matrix-green',
     label: 'Matrix Green',
-    description: 'Terminal green on deep black.',
+    description: 'Terminal green signal',
     tokens: {
       electric: '#22c55e',
       cyan: '#4ade80',
       purple: '#16a34a',
       magenta: '#86efac',
       bg: '#030806',
-      panel: '#07100c',
-      elevated: '#0a1610',
-      border: 'rgba(34, 197, 94, 0.35)',
-      cardBorder: 'rgba(74, 222, 128, 0.45)',
-      glow: 'rgba(34, 197, 94, 0.35)',
+      panel: '#07140c',
+      elevated: '#0c1c12',
+      border: 'rgba(34,197,94,0.28)',
+      cardBorder: 'rgba(34,197,94,0.36)',
+      glow: 'rgba(34,197,94,0.32)',
     },
   },
   {
     id: 'crimson-red',
     label: 'Crimson Red',
-    description: 'Aggressive red heat with pink accents.',
+    description: 'Hot signal red',
     tokens: {
       electric: '#ef4444',
       cyan: '#f87171',
-      purple: '#dc2626',
+      purple: '#b91c1c',
       magenta: '#fb7185',
-      bg: '#0a0608',
-      panel: '#140c10',
-      elevated: '#1a1014',
-      border: 'rgba(239, 68, 68, 0.38)',
-      cardBorder: 'rgba(248, 113, 113, 0.48)',
-      glow: 'rgba(239, 68, 68, 0.35)',
+      bg: '#0a0406',
+      panel: '#16080c',
+      elevated: '#1f0c12',
+      border: 'rgba(239,68,68,0.3)',
+      cardBorder: 'rgba(239,68,68,0.38)',
+      glow: 'rgba(239,68,68,0.32)',
     },
   },
   {
     id: 'sunset-orange',
     label: 'Sunset Orange',
-    description: 'Warm amber glow with coral edges.',
+    description: 'Warm trading dusk',
     tokens: {
       electric: '#f97316',
-      cyan: '#fdba74',
+      cyan: '#fb923c',
       purple: '#ea580c',
-      magenta: '#fb923c',
-      bg: '#0a0806',
-      panel: '#141008',
-      elevated: '#1a140c',
-      border: 'rgba(249, 115, 22, 0.38)',
-      cardBorder: 'rgba(253, 186, 116, 0.48)',
-      glow: 'rgba(249, 115, 22, 0.35)',
+      magenta: '#fdba74',
+      bg: '#0a0603',
+      panel: '#161008',
+      elevated: '#20160c',
+      border: 'rgba(249,115,22,0.3)',
+      cardBorder: 'rgba(249,115,22,0.38)',
+      glow: 'rgba(249,115,22,0.32)',
     },
   },
   {
     id: 'arctic-white',
     label: 'Arctic White',
-    description: 'Cool frost white with icy cyan.',
+    description: 'Bright frost panels',
     tokens: {
-      electric: '#e2e8f0',
-      cyan: '#67e8f9',
+      electric: '#38bdf8',
+      cyan: '#7dd3fc',
       purple: '#94a3b8',
-      magenta: '#cbd5e1',
-      bg: '#0a0c10',
-      panel: '#12161e',
-      elevated: '#161c28',
-      border: 'rgba(226, 232, 240, 0.22)',
-      cardBorder: 'rgba(103, 232, 249, 0.42)',
-      glow: 'rgba(103, 232, 249, 0.28)',
+      magenta: '#e2e8f0',
+      bg: '#0b1220',
+      panel: '#111827',
+      elevated: '#1e293b',
+      border: 'rgba(148,163,184,0.35)',
+      cardBorder: 'rgba(226,232,240,0.28)',
+      glow: 'rgba(56,189,248,0.28)',
     },
   },
   {
     id: 'midnight-black',
     label: 'Midnight Black',
-    description: 'Pure obsidian with subtle silver edges.',
+    description: 'Deep charcoal OS',
     tokens: {
-      electric: '#64748b',
-      cyan: '#94a3b8',
-      purple: '#475569',
-      magenta: '#cbd5e1',
-      bg: '#020204',
-      panel: '#08080c',
-      elevated: '#0c0c12',
-      border: 'rgba(148, 163, 184, 0.22)',
-      cardBorder: 'rgba(148, 163, 184, 0.35)',
-      glow: 'rgba(100, 116, 139, 0.25)',
+      electric: '#94a3b8',
+      cyan: '#cbd5e1',
+      purple: '#64748b',
+      magenta: '#e2e8f0',
+      bg: '#050608',
+      panel: '#0c0e12',
+      elevated: '#141820',
+      border: 'rgba(148,163,184,0.22)',
+      cardBorder: 'rgba(148,163,184,0.3)',
+      glow: 'rgba(148,163,184,0.22)',
     },
   },
   {
     id: 'gold-elite',
     label: 'Gold Elite',
-    description: 'Premium gold with amber neon.',
+    description: 'Luxury gold trim',
     tokens: {
       electric: '#f5d76e',
       cyan: '#fde68a',
-      purple: '#d97706',
-      magenta: '#fbbf24',
+      purple: '#ca8a04',
+      magenta: '#fef3c7',
       bg: '#0a0804',
       panel: '#141008',
-      elevated: '#1a1408',
-      border: 'rgba(245, 215, 110, 0.35)',
-      cardBorder: 'rgba(253, 230, 138, 0.48)',
-      glow: 'rgba(245, 215, 110, 0.32)',
+      elevated: '#1c160c',
+      border: 'rgba(245,215,110,0.28)',
+      cardBorder: 'rgba(245,215,110,0.36)',
+      glow: 'rgba(245,215,110,0.28)',
     },
   },
 ];
-
-function isCustomBgId(v: unknown): v is CustomBgId {
-  if (v === 'default' || v === 'interface-1') return true;
-  return ALL_MEDIA_SLOTS.some((s) => s.id === v);
-}
 
 export const LAYOUTS: {
   id: LayoutId;
@@ -349,26 +350,42 @@ export const LAYOUTS: {
   description: string;
   schema: string;
 }[] = [
-  { id: 'full-poster', label: 'Full Screen Poster', description: '70% hero poster with floating UI', schema: 'full-poster' },
-  { id: 'magazine', label: 'Magazine', description: 'Asymmetric editorial blocks', schema: 'magazine' },
-  { id: 'bento', label: 'Bento Grid', description: 'Uneven Apple-style tiles', schema: 'bento' },
-  { id: 'layered', label: 'Layered', description: 'Overlapping depth layers', schema: 'layered' },
-  { id: 'timeline', label: 'Vertical Timeline', description: 'Journey-style checkpoints', schema: 'timeline' },
-  { id: 'offset', label: 'Offset', description: 'Intentionally unbalanced art layout', schema: 'offset' },
-  { id: 'sidebar', label: 'Sidebar Mobile', description: 'Left rail + content column', schema: 'sidebar' },
-  { id: 'split-canvas', label: 'Split Canvas', description: 'Unequal two-panel split', schema: 'split-canvas' },
-  { id: 'hero-overlay', label: 'Hero Overlay', description: 'Massive art with invisible chrome', schema: 'hero-overlay' },
-  { id: 'mosaic', label: 'Dashboard Mosaic', description: 'Mixed-height dashboard tiles', schema: 'mosaic' },
-  { id: 'carousel', label: 'Carousel', description: 'Horizontal swipe sections', schema: 'carousel' },
-  { id: 'floating-windows', label: 'Floating Windows', description: 'Desktop-like floating panels', schema: 'floating-windows' },
-  { id: 'folded', label: 'Folded', description: 'Overlapping folded sections', schema: 'folded' },
-  { id: 'edge', label: 'Edge', description: 'Content hugging screen edges', schema: 'edge' },
-  { id: 'swiss', label: 'Swiss Minimal', description: 'Huge type and whitespace', schema: 'swiss' },
-  { id: 'rail', label: 'Control Rail', description: 'Bottom action rail + tall hero', schema: 'rail' },
-  { id: 'editorial', label: 'Editorial Strip', description: 'Stripe-like product narrative', schema: 'editorial' },
-  { id: 'glyph', label: 'Glyph Sparse', description: 'Nothing OS sparse glyph grid', schema: 'glyph' },
-  { id: 'spatial', label: 'Spatial Deck', description: 'Arc-like spatial panels', schema: 'spatial' },
-  { id: 'console', label: 'Console Mosaic', description: 'PlayStation / Xbox tile board', schema: 'console' },
+  {
+    id: 'hero',
+    label: 'Hero',
+    description: 'Full-screen hero, circular Start, swipe-up nav',
+    schema: 'hero',
+  },
+  {
+    id: 'split',
+    label: 'Split',
+    description: 'Control column + large hero canvas',
+    schema: 'split',
+  },
+  {
+    id: 'dominant',
+    label: 'Dominant',
+    description: 'Hero top, thick control sheet below',
+    schema: 'dominant',
+  },
+  {
+    id: 'vertical',
+    label: 'Vertical',
+    description: 'Scrolling journey from hero to robots',
+    schema: 'vertical',
+  },
+  {
+    id: 'desktop',
+    label: 'Desktop',
+    description: 'Draggable floating windows',
+    schema: 'desktop',
+  },
+  {
+    id: 'rail',
+    label: 'Rail',
+    description: 'Left icon rail + wide hero canvas',
+    schema: 'rail',
+  },
 ];
 
 /** @deprecated Presets now mirror LAYOUTS — kept for older callers. */
@@ -390,28 +407,9 @@ export const LAYOUT_PRESETS: {
     'arctic-white',
     'midnight-black',
     'gold-elite',
-    'crimson-red',
-    'sunset-orange',
   ];
-  const accents: AccentId[] = [
-    'cyan',
-    'purple',
-    'green',
-    'gold',
-    'silver',
-    'blue',
-    'pink',
-    'teal',
-    'orange',
-    'white',
-  ];
-  const effects: EffectId[] = [
-    'star-field',
-    'none',
-    'profit-matrix',
-    'trader-night',
-    'fire-mode',
-  ];
+  const accents: AccentId[] = ['cyan', 'purple', 'green', 'gold', 'silver', 'blue'];
+  const effects: EffectId[] = ['star-field', 'none', 'profit-matrix', 'trader-night', 'fire-mode', 'none'];
   return {
     id: layout.id,
     label: layout.label,
@@ -477,6 +475,11 @@ export const ACCENTS: { id: AccentId; label: string; hex: string }[] = [
   { id: 'white', label: 'White', hex: '#f8fafc' },
 ];
 
+function isCustomBgId(value: unknown): value is CustomBgId {
+  if (value === 'default' || value === 'interface-1') return true;
+  return typeof value === 'string' && ALL_MEDIA_SLOTS.some((s) => s.id === value);
+}
+
 export function loadInterfacePrefs(): InterfacePrefs {
   const raw = loadJSON<Partial<InterfacePrefs> | null>(KEY, null);
   if (!raw) return { ...DEFAULT_PREFS };
@@ -495,9 +498,14 @@ export function loadInterfacePrefs(): InterfacePrefs {
 
 export function saveInterfacePrefs(prefs: InterfacePrefs) {
   saveJSON(KEY, prefs);
-  // Apply tokens immediately so accent/theme updates feel instant.
   applyInterfaceTheme(prefs);
-  PREF_LISTENERS.forEach((cb) => cb());
+  PREF_LISTENERS.forEach((cb) => {
+    try {
+      cb();
+    } catch {
+      /* ignore */
+    }
+  });
 }
 
 export function subscribeInterfacePrefs(cb: () => void) {
@@ -536,6 +544,9 @@ export function applyInterfaceTheme(prefs: InterfacePrefs = loadInterfacePrefs()
   root.dataset.layout = prefs.layout;
   root.dataset.font = prefs.font;
   root.dataset.accent = prefs.accent;
+  if (prefs.layout !== 'hero') {
+    delete root.dataset.dockReveal;
+  }
 
   const font = FONTS.find((f) => f.id === prefs.font) ?? FONTS[0];
   root.style.setProperty('--font-display', font.display);
@@ -544,7 +555,6 @@ export function applyInterfaceTheme(prefs: InterfacePrefs = loadInterfacePrefs()
   root.style.setProperty('--os-font-body', font.body);
   document.body.style.fontFamily = font.body;
 
-  // Accent drives chrome identity across the whole OS.
   root.style.setProperty('--electric', accent);
   root.style.setProperty('--accent', accent);
   root.style.setProperty('--accent-rgb', accentRgb);
@@ -578,7 +588,6 @@ export function applyInterfaceTheme(prefs: InterfacePrefs = loadInterfacePrefs()
   document.body.style.background = theme.bg;
   document.querySelectorAll('.app-shell, .os-shell').forEach((el) => {
     if (el instanceof HTMLElement) {
-      // Keep shell transparent so ambient + backdrop stay continuous.
       if (el.classList.contains('os-shell')) {
         el.style.background = 'transparent';
       } else if (el.classList.contains('lumo-app')) {
