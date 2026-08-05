@@ -8,7 +8,20 @@ import {
   type ReactNode,
   type TouchEvent as ReactTouchEvent,
 } from 'react';
-import { CandlestickChart, Pause, Play, Settings, Signal, Trash2 } from 'lucide-react';
+import {
+  Activity,
+  BadgeCheck,
+  Bot,
+  CandlestickChart,
+  Pause,
+  Play,
+  Plus,
+  Power,
+  Settings,
+  Signal,
+  Trash2,
+  UserRound,
+} from 'lucide-react';
 import { BackdropMedia } from '../../components/BackdropMedia';
 import type { LayoutId } from '../../lib/interfaceStyle';
 import { isMentorProfileImage, type MentorMediaKind } from '../../lib/mentorMedia';
@@ -50,8 +63,12 @@ function resolveBg(a: LayoutActions) {
   };
 }
 
+function brandName(a: LayoutActions) {
+  return a.eaTitle?.trim() || 'Lumo Edge';
+}
+
 function statusLine(a: LayoutActions) {
-  return a.mainText || (a.isPaused ? 'Systems paused' : 'Systems live');
+  return a.mainText || (a.isPaused ? 'Systems paused' : 'Awaiting signals…');
 }
 
 function coreActions(a: LayoutActions) {
@@ -154,9 +171,17 @@ function Shell({
   );
 }
 
-function AvatarButton({ a, className }: { a: LayoutActions; className: string }) {
+function AvatarButton({
+  a,
+  className,
+  ring,
+}: {
+  a: LayoutActions;
+  className: string;
+  ring?: boolean;
+}) {
   return (
-    <div className={className} aria-hidden={!isMentorProfileImage(a.eaImage)}>
+    <div className={`${className}${ring ? ' lay-avatar-ring' : ''}`} aria-hidden={!isMentorProfileImage(a.eaImage)}>
       {isMentorProfileImage(a.eaImage) ? (
         <img src={a.eaImage} alt="" draggable={false} />
       ) : (
@@ -207,29 +232,87 @@ function ActionButton({
 function PowerBadge({ a }: { a: LayoutActions }) {
   return (
     <span className={`lay-power-badge${a.isPaused ? ' is-paused' : ''}`}>
-      {a.isPaused ? 'PAUSED' : 'POWERED'}
+      {a.isPaused ? 'PAUSED' : 'POWERED BY LUMO'}
     </span>
   );
 }
 
-function RobotsStrip({ a, className }: { a: LayoutActions; className?: string }) {
+function BrandBlock({
+  a,
+  tagline = 'Your trading ally',
+  className,
+  align = 'center',
+}: {
+  a: LayoutActions;
+  tagline?: string;
+  className?: string;
+  align?: 'center' | 'left';
+}) {
   return (
-    <div className={`lay-robots ${className || ''}`} aria-label="Robots list">
-      <div className="lay-robots-label">Robots List</div>
+    <div className={`lay-brand ${align === 'left' ? 'is-left' : ''} ${className || ''}`}>
+      {tagline ? <p className="lay-brand-tag">{tagline}</p> : null}
+      <h1 className="lay-brand-title">
+        {brandName(a)}
+        <BadgeCheck size={16} className="lay-brand-check" aria-hidden />
+      </h1>
+      <div className="lay-brand-meta">
+        <PowerBadge a={a} />
+        <span className={`lay-status-line${a.isPaused ? ' is-paused' : ''}`}>{statusLine(a)}</span>
+      </div>
+    </div>
+  );
+}
+
+function StatusChips({ a }: { a: LayoutActions }) {
+  return (
+    <div className="lay-status-chips" aria-label="System status">
+      <span className="lay-chip">
+        <UserRound size={13} />
+        Mentor
+      </span>
+      <span className="lay-chip">
+        <Bot size={13} />
+        Bot
+      </span>
+      <span className={`lay-chip${a.isPaused ? ' is-paused' : ' is-live'}`}>
+        <Activity size={13} />
+        {a.isPaused ? 'Paused' : 'Live'}
+      </span>
+    </div>
+  );
+}
+
+function RobotsStrip({
+  a,
+  className,
+  label = 'Robots List',
+  connectLabel = 'Connect new EA',
+}: {
+  a: LayoutActions;
+  className?: string;
+  label?: string;
+  connectLabel?: string;
+}) {
+  return (
+    <div className={`lay-robots ${className || ''}`} aria-label={label}>
+      <div className="lay-robots-label">{label}</div>
       <div className="lay-robots-track">
-        <button type="button" className="lay-robot-card" onClick={a.onStyle}>
+        <button type="button" className="lay-robot-card" onClick={a.onHomeTap}>
           <AvatarButton a={a} className="lay-robot-avatar" />
           <div className="lay-robot-meta">
-            <strong>{a.eaTitle || 'Lumo Edge'}</strong>
+            <strong>{brandName(a)}</strong>
             <span>{statusLine(a)}</span>
           </div>
         </button>
-        <button type="button" className="lay-robot-card lay-robot-settings" onClick={a.onStyle}>
+        <button type="button" className="lay-robot-card lay-robot-thumb" onClick={a.onStyle} aria-label={brandName(a)}>
+          <AvatarButton a={a} className="lay-robot-avatar" />
+        </button>
+        <button type="button" className="lay-robot-card lay-robot-connect" onClick={a.onStyle}>
           <span className="lay-robot-gear">
-            <Settings size={18} />
+            <Plus size={18} />
           </span>
           <div className="lay-robot-meta">
-            <strong>Settings</strong>
+            <strong>{connectLabel}</strong>
             <span>Themes & layouts</span>
           </div>
         </button>
@@ -251,7 +334,7 @@ function StartCircle({ a, className }: { a: LayoutActions; className?: string })
       }}
     >
       <span className="lay-start-ring" aria-hidden />
-      <span className="lay-start-ico">{start.icon}</span>
+      <span className="lay-start-ico">{a.isPaused ? <Power size={28} /> : start.icon}</span>
       <span className="lay-start-label">{start.label}</span>
     </button>
   );
@@ -259,6 +342,10 @@ function StartCircle({ a, className }: { a: LayoutActions; className?: string })
 
 function Pill({ action, className }: { action: ActionDef; className?: string }) {
   return <ActionButton action={action} className={`lay-pill ${className || ''}`} />;
+}
+
+function SquareTile({ action, className }: { action: ActionDef; className?: string }) {
+  return <ActionButton action={action} className={`lay-square-tile ${className || ''}`} />;
 }
 
 /* ── 1 Hero ─────────────────────────────────────────────────── */
@@ -282,11 +369,9 @@ function HeroLayout(a: LayoutActions) {
     if (start == null) return;
     const end = e.changedTouches[0]?.clientY;
     if (end == null) return;
-    // Swipe up from lower area → reveal bottom nav
     if (start - end > 48 && start > window.innerHeight * 0.55) {
       document.documentElement.dataset.dockReveal = '1';
     }
-    // Swipe down → hide again
     if (end - start > 48) {
       document.documentElement.dataset.dockReveal = '';
     }
@@ -300,13 +385,16 @@ function HeroLayout(a: LayoutActions) {
         onTouchEnd={onTouchEnd}
         onClick={a.onHomeTap}
       >
-        <AvatarButton a={a} className="lay-hero-avatar" />
+        <div className="lay-hero-top">
+          <AvatarButton a={a} className="lay-hero-avatar" ring />
+          <BrandBlock a={a} tagline="Now trading with" className="lay-hero-brand" />
+        </div>
         <div className="lay-hero-controls">
           <Pill action={remove} className="lay-hero-pill" />
           <StartCircle a={a} />
           <Pill action={symbols} className="lay-hero-pill" />
         </div>
-        <RobotsStrip a={a} className="lay-hero-robots" />
+        <RobotsStrip a={a} className="lay-hero-robots" label="Connect robot" />
         <p className="lay-hero-hint">Swipe up for menu</p>
       </div>
     </Shell>
@@ -319,10 +407,10 @@ function SplitLayout(a: LayoutActions) {
   return (
     <Shell a={a} className="lay-split">
       <aside className="lay-split-rail">
-        <AvatarButton a={a} className="lay-split-avatar" />
+        <AvatarButton a={a} className="lay-split-avatar" ring />
         <div className="lay-split-stack">
-          <ActionButton action={start} className="lay-split-btn is-start" />
           <ActionButton action={remove} className="lay-split-btn" />
+          <ActionButton action={start} className="lay-split-btn is-start" />
           <ActionButton action={symbols} className="lay-split-btn" />
         </div>
         <RobotsStrip a={a} className="lay-split-robots" />
@@ -330,9 +418,8 @@ function SplitLayout(a: LayoutActions) {
       <section className="lay-split-hero">
         <AvatarButton a={a} className="lay-split-hero-media" />
         <div className="lay-split-copy">
-          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-          <PowerBadge a={a} />
-          <p className="os-sub">{statusLine(a)}</p>
+          <BrandBlock a={a} tagline="Connected with" align="left" />
+          <StatusChips a={a} />
         </div>
       </section>
     </Shell>
@@ -345,21 +432,17 @@ function DominantLayout(a: LayoutActions) {
   return (
     <Shell a={a} className="lay-dominant">
       <div className="lay-dom-hero">
-        <AvatarButton a={a} className="lay-dom-float-avatar" />
+        <AvatarButton a={a} className="lay-dom-float-avatar" ring />
       </div>
       <div className="lay-dom-sheet">
         <div className="lay-dom-sheet-handle" aria-hidden />
-        <div className="lay-dom-head">
-          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-          <PowerBadge a={a} />
-        </div>
-        <p className="os-sub">{statusLine(a)}</p>
+        <BrandBlock a={a} tagline="The future of AI" align="left" className="lay-dom-brand" />
         <ActionButton action={start} className="lay-dom-start" />
         <div className="lay-dom-pills">
           <Pill action={remove} />
           <Pill action={symbols} />
         </div>
-        <RobotsStrip a={a} className="lay-dom-robots" />
+        <RobotsStrip a={a} className="lay-dom-robots" label="Connect robot" />
       </div>
     </Shell>
   );
@@ -367,12 +450,18 @@ function DominantLayout(a: LayoutActions) {
 
 /* ── 4 Vertical ─────────────────────────────────────────────── */
 function VerticalLayout(a: LayoutActions) {
-  const { remove, symbols, settings } = coreActions(a);
-  const meta: ActionDef = {
-    key: 'metatrader',
-    label: 'MT5',
-    icon: <CandlestickChart size={16} />,
-    onClick: a.onMetaTrader,
+  const { remove, symbols, settings, start } = coreActions(a);
+  const list: ActionDef = {
+    key: 'list',
+    label: 'List',
+    icon: <Bot size={18} />,
+    onClick: a.onStyle,
+  };
+  const signals: ActionDef = {
+    key: 'signals',
+    label: 'Signals',
+    icon: <CandlestickChart size={18} />,
+    onClick: a.onScanner,
   };
   return (
     <Shell a={a} className="lay-vertical">
@@ -380,26 +469,43 @@ function VerticalLayout(a: LayoutActions) {
         <div className="lay-vert-banner">
           <AvatarButton a={a} className="lay-vert-banner-media" />
         </div>
-        <div className="lay-vert-block">
-          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-          <PowerBadge a={a} />
-          <p className="os-sub">{statusLine(a)}</p>
-        </div>
+        <BrandBlock a={a} tagline="Your trading ally" className="lay-vert-brand" />
         <div className="lay-vert-start-row">
           <StartCircle a={a} />
         </div>
         <div className="lay-vert-trio">
-          <ActionButton action={remove} className="lay-vert-tile" />
-          <ActionButton action={symbols} className="lay-vert-tile" />
-          <ActionButton action={meta} className="lay-vert-tile" />
+          <SquareTile action={remove} />
+          <SquareTile action={{ ...start, icon: a.isPaused ? <Play size={18} /> : <Pause size={18} /> }} />
+          <SquareTile action={symbols} />
+        </div>
+        <div className="lay-vert-trio lay-vert-trio-soft">
+          <SquareTile action={signals} />
+          <SquareTile action={list} />
+          <SquareTile
+            action={{
+              key: 'history',
+              label: 'MT5',
+              icon: <Activity size={18} />,
+              onClick: a.onMetaTrader,
+            }}
+          />
         </div>
         <div className="lay-vert-robots">
           <div className="lay-robots-label">Robots List</div>
-          <button type="button" className="lay-vert-robot" onClick={a.onStyle}>
-            <AvatarButton a={a} className="lay-vert-robot-avatar" />
+          <button type="button" className="lay-vert-robot" onClick={a.onHomeTap}>
+            <AvatarButton a={a} className="lay-vert-robot-avatar" ring />
             <div>
-              <strong>{a.eaTitle || 'Lumo Edge'}</strong>
+              <strong>{brandName(a)}</strong>
               <span>{statusLine(a)}</span>
+            </div>
+          </button>
+          <button type="button" className="lay-vert-robot lay-vert-connect" onClick={a.onStyle}>
+            <span className="lay-vert-plus">
+              <Plus size={20} />
+            </span>
+            <div>
+              <strong>Connect new EA</strong>
+              <span>Buy bots & layouts</span>
             </div>
           </button>
         </div>
@@ -462,10 +568,10 @@ function DesktopLayout(a: LayoutActions) {
   const { start, remove, symbols, settings } = coreActions(a);
   return (
     <Shell a={a} className="lay-desktop">
-      <DragWin title={a.eaTitle || 'Hero'} className="lay-desk-main" defaultPos={{ x: 0, y: 0 }}>
-        <AvatarButton a={a} className="lay-desk-hero" />
-        <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-        <PowerBadge a={a} />
+      <DragWin title={brandName(a)} className="lay-desk-main" defaultPos={{ x: 0, y: 0 }}>
+        <AvatarButton a={a} className="lay-desk-hero" ring />
+        <BrandBlock a={a} tagline="The future of AI" />
+        <StatusChips a={a} />
       </DragWin>
       <DragWin title="Controls" className="lay-desk-controls" defaultPos={{ x: 18, y: 12 }}>
         <ActionButton action={start} className="lay-desk-btn" />
@@ -473,7 +579,7 @@ function DesktopLayout(a: LayoutActions) {
         <ActionButton action={symbols} className="lay-desk-btn" />
       </DragWin>
       <DragWin title="Robots List" className="lay-desk-robots" defaultPos={{ x: 0, y: 0 }}>
-        <RobotsStrip a={a} />
+        <RobotsStrip a={a} label="Connect robot" />
       </DragWin>
       <DragWin title="Settings" className="lay-desk-gear" defaultPos={{ x: 0, y: 0 }}>
         <ActionButton action={settings} className="lay-desk-gear-btn" iconOnly />
@@ -489,7 +595,7 @@ function RailLayout(a: LayoutActions) {
   return (
     <Shell a={a} className="lay-rail">
       <aside className="lay-rail-bar">
-        <AvatarButton a={a} className="lay-rail-thumb" />
+        <AvatarButton a={a} className="lay-rail-thumb" ring />
         <ActionButton action={start} className="lay-rail-ico" iconOnly />
         <ActionButton action={remove} className="lay-rail-ico" iconOnly />
         <ActionButton action={symbols} className="lay-rail-ico" iconOnly />
@@ -500,20 +606,201 @@ function RailLayout(a: LayoutActions) {
           aria-label="Robots list"
           onClick={() => setShowRobots((v) => !v)}
         >
-          <span className="os-act-ico">≡</span>
+          <span className="os-act-ico">
+            <Bot size={18} />
+          </span>
         </button>
       </aside>
       <section className="lay-rail-canvas">
         <AvatarButton a={a} className="lay-rail-hero" />
         <div className="lay-rail-copy">
-          <h1>{a.eaTitle || 'LUMO EDGE'}</h1>
-          <PowerBadge a={a} />
-          <p className="os-sub">{statusLine(a)}</p>
+          <BrandBlock a={a} tagline="Your trading ally" align="left" />
+          <StatusChips a={a} />
         </div>
         <div className={`lay-rail-robots-sheet${showRobots ? ' is-open' : ''}`}>
-          <RobotsStrip a={a} />
+          <RobotsStrip a={a} label="Connect robot" />
         </div>
       </section>
+    </Shell>
+  );
+}
+
+/* ── 7 Connect (ref: circular Start + Connect Robot) ────────── */
+function ConnectLayout(a: LayoutActions) {
+  const { remove, symbols } = coreActions(a);
+  return (
+    <Shell a={a} className="lay-connect">
+      <div className="lay-connect-stage" onClick={a.onHomeTap}>
+        <AvatarButton a={a} className="lay-connect-avatar" ring />
+        <BrandBlock a={a} tagline="Mentor linked" />
+        <div className="lay-connect-controls">
+          <Pill action={remove} />
+          <StartCircle a={a} />
+          <Pill action={symbols} />
+        </div>
+        <RobotsStrip a={a} className="lay-connect-robots" label="Connect robot" />
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 8 Pills (ref: three equal pills) ───────────────────────── */
+function PillsLayout(a: LayoutActions) {
+  const { start, remove, symbols } = coreActions(a);
+  return (
+    <Shell a={a} className="lay-pills">
+      <div className="lay-pills-stage">
+        <AvatarButton a={a} className="lay-pills-avatar" ring />
+        <BrandBlock a={a} tagline="Official verified" />
+        <div className="lay-pills-row">
+          <Pill action={remove} className="lay-pills-equal" />
+          <Pill action={start} className="lay-pills-equal is-primary" />
+          <Pill action={symbols} className="lay-pills-equal" />
+        </div>
+        <RobotsStrip a={a} className="lay-pills-robots" label="Robots List" />
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 9 Tiles (ref: Signals / List / History) ────────────────── */
+function TilesLayout(a: LayoutActions) {
+  const signals: ActionDef = {
+    key: 'signals',
+    label: 'Signals',
+    icon: <CandlestickChart size={20} />,
+    onClick: a.onScanner,
+  };
+  const list: ActionDef = {
+    key: 'list',
+    label: 'List',
+    icon: <Bot size={20} />,
+    onClick: a.onStyle,
+  };
+  const history: ActionDef = {
+    key: 'history',
+    label: 'History',
+    icon: <Activity size={20} />,
+    onClick: a.onMetaTrader,
+  };
+  return (
+    <Shell a={a} className="lay-tiles">
+      <div className="lay-tiles-stage">
+        <div className="lay-tiles-hero">
+          <AvatarButton a={a} className="lay-tiles-media" />
+        </div>
+        <BrandBlock a={a} tagline="" />
+        <p className={`lay-status-line lay-tiles-status${a.isPaused ? ' is-paused' : ''}`}>
+          {statusLine(a)}
+        </p>
+        <div className="lay-tiles-row">
+          <SquareTile action={signals} />
+          <SquareTile action={list} />
+          <SquareTile action={history} />
+        </div>
+        <div className="lay-tiles-start">
+          <StartCircle a={a} />
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 10 Orbit (ref: glow circle + mentor chips) ─────────────── */
+function OrbitLayout(a: LayoutActions) {
+  return (
+    <Shell a={a} className="lay-orbit">
+      <div className="lay-orbit-stage">
+        <div className="lay-orbit-head">
+          <AvatarButton a={a} className="lay-orbit-mini" />
+          <strong>{brandName(a)}</strong>
+        </div>
+        <AvatarButton a={a} className="lay-orbit-avatar" ring />
+        <BrandBlock a={a} tagline="The future of AI" />
+        <StatusChips a={a} />
+        <div className="lay-orbit-list">
+          <div className="lay-robots-label">Mentor List</div>
+          <button type="button" className="lay-orbit-card" onClick={a.onHomeTap}>
+            <AvatarButton a={a} className="lay-orbit-card-avatar" ring />
+            <strong>{brandName(a)}</strong>
+          </button>
+          <button type="button" className="lay-orbit-card is-connect" onClick={a.onStyle}>
+            <span className="lay-orbit-plus">
+              <Plus size={18} />
+            </span>
+            <div>
+              <strong>Connect new EA</strong>
+              <span>Buy bots from market</span>
+            </div>
+          </button>
+        </div>
+        <div className="lay-orbit-actions">
+          <StartCircle a={a} className="lay-orbit-start" />
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 11 Stack (ref: left stack + right robots) ──────────────── */
+function StackLayout(a: LayoutActions) {
+  const { start, remove, symbols } = coreActions(a);
+  return (
+    <Shell a={a} className="lay-stack">
+      <div className="lay-stack-stage">
+        <AvatarButton a={a} className="lay-stack-avatar" ring />
+        <BrandBlock a={a} tagline="Now trading with" />
+        <span className={`lay-stack-link${a.isPaused ? ' is-paused' : ''}`}>
+          {a.isPaused ? 'Paused' : 'Connected'} · View more
+        </span>
+        <div className="lay-stack-body">
+          <div className="lay-stack-actions">
+            <Pill action={remove} className="lay-stack-pill" />
+            <Pill action={start} className="lay-stack-pill is-primary" />
+            <Pill action={symbols} className="lay-stack-pill" />
+          </div>
+          <div className="lay-stack-robots">
+            <div className="lay-robots-label">Robots List</div>
+            <button type="button" className="lay-stack-robot" onClick={a.onHomeTap}>
+              <AvatarButton a={a} className="lay-stack-robot-avatar" ring />
+              <strong>{brandName(a)}</strong>
+            </button>
+            <button type="button" className="lay-stack-robot is-connect" onClick={a.onStyle}>
+              <Plus size={16} />
+              <strong>New</strong>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 12 Frame (ref: framed square + equal squares) ──────────── */
+function FrameLayout(a: LayoutActions) {
+  const { start, remove, symbols } = coreActions(a);
+  return (
+    <Shell a={a} className="lay-frame">
+      <div className="lay-frame-stage">
+        <AvatarButton a={a} className="lay-frame-avatar" ring />
+        <BrandBlock a={a} tagline="Your trading ally" />
+        <div className="lay-frame-row">
+          <SquareTile action={remove} />
+          <SquareTile
+            action={{
+              ...start,
+              icon: a.isPaused ? <Play size={20} /> : <Pause size={20} />,
+            }}
+          />
+          <SquareTile action={symbols} />
+        </div>
+        <div className="lay-frame-robots">
+          <div className="lay-robots-label">Robots List</div>
+          <button type="button" className="lay-frame-robot" onClick={a.onHomeTap}>
+            <strong>{brandName(a)}</strong>
+          </button>
+        </div>
+      </div>
     </Shell>
   );
 }
@@ -525,14 +812,19 @@ const LAYOUT_MAP: Record<LayoutId, ComponentType<LayoutActions>> = {
   vertical: VerticalLayout,
   desktop: DesktopLayout,
   rail: RailLayout,
+  connect: ConnectLayout,
+  pills: PillsLayout,
+  tiles: TilesLayout,
+  orbit: OrbitLayout,
+  stack: StackLayout,
+  frame: FrameLayout,
 };
 
-/** Renders one of the 6 home compositions — same actions, different structure. */
+/** Renders the selected home composition. */
 export function OsHomeLayout({
   layout,
   ...actions
 }: LayoutActions & { layout: LayoutId }) {
   const Comp = LAYOUT_MAP[layout] ?? HeroLayout;
-  // Mount as a component so hooks (swipe / drag / sheet) stay valid
   return <Comp {...actions} />;
 }
