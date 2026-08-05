@@ -63,30 +63,33 @@ export function AdminAuthPage() {
   };
 
   return (
-    <div className="page cyber-page admin-auth-static" style={{ textAlign: 'center' }}>
+    <div
+      className="page cyber-page admin-auth-static"
+      style={{ textAlign: 'center', paddingTop: 12, paddingBottom: 20 }}
+    >
       <img
         src={appLogo}
         alt="Lumo Edge"
-        width={72}
-        height={72}
+        width={52}
+        height={52}
         style={{
-          margin: '20px auto 14px',
-          borderRadius: 18,
+          margin: '10px auto 8px',
+          borderRadius: 14,
           display: 'block',
           objectFit: 'cover',
-          boxShadow: '0 0 24px rgba(59,130,246,0.55)',
+          boxShadow: '0 0 18px rgba(59,130,246,0.45)',
         }}
       />
-      <h1 className="title-blue" style={{ fontSize: 30, margin: 0 }}>
+      <h1 className="title-blue" style={{ fontSize: 22, margin: 0 }}>
         Admin Portal
       </h1>
-      <p className="muted">
+      <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>
         {tab === 'register'
           ? 'Create a mentor account — Super Admin must approve before you can log in.'
           : 'Sign in after Super Admin has approved your mentor account.'}
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', border: '1px solid #2a2a33', borderRadius: 14, overflow: 'hidden', margin: '18px 0 16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', border: '1px solid #2a2a33', borderRadius: 12, overflow: 'hidden', margin: '12px 0 12px' }}>
         {(['login', 'register'] as const).map((t) => (
           <button
             key={t}
