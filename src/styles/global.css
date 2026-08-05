@@ -1125,14 +1125,24 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 .admin-shell-dark .drawer.admin-drawer,
 .admin-drawer {
   transform: translate3d(-105%, 0, 0);
-  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
   backface-visibility: hidden;
+  contain: layout paint;
 }
 
 .admin-shell-dark .drawer.admin-drawer.is-open,
 .admin-drawer.is-open {
   transform: translate3d(0, 0, 0);
+}
+
+.admin-drawer-item {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+html[data-admin-portal] .admin-drawer-backdrop {
+  transition: opacity 0.14s ease, visibility 0.14s ease;
 }
 
 .drawer-item {

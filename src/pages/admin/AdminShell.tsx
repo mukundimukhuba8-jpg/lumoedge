@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { startTransition, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Cpu,
   CreditCard,
@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAdminSession } from '../../context/AdminContext';
-import { setAdminDrawerOpen } from '../../lib/adminUiGate';
+import { markAdminNavBusy, setAdminDrawerOpen } from '../../lib/adminUiGate';
 
 type MenuRole = 'super' | 'admin';
 
@@ -62,7 +62,6 @@ export function AdminShell() {
     return () => setAdminDrawerOpen(false);
   }, [open]);
 
-  // Escape closes instantly without waiting on React trees
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -80,7 +79,18 @@ export function AdminShell() {
   const isSuper = admin.role === 'super';
   const pageTitle = titleForPath(location.pathname, isSuper);
 
-  // Always mounted — CSS transform opens instantly (no portal remount freeze)
+  const go = (to: string) => {
+    // Pause sync/heal BEFORE closing — otherwise they stampede onto the new page
+    markAdminNavBusy(1400);
+    setOpen(false);
+    // Let the drawer start closing, then navigate off the critical path
+    window.setTimeout(() => {
+      startTransition(() => {
+        navigate(to);
+      });
+    }, 48);
+  };
+
   const drawer =
     typeof document !== 'undefined'
       ? createPortal(
@@ -121,26 +131,28 @@ export function AdminShell() {
                 </p>
               ) : null}
               <nav className="admin-drawer-nav">
-                {menu.map(({ to, label, Icon }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    onClick={() => setOpen(false)}
-                    className={({ isActive }) =>
-                      `drawer-item admin-drawer-item${isActive ? ' active' : ''}`
-                    }
-                  >
-                    <span className="admin-drawer-item-icon">
-                      <Icon size={18} strokeWidth={2.1} />
-                    </span>
-                    <span className="admin-drawer-item-label">{label}</span>
-                  </NavLink>
-                ))}
+                {menu.map(({ to, label, Icon }) => {
+                  const active = location.pathname.startsWith(to);
+                  return (
+                    <button
+                      key={to}
+                      type="button"
+                      className={`drawer-item admin-drawer-item${active ? ' active' : ''}`}
+                      onClick={() => go(to)}
+                    >
+                      <span className="admin-drawer-item-icon">
+                        <Icon size={18} strokeWidth={2.1} />
+                      </span>
+                      <span className="admin-drawer-item-label">{label}</span>
+                    </button>
+                  );
+                })}
               </nav>
               <button
                 type="button"
                 className="drawer-item admin-drawer-item admin-drawer-logout"
                 onClick={() => {
+                  markAdminNavBusy(400);
                   setOpen(false);
                   logout();
                   navigate('/');
@@ -178,7 +190,6 @@ export function AdminShell() {
         <strong className="admin-top-title admin-top-title-cyber">{pageTitle}</strong>
         <span className="admin-top-spacer" aria-hidden />
       </div>
-      {/* No pathname key — remounting the whole page on every nav froze mobile */}
       <div className="page-enter admin-page-body admin-page-body-cyber">
         <Outlet />
       </div>
@@ -190,7 +201,9 @@ export function AdminShell() {
 export function Placeholder({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
-      <h2 className="title-blue" style={{ fontSize: 18 }}>{title}</h2>
+      <h2 className="title-blue" style={{ fontSize: 18 }}>
+        {title}
+      </h2>
       <p className="muted">{children}</p>
     </div>
   );
