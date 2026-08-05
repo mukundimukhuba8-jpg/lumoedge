@@ -1564,6 +1564,245 @@ html[data-admin-portal] .admin-shell-dark .drawer {
   color: var(--text);
 }
 
+/* Packed pickers — same density as Colours */
+.iface-pack-grid {
+  display: grid;
+  gap: 14px 8px;
+}
+
+.iface-pack-grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.iface-pack-grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.iface-pack {
+  background: transparent;
+  color: var(--muted);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px;
+  min-width: 0;
+}
+
+.iface-pack > span:last-child {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.iface-pack-swatch {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  display: grid;
+  place-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.iface-pack.active {
+  color: var(--text);
+}
+
+.iface-pack.active .iface-pack-swatch {
+  border-color: var(--electric);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 14px color-mix(in srgb, var(--electric) 55%, transparent);
+}
+
+.iface-pack-font {
+  font-size: 16px;
+  font-weight: 750;
+  color: var(--text);
+  background: rgba(8, 12, 20, 0.85);
+}
+
+.iface-pack-fx {
+  color: #64748b;
+}
+
+.iface-pack-fx.on,
+.iface-pack.active .iface-pack-fx {
+  color: var(--electric);
+  background: color-mix(in srgb, var(--electric) 16%, rgba(8, 12, 20, 0.9));
+}
+
+/* Mini layout schema diagrams inside swatches */
+.iface-schema {
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(8, 12, 20, 0.9));
+}
+
+.iface-schema::before,
+.iface-schema::after {
+  content: '';
+  position: absolute;
+  border-radius: 3px;
+  background: rgba(var(--accent-rgb), 0.75);
+}
+
+.iface-schema-hero::before {
+  width: 18px;
+  height: 18px;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 6px;
+}
+.iface-schema-hero::after {
+  width: 14px;
+  height: 14px;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+}
+
+.iface-schema-split::before {
+  inset: 8px auto 8px 7px;
+  width: 12px;
+}
+.iface-schema-split::after {
+  inset: 8px 7px 8px auto;
+  width: 18px;
+  opacity: 0.45;
+}
+
+.iface-schema-dominant::before {
+  inset: 6px 8px auto;
+  height: 14px;
+}
+.iface-schema-dominant::after {
+  inset: auto 8px 6px;
+  height: 16px;
+}
+
+.iface-schema-vertical::before {
+  inset: 7px 10px auto;
+  height: 8px;
+}
+.iface-schema-vertical::after {
+  inset: auto 12px 8px;
+  height: 18px;
+  width: auto;
+  left: 12px;
+  right: 12px;
+}
+
+.iface-schema-desktop::before {
+  width: 20px;
+  height: 14px;
+  top: 9px;
+  left: 9px;
+}
+.iface-schema-desktop::after {
+  width: 12px;
+  height: 16px;
+  right: 8px;
+  bottom: 8px;
+}
+
+.iface-schema-rail::before {
+  inset: 7px auto 7px 7px;
+  width: 8px;
+}
+.iface-schema-rail::after {
+  inset: 10px 7px 10px 18px;
+}
+
+.iface-schema-connect::before {
+  width: 16px;
+  height: 16px;
+  top: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 5px;
+}
+.iface-schema-connect::after {
+  width: 16px;
+  height: 16px;
+  bottom: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+}
+
+.iface-schema-pills::before {
+  inset: 18px 6px auto;
+  height: 8px;
+  width: auto;
+  left: 6px;
+  right: 6px;
+  border-radius: 999px;
+}
+.iface-schema-pills::after {
+  display: none;
+}
+
+.iface-schema-tiles::before {
+  inset: 12px 7px 12px;
+  background:
+    linear-gradient(90deg, rgba(var(--accent-rgb), 0.85) 0 28%, transparent 28% 36%, rgba(var(--accent-rgb), 0.85) 36% 64%, transparent 64% 72%, rgba(var(--accent-rgb), 0.85) 72% 100%);
+  border-radius: 4px;
+}
+.iface-schema-tiles::after {
+  display: none;
+}
+
+.iface-schema-orbit::before {
+  width: 22px;
+  height: 22px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -55%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.35);
+}
+.iface-schema-orbit::after {
+  inset: auto 8px 8px;
+  height: 6px;
+  width: auto;
+  left: 8px;
+  right: 8px;
+  border-radius: 999px;
+}
+
+.iface-schema-stack::before {
+  inset: 10px auto 10px 7px;
+  width: 14px;
+}
+.iface-schema-stack::after {
+  inset: 10px 7px 10px auto;
+  width: 14px;
+  opacity: 0.5;
+}
+
+.iface-schema-frame::before {
+  width: 22px;
+  height: 22px;
+  top: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.4);
+}
+.iface-schema-frame::after {
+  inset: auto 8px 8px;
+  height: 10px;
+  width: auto;
+  left: 8px;
+  right: 8px;
+}
+
 .iface-custom-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
