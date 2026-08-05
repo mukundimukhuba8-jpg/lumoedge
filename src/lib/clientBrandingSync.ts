@@ -1,7 +1,7 @@
 /** Pull mentor branding from cloud for licensed clients — no license key writes. */
 
 import type { LicenseSync } from '../context/AppContext';
-import { dbList, firebaseFetchImage } from './firebaseDb';
+import { dbList, firebaseFetchImage, firebaseFetchWorkspace } from './firebaseDb';
 import {
   isPlaceholderMentorImage,
   isGenericLumoLabel,
@@ -267,16 +267,22 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
   const vaultHit = findInVault(normalizedKey);
   if (vaultHit && vaultHit.ownerAdminId) {
     const imageUrl = await resolveMentorImage(vaultHit.ownerAdminId, localImages);
-    const db = await fetchDb();
-    const dbImages =
-      db?.images && typeof db.images === 'object'
-        ? { ...localImages, ...(db.images as Record<string, string>) }
-        : localImages;
-    const raw = db ? findLicenseEntry(db, normalizedKey) : null;
-    const ownerWs = db ? workspaceMap(db)[vaultHit.ownerAdminId] : undefined;
+    // Scoped workspace read — never pull the full platform DB on client phones
+    const ownerWsRaw = await firebaseFetchWorkspace(vaultHit.ownerAdminId);
+    const ownerWs = ownerWsRaw
+      ? ({
+          profile: (ownerWsRaw.profile || {}) as Record<string, unknown>,
+          eas: dbList<{ id: string; name?: string; symbols?: string[] }>(ownerWsRaw.eas),
+        } as {
+          profile?: Record<string, unknown>;
+          eas?: Array<{ id: string; name?: string; symbols?: string[] }>;
+        })
+      : undefined;
     const base = brandingFromVault(vaultHit, imageUrl);
-    // Force-merge mentor profile media even if vault short-circuit missed _ws
-    const enriched = enrichBrandingFromWorkspace(base, raw || { ...vaultHit, _ws: ownerWs });
+    const enriched = enrichBrandingFromWorkspace(base, {
+      ...vaultHit,
+      _ws: ownerWs,
+    });
     const withProfileMedia = {
       ...enriched,
       customMedia: mergeCustomMedia(
@@ -296,7 +302,7 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
     const customMedia = await hydrateCustomMediaImages(
       withProfileMedia.customMedia,
       vaultHit.ownerAdminId,
-      dbImages,
+      localImages,
     );
     return { ...withProfileMedia, customMedia };
   }

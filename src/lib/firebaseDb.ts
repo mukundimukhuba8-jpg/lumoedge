@@ -337,6 +337,27 @@ async function firebaseFetchDbLite(): Promise<RemoteDb | null> {
       });
     }
 
+    // Client app (not logged into portal): vault only — never pull 900+ clients
+    // or every mentor workspace (that froze phones on /waiting and /app).
+    if (!isAdminPortalSession()) {
+      const [vault, revokedKeys, updatedAt] = await Promise.all([
+        getPath<RemoteDb['vault']>(`${ROOT}/vault`),
+        getPath<string[]>(`${ROOT}/revokedKeys`),
+        getPath<string>(`${ROOT}/updatedAt`),
+      ]);
+      return normalizeDb({
+        auth: emptyDb().auth,
+        store: { workspaces: {} },
+        vault: vault || [],
+        clients: [],
+        sessions: {},
+        revokedKeys: revokedKeys || [],
+        images: {},
+        updatedAt: updatedAt || new Date().toISOString(),
+      });
+    }
+
+    // Super Admin portal — full lite paths (still no images map)
     const [auth, store, vault, clients, sessions, revokedKeys, updatedAt] =
       await Promise.all([
         getPath<RemoteDb['auth']>(`${ROOT}/auth`),
@@ -359,6 +380,21 @@ async function firebaseFetchDbLite(): Promise<RemoteDb | null> {
     });
   } catch (err) {
     console.warn('[firebase] fetchDbLite failed', err);
+    return null;
+  }
+}
+
+/** One mentor workspace — for client branding without downloading the whole DB. */
+export async function firebaseFetchWorkspace(
+  mentorId: string,
+): Promise<Record<string, unknown> | null> {
+  if (!isFirebaseConfigured() || !mentorId) return null;
+  try {
+    const ws = await getPath<Record<string, unknown>>(
+      `${ROOT}/store/workspaces/${mentorId}`,
+    );
+    return ws && typeof ws === 'object' ? ws : null;
+  } catch {
     return null;
   }
 }

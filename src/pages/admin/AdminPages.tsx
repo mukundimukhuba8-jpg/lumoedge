@@ -600,7 +600,9 @@ export function GenerateLicensePage() {
   useEffect(() => {
     if (admin?.role !== 'super') return;
     void refreshClientQueue();
-  }, [refreshClientQueue, admin?.role]);
+    // Mount-only — avoid refresh storms when context rebuilds
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [admin?.role]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -1042,13 +1044,26 @@ export function ProfilePage() {
   };
 
   // Only reset the form when the SAVED profile content actually changes.
-  // The context rebuilds `profile` every few seconds (background refresh),
-  // and resetting on identity erased whatever the user was typing.
-  const lastProfileJson = useRef('');
+  // Never JSON.stringify eaImage (data URLs are megabytes and freeze phones).
+  const lastProfileSig = useRef('');
   useEffect(() => {
-    const snapshot = JSON.stringify(profile);
-    if (snapshot === lastProfileJson.current) return;
-    lastProfileJson.current = snapshot;
+    const mediaSig = (profile.customMedia || [])
+      .map((m) => `${m.slot}:${String(m.url || '').length}`)
+      .join(',');
+    const snapshot = [
+      profile.mentorId,
+      profile.firstName,
+      profile.lastName,
+      profile.email,
+      profile.phone,
+      profile.mentorName,
+      profile.eaDisplayName,
+      profile.mainText,
+      String(profile.eaImage || '').length,
+      mediaSig,
+    ].join('|');
+    if (snapshot === lastProfileSig.current) return;
+    lastProfileSig.current = snapshot;
 
     const raw = resolveProfileImage(profile.eaImage) || profile.eaImage;
     const resolved =
@@ -1557,6 +1572,7 @@ export function SubscriptionsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [approveMsg, setApproveMsg] = useState('');
+  const [approvedLimit, setApprovedLimit] = useState(60);
   const query = q.trim().toLowerCase();
   const match = (c: { firstName: string; lastName: string; email: string }) => {
     if (!query) return true;
@@ -1566,27 +1582,33 @@ export function SubscriptionsPage() {
     .filter((c) => normalizeClientStatus(c.status) === 'pending')
     .filter(match)
     .sort((a, b) => Number(Boolean(b.paymentClaimed)) - Number(Boolean(a.paymentClaimed)));
-  const approved = clientRequests
+  const approvedAll = clientRequests
     .filter((c) => normalizeClientStatus(c.status) === 'approved')
     .filter(match);
+  const approved = approvedAll.slice(0, approvedLimit);
   const paidPending = pending.filter((c) => c.paymentClaimed).length;
 
   useEffect(() => {
-    // Queue only — full license restore is background on boot (keeps taps smooth)
+    // Mount once — do not re-run when refreshClientQueue identity changes
+    let cancelled = false;
     void (async () => {
       setRefreshing(true);
       try {
         const result = await refreshClientQueue();
-        if (result.ok) {
+        if (!cancelled && result.ok) {
           setRefreshMsg(
             `${result.pending ?? 0} pending · ${result.approved ?? 0} approved`,
           );
         }
       } finally {
-        setRefreshing(false);
+        if (!cancelled) setRefreshing(false);
       }
     })();
-  }, [refreshClientQueue]);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-only
+  }, []);
 
   const onAddManual = async () => {
     if (manualSaving) return;
@@ -1900,6 +1922,16 @@ export function SubscriptionsPage() {
             </div>
           ))
         )}
+        {approvedAll.length > approved.length ? (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ marginTop: 12, width: '100%' }}
+            onClick={() => setApprovedLimit((n) => n + 80)}
+          >
+            Show more ({approvedAll.length - approved.length} remaining)
+          </button>
+        ) : null}
       </div>
     </div>
   );

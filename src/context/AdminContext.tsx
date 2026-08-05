@@ -1845,8 +1845,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Subscription queue — Super Admin portal + client waiting/activate only.
-  // Mentors must NOT poll 900+ clients (main freeze after login).
+  // Subscription queue — Super Admin only (slow). Waiting clients use a lighter
+  // interval so phones are not crushed by merging 900+ rows every few seconds.
   useEffect(() => {
     if (booting) return;
     const onWaitingPath =
@@ -1871,8 +1871,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       }
       setClientsLoading(false);
     };
-    const first = window.setTimeout(() => void tick(), isSuperAdminSession() ? 1500 : 400);
-    const every = 20_000;
+    const first = window.setTimeout(
+      () => void tick(),
+      isSuperAdminSession() ? 1500 : 2500,
+    );
+    const every = isSuperAdminSession() ? 20_000 : 45_000;
     const id = window.setInterval(tick, every);
     return () => {
       window.clearTimeout(first);
@@ -2594,11 +2597,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const adminId = auth.admin?.id;
     if (!adminId) return;
     const isSuper = auth.admin?.role === 'super' || adminId === SUPER_ADMIN_ID;
-    const workspace = normalizeWorkspace(
+    // Core normalize only — vault heal in useMemo froze every poll
+    const workspace = normalizeWorkspaceCore(
       store.workspaces[adminId],
       auth.admin ?? undefined,
     );
-    const portalLicenses = licensesVisibleInPortal(workspace, adminId, isSuper);
+    const portalLicenses = filterOwnLicenses(
+      workspace.licenses,
+      adminId,
+      isSuper ? [] : workspace.revokedKeys || [],
+      isSuper,
+    );
     const activeLicenses = portalLicenses.filter(
       (l) => l.status === 'active' || l.status === 'assigned',
     ).length;
@@ -2626,15 +2635,66 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     });
   }, [auth.admin, store.workspaces, clients]);
 
+  const getClientByEmail = useCallback(
+    (email: string) => {
+      const normalized = email.trim().toLowerCase();
+      const fromClients = clients.find((c) => c.email.toLowerCase() === normalized);
+      const fromWorkspace = Object.values(store.workspaces)
+        .flatMap((ws) => ws.clientRequests)
+        .find((c) => c.email.toLowerCase() === normalized);
+      if (!fromClients) return fromWorkspace;
+      if (!fromWorkspace) return fromClients;
+      return mergeClientLists([fromClients], [fromWorkspace])[0];
+    },
+    [clients, store.workspaces],
+  );
+
+  const refreshClientQueue = useCallback(async () => {
+    void repairClientQueueRemote().catch(() => undefined);
+    const list = await Promise.race([
+      fetchClients(),
+      new Promise<RemoteDb['clients'] | null>((resolve) =>
+        window.setTimeout(() => resolve(null), 10_000),
+      ),
+    ]);
+    const remoteDeleted = await Promise.race([
+      fetchRemoteDeletedClients(),
+      new Promise<string[]>((resolve) => window.setTimeout(() => resolve([]), 5000)),
+    ]);
+    let counts = { pending: 0, approved: 0, total: 0 };
+    setClients((prev) => {
+      const merged = mergeSubscriberQueue(
+        prev,
+        (list as ClientRequest[]) || [],
+        remoteDeleted,
+      );
+      if (clientQueueFingerprint(prev) === clientQueueFingerprint(merged)) {
+        counts = countClientQueue(prev);
+        return prev;
+      }
+      saveCachedClientQueue(merged);
+      counts = countClientQueue(merged);
+      return merged;
+    });
+    approvalLog('client', 'queue_refreshed', counts);
+    return { ok: true as const, ...counts };
+  }, []);
+
   const value = useMemo<Ctx>(() => {
     const adminId = auth.admin?.id ?? '';
-    const workspace = normalizeWorkspace(
+    // Do NOT vault-heal here — that ran on every clients/store tick and froze taps
+    const workspace = normalizeWorkspaceCore(
       adminId ? store.workspaces[adminId] : undefined,
       auth.admin ?? undefined,
     );
 
     const isSuper = auth.admin?.role === 'super' || adminId === SUPER_ADMIN_ID;
-    const portalLicenses = licensesVisibleInPortal(workspace, adminId, isSuper);
+    const portalLicenses = filterOwnLicenses(
+      workspace.licenses,
+      adminId,
+      isSuper ? [] : workspace.revokedKeys || [],
+      isSuper,
+    );
     const activeLicenses = portalLicenses.filter(
       (l) => l.status === 'active' || l.status === 'assigned',
     ).length;
@@ -3337,39 +3397,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
         return updated;
       },
-      getClientByEmail: (email) => {
-        const normalized = email.trim().toLowerCase();
-        const fromClients = clients.find((c) => c.email.toLowerCase() === normalized);
-        const fromWorkspace = Object.values(store.workspaces)
-          .flatMap((ws) => ws.clientRequests)
-          .find((c) => c.email.toLowerCase() === normalized);
-        if (!fromClients) return fromWorkspace;
-        if (!fromWorkspace) return fromClients;
-        return mergeClientLists([fromClients], [fromWorkspace])[0];
-      },
-      refreshClientQueue: async () => {
-        void repairClientQueueRemote().catch(() => undefined);
-        const list = await Promise.race([
-          fetchClients(),
-          new Promise<RemoteDb['clients'] | null>((resolve) =>
-            window.setTimeout(() => resolve(null), 10_000),
-          ),
-        ]);
-        const remoteDeleted = await Promise.race([
-          fetchRemoteDeletedClients(),
-          new Promise<string[]>((resolve) => window.setTimeout(() => resolve([]), 5000)),
-        ]);
-        const merged = mergeSubscriberQueue(
-          clients,
-          (list as ClientRequest[]) || [],
-          remoteDeleted,
-        );
-        setClients(merged);
-        saveCachedClientQueue(merged);
-        const counts = countClientQueue(merged);
-        approvalLog('client', 'queue_refreshed', counts);
-        return { ok: true, ...counts };
-      },
+      getClientByEmail,
+      refreshClientQueue,
       refreshAdminQueue: async () => {
         void repairAdminQueueRemote().catch(() => undefined);
         const remoteAdmins = (await Promise.race([
@@ -4115,7 +4144,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         approvedClients: isSuper ? countClientQueue(clients).approved : 0,
       },
     };
-  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, approveMentorByIds, resyncLicenses, warmLicenseCache, restoreEAsFromCloud, restoreLicensesFromCloud, logout]);
+  }, [auth, store, clients, saveAuth, saveStore, patchWorkspace, allLicenses, approveMentorByIds, resyncLicenses, warmLicenseCache, restoreEAsFromCloud, restoreLicensesFromCloud, logout, getClientByEmail, refreshClientQueue]);
 
   return (
     <AdminSessionContext.Provider value={sessionValue}>
