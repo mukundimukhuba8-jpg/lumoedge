@@ -625,6 +625,186 @@ function RailLayout(a: LayoutActions) {
   );
 }
 
+/* ── 7 Connect (ref: circular Start + Connect Robot) ────────── */
+function ConnectLayout(a: LayoutActions) {
+  const { remove, symbols } = coreActions(a);
+  return (
+    <Shell a={a} className="lay-connect">
+      <div className="lay-connect-stage" onClick={a.onHomeTap}>
+        <AvatarButton a={a} className="lay-connect-avatar" ring />
+        <BrandBlock a={a} tagline="Mentor linked" />
+        <div className="lay-connect-controls">
+          <Pill action={remove} />
+          <StartCircle a={a} />
+          <Pill action={symbols} />
+        </div>
+        <RobotsStrip a={a} className="lay-connect-robots" label="Connect robot" />
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 8 Pills (ref: three equal pills) ───────────────────────── */
+function PillsLayout(a: LayoutActions) {
+  const { start, remove, symbols } = coreActions(a);
+  return (
+    <Shell a={a} className="lay-pills">
+      <div className="lay-pills-stage">
+        <AvatarButton a={a} className="lay-pills-avatar" ring />
+        <BrandBlock a={a} tagline="Official verified" />
+        <div className="lay-pills-row">
+          <Pill action={remove} className="lay-pills-equal" />
+          <Pill action={start} className="lay-pills-equal is-primary" />
+          <Pill action={symbols} className="lay-pills-equal" />
+        </div>
+        <RobotsStrip a={a} className="lay-pills-robots" label="Robots List" />
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 9 Tiles (ref: Signals / List / History) ────────────────── */
+function TilesLayout(a: LayoutActions) {
+  const signals: ActionDef = {
+    key: 'signals',
+    label: 'Signals',
+    icon: <CandlestickChart size={20} />,
+    onClick: a.onScanner,
+  };
+  const list: ActionDef = {
+    key: 'list',
+    label: 'List',
+    icon: <Bot size={20} />,
+    onClick: a.onStyle,
+  };
+  const history: ActionDef = {
+    key: 'history',
+    label: 'History',
+    icon: <Activity size={20} />,
+    onClick: a.onMetaTrader,
+  };
+  return (
+    <Shell a={a} className="lay-tiles">
+      <div className="lay-tiles-stage">
+        <div className="lay-tiles-hero">
+          <AvatarButton a={a} className="lay-tiles-media" />
+        </div>
+        <BrandBlock a={a} tagline="" />
+        <p className={`lay-status-line lay-tiles-status${a.isPaused ? ' is-paused' : ''}`}>
+          {statusLine(a)}
+        </p>
+        <div className="lay-tiles-row">
+          <SquareTile action={signals} />
+          <SquareTile action={list} />
+          <SquareTile action={history} />
+        </div>
+        <div className="lay-tiles-start">
+          <StartCircle a={a} />
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 10 Orbit (ref: glow circle + mentor chips) ─────────────── */
+function OrbitLayout(a: LayoutActions) {
+  return (
+    <Shell a={a} className="lay-orbit">
+      <div className="lay-orbit-stage">
+        <div className="lay-orbit-head">
+          <AvatarButton a={a} className="lay-orbit-mini" />
+          <strong>{brandName(a)}</strong>
+        </div>
+        <AvatarButton a={a} className="lay-orbit-avatar" ring />
+        <BrandBlock a={a} tagline="The future of AI" />
+        <StatusChips a={a} />
+        <div className="lay-orbit-list">
+          <div className="lay-robots-label">Mentor List</div>
+          <button type="button" className="lay-orbit-card" onClick={a.onHomeTap}>
+            <AvatarButton a={a} className="lay-orbit-card-avatar" ring />
+            <strong>{brandName(a)}</strong>
+          </button>
+          <button type="button" className="lay-orbit-card is-connect" onClick={a.onStyle}>
+            <span className="lay-orbit-plus">
+              <Plus size={18} />
+            </span>
+            <div>
+              <strong>Connect new EA</strong>
+              <span>Buy bots from market</span>
+            </div>
+          </button>
+        </div>
+        <div className="lay-orbit-actions">
+          <StartCircle a={a} className="lay-orbit-start" />
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 11 Stack (ref: left stack + right robots) ──────────────── */
+function StackLayout(a: LayoutActions) {
+  const { start, remove, symbols } = coreActions(a);
+  return (
+    <Shell a={a} className="lay-stack">
+      <div className="lay-stack-stage">
+        <AvatarButton a={a} className="lay-stack-avatar" ring />
+        <BrandBlock a={a} tagline="Now trading with" />
+        <span className={`lay-stack-link${a.isPaused ? ' is-paused' : ''}`}>
+          {a.isPaused ? 'Paused' : 'Connected'} · View more
+        </span>
+        <div className="lay-stack-body">
+          <div className="lay-stack-actions">
+            <Pill action={remove} className="lay-stack-pill" />
+            <Pill action={start} className="lay-stack-pill is-primary" />
+            <Pill action={symbols} className="lay-stack-pill" />
+          </div>
+          <div className="lay-stack-robots">
+            <div className="lay-robots-label">Robots List</div>
+            <button type="button" className="lay-stack-robot" onClick={a.onHomeTap}>
+              <AvatarButton a={a} className="lay-stack-robot-avatar" ring />
+              <strong>{brandName(a)}</strong>
+            </button>
+            <button type="button" className="lay-stack-robot is-connect" onClick={a.onStyle}>
+              <Plus size={16} />
+              <strong>New</strong>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+/* ── 12 Frame (ref: framed square + equal squares) ──────────── */
+function FrameLayout(a: LayoutActions) {
+  const { start, remove, symbols } = coreActions(a);
+  return (
+    <Shell a={a} className="lay-frame">
+      <div className="lay-frame-stage">
+        <AvatarButton a={a} className="lay-frame-avatar" ring />
+        <BrandBlock a={a} tagline="Your trading ally" />
+        <div className="lay-frame-row">
+          <SquareTile action={remove} />
+          <SquareTile
+            action={{
+              ...start,
+              icon: a.isPaused ? <Play size={20} /> : <Pause size={20} />,
+            }}
+          />
+          <SquareTile action={symbols} />
+        </div>
+        <div className="lay-frame-robots">
+          <div className="lay-robots-label">Robots List</div>
+          <button type="button" className="lay-frame-robot" onClick={a.onHomeTap}>
+            <strong>{brandName(a)}</strong>
+          </button>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
 const LAYOUT_MAP: Record<LayoutId, ComponentType<LayoutActions>> = {
   hero: HeroLayout,
   split: SplitLayout,
@@ -632,9 +812,15 @@ const LAYOUT_MAP: Record<LayoutId, ComponentType<LayoutActions>> = {
   vertical: VerticalLayout,
   desktop: DesktopLayout,
   rail: RailLayout,
+  connect: ConnectLayout,
+  pills: PillsLayout,
+  tiles: TilesLayout,
+  orbit: OrbitLayout,
+  stack: StackLayout,
+  frame: FrameLayout,
 };
 
-/** Renders one of the 6 home compositions — same actions, different structure. */
+/** Renders the selected home composition. */
 export function OsHomeLayout({
   layout,
   ...actions
