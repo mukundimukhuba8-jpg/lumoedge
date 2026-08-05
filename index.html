@@ -43,13 +43,46 @@
         background:
           radial-gradient(ellipse 80% 50% at 50% -10%, rgba(59, 130, 246, 0.22), transparent 55%),
           #04060c;
-        transition: opacity 0.22s ease, visibility 0.22s ease;
+        transition: opacity 0.18s ease, visibility 0.18s ease;
       }
       #boot-shell.is-hidden {
         opacity: 0;
         visibility: hidden;
         pointer-events: none !important;
+        display: none !important;
+      }
+      /* Never cover the whole app again — small reload chip only */
+      #boot-shell.is-chip {
+        inset: auto;
+        left: 50%;
+        bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+        transform: translateX(-50%);
+        min-height: 0;
+        width: auto;
+        max-width: calc(100vw - 32px);
+        padding: 10px 12px;
+        gap: 8px;
+        border-radius: 999px;
+        background: rgba(8, 12, 22, 0.92);
+        border: 1px solid rgba(59, 130, 246, 0.35);
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+        z-index: 2147483000;
+        display: inline-flex;
+        align-items: center;
+        place-content: unset;
+      }
+      #boot-shell.is-chip img,
+      #boot-shell.is-chip strong {
         display: none;
+      }
+      #boot-shell.is-chip span {
+        font-size: 0.82rem;
+        white-space: nowrap;
+      }
+      #boot-shell.is-chip button {
+        display: inline-flex !important;
+        margin: 0;
+        padding: 8px 14px;
       }
       #boot-shell img {
         width: 88px;
@@ -99,6 +132,7 @@
         var reloadBtn = document.getElementById('boot-reload');
         var ready = false;
         var recovering = false;
+        var capped = false;
         var RELOAD_KEY = 'lumo-blank-recover';
         var WARM_KEY = 'lumo-was-ready';
 
@@ -106,23 +140,23 @@
           ready = true;
           if (!shell) return;
           shell.classList.add('is-hidden');
+          shell.classList.remove('is-chip', 'needs-reload');
           shell.setAttribute('aria-busy', 'false');
-          shell.classList.remove('needs-reload');
         }
 
-        function showShell(msg, offerReload) {
-          ready = false;
-          if (!shell) return;
-          shell.classList.remove('is-hidden');
-          shell.setAttribute('aria-busy', 'true');
+        /** Non-blocking chip — NEVER full-screen trap after first paint window */
+        function showReloadChip(msg) {
+          if (!shell || ready) return;
           if (status && msg) status.textContent = msg;
-          if (offerReload) shell.classList.add('needs-reload');
-          else shell.classList.remove('needs-reload');
+          shell.classList.remove('is-hidden');
+          shell.classList.add('is-chip', 'needs-reload');
+          shell.setAttribute('aria-busy', 'false');
         }
 
         function appAlive() {
           var root = document.getElementById('root');
           if (!root) return false;
+          if (root.childElementCount > 0) return true;
           return Boolean(
             root.querySelector(
               '.app-shell, .lumo-app, .welcome-splash, .admin-shell-dark, .os-home-shell',
@@ -139,12 +173,12 @@
         }
 
         function softReload() {
-          if (recovering) return;
+          if (recovering || !capped) return;
           recovering = true;
           try {
             var n = Number(sessionStorage.getItem(RELOAD_KEY) || '0');
             if (n >= 2) {
-              showShell('Still stuck — tap Reload', true);
+              showReloadChip('Tap Reload');
               recovering = false;
               return;
             }
@@ -170,30 +204,32 @@
           });
         }
 
-        // Cap splash — never leave users on Loading… more than ~3s
+        // Hard cap — hide full-screen splash; never show "Taking longer…" full screen again
         window.setTimeout(function () {
+          capped = true;
           if (ready || appAlive()) {
             hideShell();
             return;
           }
-          // Hide shell anyway so cached UI can paint; offer reload if still empty
           hideShell();
-          if (!appAlive()) showShell('Taking longer than usual…', true);
-        }, 3000);
+          // Only a tiny chip if React still has not painted — app stays usable underneath
+          window.setTimeout(function () {
+            if (!appAlive()) showReloadChip('Slow load — Reload');
+            else hideShell();
+          }, 1200);
+        }, 2000);
 
         function checkResume(force) {
           if (document.visibilityState && document.visibilityState !== 'visible') return;
-          // Never auto-reload during the first cold boot
           if (!force && !ready && !hadWarmSession()) return;
           window.setTimeout(function () {
             if (appAlive()) {
               hideShell();
               return;
             }
-            // Blank black after leaving the tab — recover once
-            showShell('Restoring…', false);
+            // Blank after tab discard — one soft reload, never a blocking splash loop
             softReload();
-          }, 500);
+          }, 400);
         }
 
         window.addEventListener('pageshow', function (ev) {

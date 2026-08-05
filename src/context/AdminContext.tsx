@@ -1609,8 +1609,8 @@ function scheduleIdle(fn: () => void, timeout = 1200): () => void {
 
 export function AdminProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(() => migrateAuth());
-  // Light init — vault heal runs after first paint so cold boot doesn't freeze
-  const [store, setStore] = useState<StoreState>(() => migrateStore(migrateAuth().admins));
+  // Empty store on first paint — migrateStore can freeze phones before UI appears
+  const [store, setStore] = useState<StoreState>({ workspaces: {} });
   // Don't parse 900+ cached clients on the first paint — hydrate after UI is up
   const [clients, setClients] = useState<ClientRequest[]>([]);
   const [clientsLoading, setClientsLoading] = useState(() => !hasCachedSubscriberQueue());
@@ -1618,8 +1618,19 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const clientsSaveTimer = useRef<number | null>(null);
 
   useEffect(() => {
+    // Hydrate local store after first paint so boot splash can dismiss
+    return scheduleIdle(() => {
+      setStore(migrateStore(auth.admins));
+    }, 0);
+  }, []);
+
+  useEffect(() => {
     // Offline-first: paint shell, then load cached subscriber queue
     return scheduleIdle(() => {
+      if (!isSuperAdminSession()) {
+        setClientsLoading(false);
+        return;
+      }
       const cached = loadCachedClientQueue();
       if (cached.length) setClients(cached);
       setClientsLoading(false);
@@ -1644,10 +1655,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     pruneClientDeviceStorage();
   }, []);
 
-  // Defer heavy vault heal until the UI can paint / drawer is free
+  // Defer vault heal — mentors only heal their own workspace
   useEffect(() => {
     return scheduleIdle(() => {
       if (isAdminDrawerOpen()) return;
+      const mentorId = portalAdminId();
+      if (mentorId && !isSuperAdminSession()) {
+        setStore((prev) => healMentorWorkspaceInStore(prev, mentorId));
+        return;
+      }
       setStore((prev) => healAllWorkspacesFromVault(prev));
     }, 1600);
   }, []);

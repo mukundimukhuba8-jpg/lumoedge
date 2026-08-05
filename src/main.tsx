@@ -33,6 +33,8 @@ function markReady() {
 }
 
 function mount() {
+  // Hide boot splash the moment JS runs — before heavy React providers init
+  markReady();
   root.render(
     <StrictMode>
       <BrowserRouter>
@@ -44,13 +46,13 @@ function mount() {
       </BrowserRouter>
     </StrictMode>,
   );
-  // Hide HTML boot shell ASAP — never leave mobile on Loading…
-  markReady();
+  // Keep dismissing in case a resume path briefly re-showed the chip
   requestAnimationFrame(() => {
     markReady();
     requestAnimationFrame(markReady);
   });
-  window.setTimeout(markReady, 80);
+  window.setTimeout(markReady, 40);
+  window.setTimeout(markReady, 400);
 }
 
 mount();
