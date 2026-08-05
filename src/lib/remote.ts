@@ -105,20 +105,23 @@ export async function fetchDb(opts?: {
 
 /** Admin-only: hydrate local image cache after UI is interactive. */
 export async function fetchImagesMap(): Promise<Record<string, string> | null> {
-  if (isFirebaseConfigured()) {
-    try {
-      const { firebaseFetchImages } = await import('./firebaseDb');
-      return await firebaseFetchImages();
-    } catch {
-      /* fall through */
+  const work = (async (): Promise<Record<string, string> | null> => {
+    if (isFirebaseConfigured()) {
+      try {
+        const { firebaseFetchImages } = await import('./firebaseDb');
+        return await firebaseFetchImages();
+      } catch {
+        /* fall through */
+      }
     }
-  }
-  try {
-    const db = await req<RemoteDb>('/api/db');
-    return db?.images && typeof db.images === 'object' ? db.images : {};
-  } catch {
-    return null;
-  }
+    try {
+      // Never pull full /api/db just for images — that is ~300KB+ and freezes phones
+      return {};
+    } catch {
+      return null;
+    }
+  })();
+  return fetchWithTimeout(work, 12_000);
 }
 
 export type PublishLicensesResult =

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SubscriptionPaymentInfo } from '../../components/SubscriptionPaymentInfo';
 import { useAdmin } from '../../context/AdminContext';
@@ -17,6 +17,8 @@ export function WaitingApprovalPage() {
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState<'ok' | 'warn' | 'err'>('warn');
+  const getClientRef = useRef(getClientByEmail);
+  getClientRef.current = getClientByEmail;
 
   const client = user ? getClientByEmail(user.email) : undefined;
   const prepaid = user ? isPrepaidEmail(user.email) : false;
@@ -44,25 +46,26 @@ export function WaitingApprovalPage() {
       return;
     }
     const tick = () => {
-      const liveClient = getClientByEmail(user.email);
+      const liveClient = getClientRef.current(user.email);
       if (clientCanEnterLicense(liveClient, prepaid, requiresRepayment)) {
         if (accessStatus === 'pending') setAccessStatus('approved');
         navigate('/activate', { replace: true, state: { fromPayment: true } });
       }
     };
     tick();
-    const id = window.setInterval(tick, 1500);
+    // 4s — was 1.5s and reset on every context rebuild (froze waiting phones)
+    const id = window.setInterval(tick, 4000);
     return () => window.clearInterval(id);
   }, [
-    user,
-    getClientByEmail,
+    user?.email,
     navigate,
     setAccessStatus,
     accessStatus,
     bot.licenseKey,
-    client,
     prepaid,
     requiresRepayment,
+    client?.status,
+    client?.id,
   ]);
 
   const onPaidCheck = async () => {
