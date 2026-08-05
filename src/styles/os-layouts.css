@@ -1,12 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════
-   Architecture layouts — each class cluster is a distinct composition.
-   Same actions/features. Different hierarchy, spacing, flow.
+   Home layouts — 6 compositions (hero / split / dominant /
+   vertical / desktop / rail). Shared chrome + per-layout clusters.
    ═══════════════════════════════════════════════════════════════ */
 
 .os-layout {
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  min-height: 100%;
   width: 100%;
   max-width: 100vw;
   overflow: hidden;
@@ -18,10 +18,10 @@
   inset: 0;
   background-size: cover;
   background-position: center top;
-  opacity: 0.42;
+  opacity: 0.88;
   z-index: 0;
   pointer-events: none;
-  filter: saturate(0.9) contrast(1.05);
+  filter: saturate(1.05) contrast(1.04);
 }
 
 .os-layout-wash {
@@ -30,7 +30,7 @@
   z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(5, 6, 8, 0.15) 0%, rgba(5, 6, 8, 0.55) 55%, rgba(5, 6, 8, 0.92) 100%);
+    linear-gradient(180deg, rgba(5, 6, 8, 0.12) 0%, rgba(5, 6, 8, 0.35) 45%, rgba(5, 6, 8, 0.88) 100%);
 }
 
 .os-ambient-depth {
@@ -40,7 +40,7 @@
   pointer-events: none;
   background:
     radial-gradient(ellipse at 20% 10%, rgba(255, 255, 255, 0.04), transparent 40%),
-    radial-gradient(ellipse at 80% 80%, rgba(var(--os-accent-rgb), 0.08), transparent 45%);
+    radial-gradient(ellipse at 80% 80%, rgba(var(--os-accent-rgb), 0.1), transparent 45%);
 }
 
 .os-layout-content {
@@ -55,13 +55,13 @@
 }
 
 .os-enter {
-  animation: os-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: os-enter 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes os-enter {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -69,26 +69,18 @@
   }
 }
 
-.os-kicker {
-  margin: 0;
-  font-size: 10px;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.55);
-}
-
 .os-sub {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.35;
   color: rgba(226, 232, 240, 0.72);
 }
 
 .os-layout h1 {
   margin: 0;
-  font-size: clamp(1.35rem, 5.5vw, 1.85rem);
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: clamp(1.2rem, 5vw, 1.65rem);
+  font-weight: 750;
+  letter-spacing: -0.03em;
   line-height: 1.1;
 }
 
@@ -97,7 +89,7 @@
   place-items: center;
   width: 100%;
   height: 100%;
-  font-size: 2rem;
+  font-size: 1.6rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.7);
   background: rgba(255, 255, 255, 0.06);
@@ -120,18 +112,15 @@
   opacity: 0.85;
 }
 
-.os-ctrl.danger {
-  color: #fca5a5;
-}
-
 .os-act-ico {
   display: grid;
   place-items: center;
+  line-height: 0;
 }
 
 .os-act-label {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   letter-spacing: 0.02em;
 }
 
@@ -139,1570 +128,819 @@
   display: none;
 }
 
-.os-ripple {
-  display: none;
+/* Shared chrome */
+.lay-power-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #041018;
+  background: linear-gradient(135deg, rgba(var(--os-accent-rgb), 0.95), rgba(255, 255, 255, 0.85));
 }
 
-button.os-ctrl img,
-.os-layout button img {
+.lay-power-badge.is-paused {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+}
+
+.lay-start-circle {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 0;
+  display: grid;
+  place-content: center;
+  gap: 2px;
+  position: relative;
+  color: #041018;
+  background: radial-gradient(circle at 35% 30%, #fff, rgba(var(--os-accent-rgb), 1) 55%, rgba(0, 0, 0, 0.35));
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.12),
+    0 12px 36px rgba(0, 0, 0, 0.45),
+    0 0 40px rgba(var(--os-accent-rgb), 0.45);
+  z-index: 3;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.lay-start-circle:active {
+  transform: scale(0.94);
+}
+
+.lay-start-circle.is-live {
+  background: radial-gradient(circle at 35% 30%, #fecaca, #ef4444 55%, #7f1d1d);
+}
+
+.lay-start-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--os-accent-rgb), 0.45);
+  pointer-events: none;
+}
+
+.lay-start-label {
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+}
+
+.lay-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(8, 12, 20, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(10px);
+  color: #e2e8f0;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.lay-pill .os-act-label {
+  font-size: 11px;
+}
+
+.lay-pill.danger {
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fecaca;
+}
+
+.lay-robots {
+  width: 100%;
+}
+
+.lay-robots-label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.55);
+  margin-bottom: 8px;
+}
+
+.lay-robots-track {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.lay-robot-card {
+  flex: 0 0 auto;
+  min-width: 168px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 12, 20, 0.78);
+  color: inherit;
+  text-align: left;
+}
+
+.lay-robot-avatar,
+.lay-robot-gear {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.lay-robot-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
 }
 
-/* ── Shared triple dock (never clip MetaTrader) ─────────────── */
-.os-dock.lay-dock,
-.os-dock-triple.lay-dock {
-  display: grid !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  align-items: center;
+.lay-robot-gear {
+  display: grid;
+  place-items: center;
+  color: rgba(var(--os-accent-rgb), 1);
+}
+
+.lay-robot-meta {
+  display: grid;
   gap: 2px;
-  width: calc(100% - 24px) !important;
-  max-width: 420px;
-  margin: 0 auto calc(14px + env(safe-area-inset-bottom, 0px)) !important;
-  padding: 10px 8px !important;
-  border-radius: 20px;
-  background: rgba(12, 14, 18, 0.82) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4) !important;
-  position: relative;
-  z-index: 20;
-  flex-shrink: 0;
-  overflow: visible !important;
-  box-sizing: border-box;
+  min-width: 0;
 }
 
-.os-dock-triple .lay-dock-item {
-  min-width: 0;
-  width: 100%;
-  display: flex !important;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  padding: 6px 2px !important;
-  font-size: 9px !important;
-  font-weight: 650;
-  letter-spacing: 0;
-  color: rgba(226, 232, 240, 0.7);
+.lay-robot-meta strong {
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.os-dock-triple .lay-dock-item span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.lay-robot-meta span {
+  font-size: 10px;
+  color: rgba(226, 232, 240, 0.6);
 }
 
-.os-dock-triple .lay-dock-item.active {
-  color: rgb(var(--os-accent-rgb));
+/* ── Hero ───────────────────────────────────────────────────── */
+.lay-hero .os-layout-bg {
+  opacity: 1;
 }
 
-.os-dock-triple .lay-dock-item svg {
-  flex-shrink: 0;
+.lay-hero .os-layout-wash {
+  background:
+    linear-gradient(180deg, rgba(5, 6, 8, 0.2) 0%, rgba(5, 6, 8, 0.15) 40%, rgba(5, 6, 8, 0.82) 100%);
 }
 
-/* ═══════════════════════════════════════════════════════════
-   1. FULL SCREEN POSTER — hero ~70%, controls BELOW
-   ═══════════════════════════════════════════════════════════ */
-.arch-poster .os-layout-content {
-  padding: 0;
+.lay-hero-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 18px 14px calc(18px + env(safe-area-inset-bottom, 0px));
+  gap: 14px;
+  min-height: 100%;
 }
 
-.arch-poster-hero {
-  position: relative;
-  flex: 1 1 70%;
-  min-height: 58dvh;
-  max-height: 72dvh;
-  margin: 0;
-  overflow: hidden;
-}
-
-.arch-poster-avatar {
+.lay-hero-avatar {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
+  top: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(44vw, 176px);
+  aspect-ratio: 1;
+  border-radius: 28px;
   overflow: hidden;
-  background: #0a0b0e;
+  border: 2px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(var(--os-accent-rgb), 0.25);
+  animation: lay-float 4.8s ease-in-out infinite;
 }
 
-.arch-poster-avatar img {
+@keyframes lay-float {
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0);
+  }
+  50% {
+    transform: translateX(-50%) translateY(-6px);
+  }
+}
+
+.lay-hero-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.arch-poster-fade {
-  position: absolute;
-  inset: auto 0 0;
-  height: 48%;
-  background: linear-gradient(180deg, transparent, rgba(5, 6, 8, 0.95));
-  pointer-events: none;
-}
-
-.arch-poster-copy {
-  position: absolute;
-  left: 20px;
-  right: 20px;
-  bottom: 18px;
-  z-index: 2;
-  display: grid;
-  gap: 6px;
-}
-
-.arch-poster-controls {
+.lay-hero-controls {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  padding: 14px 22px 10px;
-  flex-shrink: 0;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: auto;
 }
 
-.arch-poster-btn {
+.lay-hero-robots {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: rgba(8, 12, 20, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lay-hero-hint {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.4);
+}
+
+/* ── Split ──────────────────────────────────────────────────── */
+.lay-split .os-layout-content {
+  flex-direction: row;
+  gap: 0;
+}
+
+.lay-split-rail {
+  flex: 0 0 35%;
+  width: 35%;
+  min-width: 112px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 8px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: rgba(5, 8, 14, 0.78);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 3;
+}
+
+.lay-split-avatar {
   width: 48px;
   height: 48px;
   border-radius: 14px;
-  display: grid;
-  place-items: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.arch-poster-dock {
-  margin-top: 4px !important;
-}
-
-.arch-poster .os-layout-bg {
-  opacity: 0.18;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   2. MAGAZINE — asymmetric editorial columns
-   ═══════════════════════════════════════════════════════════ */
-.arch-magazine .os-layout-content {
-  padding: 18px 14px 8px;
-}
-
-.arch-mag-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  grid-template-rows: auto 1fr;
-  gap: 12px 10px;
-  min-height: 0;
-  align-content: start;
-}
-
-.arch-mag-hero {
-  grid-row: 1 / span 2;
-  grid-column: 1;
-  width: 100%;
-  min-height: 52dvh;
-  border: 0;
-  border-radius: 4px 28px 4px 28px;
   overflow: hidden;
-  padding: 0;
-  align-self: stretch;
+  margin: 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
-.arch-mag-masthead {
-  grid-column: 2;
-  grid-row: 1;
-  padding-top: 8px;
+.lay-split-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lay-split-stack {
   display: grid;
   gap: 8px;
-  text-align: left;
 }
 
-.arch-mag-masthead h1 {
-  font-size: clamp(1.5rem, 7vw, 2.1rem);
-  line-height: 0.95;
-}
-
-.arch-mag-stack {
-  grid-column: 2;
-  grid-row: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  justify-content: flex-end;
-  padding-bottom: 6px;
-}
-
-.arch-mag-btn {
+.lay-split-btn {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-left: 2px solid rgba(var(--os-accent-rgb), 0.55);
-  border-radius: 0 10px 10px 0;
-}
-
-.arch-mag-btn-0 { margin-left: 0; }
-.arch-mag-btn-1 { margin-left: 10px; }
-.arch-mag-btn-2 { margin-left: 4px; }
-.arch-mag-btn-3 { margin-left: 16px; }
-.arch-mag-btn-4 { margin-left: 6px; }
-
-/* ═══════════════════════════════════════════════════════════
-   3. BENTO — uneven Apple-style tiles
-   ═══════════════════════════════════════════════════════════ */
-.arch-bento .os-layout-content {
-  padding: 14px 12px 6px;
-}
-
-.arch-bento-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1.35fr 1fr 1fr;
-  grid-template-rows: 1.4fr 0.85fr 0.85fr auto;
-  gap: 8px;
-  min-height: 0;
-}
-
-.arch-bento-hero {
-  grid-column: 1;
-  grid-row: 1 / span 2;
-  border: 0;
-  border-radius: 22px;
-  overflow: hidden;
-  padding: 0;
-  min-height: 0;
-}
-
-.arch-bento-status {
-  grid-column: 2 / span 2;
-  grid-row: 1;
-  border-radius: 22px;
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  display: grid;
-  align-content: end;
-  gap: 6px;
-}
-
-.arch-bento-tile {
-  border-radius: 18px;
-  display: grid;
-  place-items: center;
-  gap: 4px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  min-height: 64px;
-}
-
-.arch-bento-t0 {
-  grid-column: 2;
-  grid-row: 2;
-  place-items: start;
-  padding: 12px;
-  align-content: center;
-}
-
-.arch-bento-t1 { grid-column: 3; grid-row: 2; }
-.arch-bento-t2 { grid-column: 1; grid-row: 3; }
-.arch-bento-t3 { grid-column: 2; grid-row: 3; }
-.arch-bento-t4 { grid-column: 3; grid-row: 3; }
-
-/* ═══════════════════════════════════════════════════════════
-   4. LAYERED — floating overlapping sheets
-   ═══════════════════════════════════════════════════════════ */
-.arch-layered .os-layout-content {
-  padding: 20px 16px 8px;
   justify-content: center;
-}
-
-.arch-layer {
-  position: relative;
-}
-
-.arch-layer-bg {
-  position: absolute;
-  left: 24px;
-  right: 8px;
-  top: 48px;
-  height: 42%;
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  transform: rotate(-2deg);
-  z-index: 0;
-}
-
-.arch-layer-hero {
-  z-index: 2;
-  width: min(78%, 320px);
-  margin: 28px auto 0;
-  transform: translateX(-8px) rotate(1.5deg);
-}
-
-.arch-layer-avatar {
-  width: 100%;
-  aspect-ratio: 4 / 5;
-  border: 0;
-  border-radius: 26px;
-  overflow: hidden;
-  padding: 0;
-  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.45);
-}
-
-.arch-layer-info {
-  z-index: 3;
-  margin: -28px 18px 0 auto;
-  width: min(72%, 280px);
-  padding: 16px 18px;
-  border-radius: 20px;
-  background: rgba(12, 14, 18, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(16px);
-  transform: translateX(6px);
-  display: grid;
   gap: 6px;
-}
-
-.arch-layer-controls {
-  z-index: 4;
-  margin: 18px 8px 0;
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 14px;
-  border-radius: 22px;
+  min-height: 38px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(14px);
+  padding: 0 8px;
 }
 
-.arch-layer-btn {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
+.lay-split-btn.is-start,
+.lay-split-btn.is-primary {
+  background: linear-gradient(135deg, rgba(var(--os-accent-rgb), 0.95), rgba(255, 255, 255, 0.75));
+  color: #041018;
+  border-color: transparent;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   5. TIMELINE — vertical journey checkpoints
-   ═══════════════════════════════════════════════════════════ */
-.arch-timeline .os-layout-content {
-  padding: 16px 16px 8px 28px;
-  gap: 0;
-  overflow-y: auto;
-}
-
-.arch-tl-spine {
-  position: absolute;
-  left: 34px;
-  top: 40px;
-  bottom: 90px;
-  width: 2px;
-  background: linear-gradient(
-    180deg,
-    rgba(var(--os-accent-rgb), 0.7),
-    rgba(255, 255, 255, 0.12)
-  );
-  z-index: 0;
-}
-
-.arch-tl-node {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 0;
-}
-
-.arch-tl-hero {
-  align-items: flex-start;
-  padding-top: 8px;
-  gap: 16px;
-}
-
-.arch-tl-avatar {
-  width: 92px;
-  height: 92px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, 0.18);
-  padding: 0;
-  flex-shrink: 0;
-  margin-left: -8px;
-}
-
-.arch-tl-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: rgb(var(--os-accent-rgb));
-  box-shadow: 0 0 0 4px rgba(var(--os-accent-rgb), 0.18);
-  flex-shrink: 0;
-  margin-left: -2px;
-}
-
-.arch-tl-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.arch-tl-c0 { padding-left: 0; }
-.arch-tl-c1 { padding-left: 8px; }
-.arch-tl-c2 { padding-left: 0; }
-.arch-tl-c3 { padding-left: 12px; }
-.arch-tl-c4 { padding-left: 4px; }
-
-/* ═══════════════════════════════════════════════════════════
-   6. OFFSET — nothing centered
-   ═══════════════════════════════════════════════════════════ */
-.arch-offset .os-layout-content {
-  padding: 20px 12px 8px;
-  position: relative;
-}
-
-.arch-off-hero {
-  width: 58%;
-  aspect-ratio: 3 / 4;
-  margin: 8px 0 0 0;
-  align-self: flex-start;
-  border: 0;
-  border-radius: 8px 40px 8px 40px;
-  overflow: hidden;
-  padding: 0;
-}
-
-.arch-off-title {
-  position: absolute;
-  top: 36px;
-  right: 14px;
-  width: 46%;
-  text-align: right;
-  display: grid;
-  gap: 8px;
-}
-
-.arch-off-title h1 {
-  font-size: clamp(1.6rem, 8vw, 2.3rem);
-}
-
-.arch-off-actions {
+.lay-split-robots {
   margin-top: auto;
-  padding: 18px 4px 8px;
-  display: flex;
+}
+
+.lay-split-robots .lay-robots-track {
   flex-direction: column;
-  gap: 10px;
 }
 
-.arch-off-btn {
-  width: 52px;
-  height: 52px;
-  display: grid;
-  place-items: center;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+.lay-split-robots .lay-robot-card {
+  min-width: 0;
+  width: 100%;
 }
 
-.arch-off-b0 { margin-left: 8%; }
-.arch-off-b1 { margin-left: 42%; }
-.arch-off-b2 { margin-left: 22%; }
-.arch-off-b3 { margin-left: 58%; }
-.arch-off-b4 { margin-left: 14%; }
-
-/* ═══════════════════════════════════════════════════════════
-   7. SIDEBAR — left rail + content
-   ═══════════════════════════════════════════════════════════ */
-.arch-sidebar .os-layout-content {
-  flex-direction: row;
-  padding: 0;
-  gap: 0;
-}
-
-.arch-side-rail {
-  width: 58px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 22px 0 calc(18px + env(safe-area-inset-bottom, 0px));
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 5;
-}
-
-.arch-side-nav {
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.arch-side-nav.active {
-  color: #fff;
-  background: rgba(var(--os-accent-rgb), 0.22);
-}
-
-.arch-side-main {
+.lay-split-hero {
   flex: 1;
+  position: relative;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
   padding: 16px 14px 18px;
-  gap: 14px;
 }
 
-.arch-side-hero {
+.lay-split-hero-media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.lay-split-hero-media img {
   width: 100%;
-  aspect-ratio: 16 / 11;
-  border: 0;
-  border-radius: 16px;
-  overflow: hidden;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.9;
+}
+
+.lay-split-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, transparent, rgba(5, 6, 8, 0.82));
+}
+
+/* ── Dominant ───────────────────────────────────────────────── */
+.lay-dominant .os-layout-content {
   padding: 0;
 }
 
-.arch-side-meta {
-  display: grid;
-  gap: 6px;
+.lay-dom-hero {
+  height: 55%;
+  min-height: 220px;
+  position: relative;
 }
 
-.arch-side-actions {
-  margin-top: auto;
+.lay-dom-float-avatar {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+.lay-dom-float-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lay-dom-sheet {
+  flex: 1;
+  min-height: 45%;
+  margin-top: -18px;
+  border-radius: 24px 24px 0 0;
+  background: rgba(10, 14, 22, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 0;
+  padding: 10px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 3;
+  box-shadow: 0 -16px 40px rgba(0, 0, 0, 0.35);
+  animation: lay-sheet-up 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes lay-sheet-up {
+  from {
+    transform: translateY(28%);
+    opacity: 0.6;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.lay-dom-sheet-handle {
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  margin: 0 auto 4px;
+}
+
+.lay-dom-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lay-dom-start {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(var(--os-accent-rgb), 1), rgba(255, 255, 255, 0.78));
+  color: #041018;
+  font-weight: 800;
+}
+
+.lay-dom-pills {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
-.arch-side-btn {
-  aspect-ratio: 1;
-  display: grid;
-  place-items: center;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* ═══════════════════════════════════════════════════════════
-   8. SPLIT CANVAS — unequal top/bottom panels
-   ═══════════════════════════════════════════════════════════ */
-.arch-split .os-layout-content {
-  padding: 0;
-}
-
-.arch-split-top {
-  flex: 0 0 42%;
-  min-height: 38dvh;
-  max-height: 46dvh;
-  position: relative;
-  overflow: hidden;
-}
-
-.arch-split-avatar {
+.lay-dom-pills .lay-pill {
   width: 100%;
-  height: 100%;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
+  justify-content: center;
+}
+
+.lay-dom-robots .lay-robots-track {
+  padding-bottom: 4px;
+}
+
+/* ── Vertical ───────────────────────────────────────────────── */
+.lay-vertical .os-layout-content {
   overflow: hidden;
 }
 
-.arch-split-bottom {
+.lay-vert-scroll {
   flex: 1;
-  background: rgba(8, 10, 14, 0.94);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 18px 16px 8px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 0 calc(12px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
-.arch-split-head {
+.lay-vert-banner {
+  height: 140px;
+  overflow: hidden;
+}
+
+.lay-vert-banner-media,
+.lay-vert-banner-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lay-vert-block {
+  padding: 0 14px;
   display: grid;
   gap: 6px;
 }
 
-.arch-split-actions {
+.lay-vert-start-row {
+  display: grid;
+  place-items: center;
+  padding: 6px 0;
+}
+
+.lay-vert-trio {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+  padding: 0 14px;
 }
 
-.arch-split-btn {
+.lay-vert-tile {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 6px;
   min-height: 72px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.arch-split-btn:nth-child(4),
-.arch-split-btn:nth-child(5) {
-  grid-column: span 1;
-}
-
-.arch-split .os-layout-bg {
-  opacity: 0.2;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   9. HERO OVERLAY — full art, invisible chrome
-   ═══════════════════════════════════════════════════════════ */
-.arch-overlay .os-layout-bg {
-  opacity: 0.85;
-  filter: none;
-}
-
-.arch-overlay .os-layout-wash {
-  background: linear-gradient(
-    180deg,
-    rgba(0, 0, 0, 0.15) 0%,
-    rgba(0, 0, 0, 0.25) 40%,
-    rgba(0, 0, 0, 0.88) 100%
-  );
-}
-
-.arch-overlay .os-layout-content {
-  padding: 0;
-  justify-content: flex-end;
-}
-
-.arch-ov-avatar {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  opacity: 0;
-  /* Display-only layer — must not eat Start / Scanner taps */
-  pointer-events: none;
-  z-index: 3;
-}
-
-.arch-ov-veil {
-  flex: 1;
-}
-
-.arch-ov-copy {
-  padding: 0 22px 12px;
-  display: grid;
-  gap: 8px;
-  z-index: 4;
-}
-
-.arch-ov-copy h1 {
-  font-size: clamp(2rem, 9vw, 2.8rem);
-  text-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
-}
-
-.arch-ov-bar {
-  display: flex;
-  justify-content: space-around;
-  padding: 10px 18px 8px;
-  z-index: 4;
-}
-
-.arch-ov-btn {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.28);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(10px);
-}
-
-/* ═══════════════════════════════════════════════════════════
-   10. MOSAIC — uneven dashboard tiles
-   ═══════════════════════════════════════════════════════════ */
-.arch-mosaic .os-layout-content {
-  padding: 12px 10px 6px;
-}
-
-.arch-mos-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1.2fr 0.9fr 0.9fr;
-  grid-template-rows: 1.5fr 0.7fr 0.9fr 0.9fr;
-  gap: 8px;
-  min-height: 0;
-}
-
-.arch-mos-cell {
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  min-height: 0;
-  overflow: hidden;
-}
-
-.arch-mos-hero {
-  grid-column: 1 / span 2;
-  grid-row: 1 / span 2;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
-.arch-mos-avatar {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  border-radius: 16px;
-  overflow: hidden;
-  padding: 0;
-}
-
-.arch-mos-title {
-  grid-column: 3;
-  grid-row: 1;
-  padding: 12px;
-  display: grid;
-  align-content: end;
-}
-
-.arch-mos-title h1 {
-  font-size: 1.05rem;
-}
-
-.arch-mos-status {
-  grid-column: 3;
-  grid-row: 2;
-  padding: 10px;
-  display: grid;
-  place-items: center;
-  text-align: center;
-}
-
-.arch-mos-a0 {
-  grid-column: 1;
-  grid-row: 3;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px;
-}
-
-.arch-mos-a1 {
-  grid-column: 2 / span 2;
-  grid-row: 3;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-}
-
-.arch-mos-a2 { grid-column: 1; grid-row: 4; display: grid; place-items: center; }
-.arch-mos-a3 { grid-column: 2; grid-row: 4; display: grid; place-items: center; }
-.arch-mos-a4 { grid-column: 3; grid-row: 4; display: grid; place-items: center; }
-
-/* ═══════════════════════════════════════════════════════════
-   11. CAROUSEL — horizontal swipe sections
-   ═══════════════════════════════════════════════════════════ */
-.arch-carousel .os-layout-content {
-  padding: 0;
-  overflow: hidden;
-}
-
-.arch-car-track {
-  flex: 1;
-  display: flex;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  gap: 12px;
-  padding: 18px 16px 8px;
-  scrollbar-width: none;
-}
-
-.arch-car-track::-webkit-scrollbar {
-  display: none;
-}
-
-.arch-car-panel {
-  flex: 0 0 86%;
-  scroll-snap-align: center;
-  border-radius: 24px;
-  background: rgba(10, 12, 16, 0.72);
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 58dvh;
+  padding: 8px;
 }
 
-.arch-car-avatar {
+.lay-vert-robots {
+  padding: 0 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.lay-vert-robot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   width: 100%;
-  flex: 1;
-  min-height: 220px;
-  border: 0;
-  border-radius: 18px;
-  overflow: hidden;
-  padding: 0;
-}
-
-.arch-car-hint {
-  margin: auto 0 0;
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.arch-car-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 8px;
-}
-
-.arch-car-btn {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.arch-car-navbtn {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
   color: inherit;
-}
-
-.arch-carousel-dock {
-  opacity: 0.9;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   12. FLOATING WINDOWS — desktop-like panels
-   ═══════════════════════════════════════════════════════════ */
-.arch-windows .os-layout-content {
-  padding: 18px 14px 8px;
-  gap: 12px;
-}
-
-.arch-win {
+  background: rgba(8, 12, 20, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
-  background: rgba(16, 18, 24, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
-  overflow: hidden;
+  padding: 10px;
 }
 
-.arch-win-chrome {
+.lay-vert-robot-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.lay-vert-robot-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lay-vert-robot strong {
+  display: block;
+  font-size: 14px;
+}
+
+.lay-vert-robot span {
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.6);
+}
+
+.lay-vert-settings {
+  margin: 0 14px;
   display: flex;
-  gap: 6px;
-  padding: 10px 12px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ── Desktop ────────────────────────────────────────────────── */
+.lay-desktop {
+  background: #050608 !important;
+}
+
+.lay-desktop .os-layout-bg {
+  opacity: 0.28;
+  filter: blur(2px);
+}
+
+.lay-desktop .os-layout-content {
+  position: relative;
+  min-height: 100%;
+  padding: 12px;
+}
+
+.lay-desk-win {
+  position: absolute;
+  border-radius: 18px;
+  background: rgba(12, 16, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  min-width: 140px;
+  touch-action: none;
+}
+
+.lay-desk-titlebar {
+  padding: 8px 10px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.55);
   background: rgba(255, 255, 255, 0.04);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: grab;
 }
 
-.arch-win-chrome span {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.22);
-}
-
-.arch-win-chrome span:nth-child(1) { background: #ff5f57; }
-.arch-win-chrome span:nth-child(2) { background: #febc2e; }
-.arch-win-chrome span:nth-child(3) { background: #28c840; }
-
-.arch-win-hero {
-  width: 78%;
-  margin-left: 0;
-  transform: rotate(-1deg);
-}
-
-.arch-win-avatar {
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  overflow: hidden;
-}
-
-.arch-win-info {
-  width: 70%;
-  margin-left: auto;
-  margin-top: -18px;
-  padding-bottom: 14px;
-  transform: rotate(1.2deg);
-  z-index: 2;
-}
-
-.arch-win-info h1,
-.arch-win-info .os-sub {
-  padding: 0 14px;
-}
-
-.arch-win-info h1 {
-  margin-top: 10px;
-  margin-bottom: 4px;
-}
-
-.arch-win-controls {
-  margin-top: 4px;
-}
-
-.arch-win-actions {
-  display: flex;
-  justify-content: space-around;
-  padding: 14px 10px 16px;
-}
-
-.arch-win-btn {
-  width: 46px;
-  height: 46px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-/* ═══════════════════════════════════════════════════════════
-   13. FOLDED — overlapping depth folds
-   ═══════════════════════════════════════════════════════════ */
-.arch-folded .os-layout-content {
-  padding: 24px 16px 8px;
-  perspective: 900px;
-}
-
-.arch-fold {
-  border-radius: 20px;
-  background: rgba(12, 14, 18, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
-}
-
-.arch-fold-a {
-  width: 88%;
-  margin: 0 auto;
-  transform: rotateX(6deg) translateY(0);
-  z-index: 1;
-  overflow: hidden;
-}
-
-.arch-fold-avatar {
-  width: 100%;
-  aspect-ratio: 5 / 4;
-  border: 0;
-  border-radius: 20px;
-  overflow: hidden;
-  padding: 0;
-}
-
-.arch-fold-b {
-  width: 92%;
-  margin: -28px auto 0;
-  padding: 22px 18px 16px;
-  transform: rotateX(-4deg);
-  z-index: 2;
-  position: relative;
-  display: grid;
-  gap: 6px;
-  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
-}
-
-.arch-fold-c {
-  width: 96%;
-  margin: -16px auto 0;
-  padding: 20px 12px 14px;
-  display: flex;
-  justify-content: space-between;
-  z-index: 3;
-  position: relative;
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.3);
-}
-
-.arch-fold-btn {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-/* ═══════════════════════════════════════════════════════════
-   14. EDGE — content hugs edges, hero bleeds
-   ═══════════════════════════════════════════════════════════ */
-.arch-edge .os-layout-content {
-  padding: 0;
-  position: relative;
-}
-
-.arch-edge-hero {
-  position: absolute;
-  top: 0;
-  left: -6%;
-  width: 72%;
-  height: 54dvh;
-  border: 0;
-  border-radius: 0 0 40px 0;
-  overflow: hidden;
-  padding: 0;
-  z-index: 1;
-}
-
-.arch-edge-title {
-  position: absolute;
-  top: 28px;
-  right: 12px;
-  width: 40%;
-  text-align: right;
-  z-index: 2;
+.lay-desk-body {
+  padding: 10px;
   display: grid;
   gap: 8px;
 }
 
-.arch-edge-left {
-  position: absolute;
-  left: 10px;
-  bottom: 110px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 3;
+.lay-desk-main {
+  left: 8px;
+  top: 10px;
+  width: min(64%, 240px);
+  z-index: 2;
 }
 
-.arch-edge-right {
-  position: absolute;
+.lay-desk-hero {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.lay-desk-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lay-desk-controls {
   right: 10px;
-  bottom: 110px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  top: 18%;
+  width: min(34%, 130px);
   z-index: 3;
 }
 
-.arch-edge-btn {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  background: rgba(8, 10, 14, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(10px);
-}
-
-.arch-edge .lay-dock {
-  margin-top: auto !important;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   15. SWISS — huge whitespace + large type
-   ═══════════════════════════════════════════════════════════ */
-.arch-swiss .os-layout-content {
-  padding: 28px 22px 10px;
-  gap: 0;
-}
-
-.arch-swiss-index {
-  margin: 0;
-  font-size: 12px;
-  letter-spacing: 0.35em;
-  color: rgba(255, 255, 255, 0.35);
-}
-
-.arch-swiss-title {
-  margin: 18px 0 28px !important;
-  font-size: clamp(2.4rem, 12vw, 3.4rem) !important;
-  font-weight: 650 !important;
-  letter-spacing: -0.04em !important;
-  max-width: 9ch;
-  line-height: 0.95 !important;
-}
-
-.arch-swiss-avatar {
-  width: 42%;
-  aspect-ratio: 1;
-  margin: 0 0 0 auto;
-  border: 0;
-  border-radius: 0;
-  overflow: hidden;
-  padding: 0;
-}
-
-.arch-swiss-status {
-  margin-top: 28px !important;
-  max-width: 22ch;
-}
-
-.arch-swiss-row {
-  margin-top: auto;
-  padding-top: 28px;
+.lay-desk-btn {
   display: flex;
-  justify-content: space-between;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
-  padding-bottom: 8px;
-}
-
-.arch-swiss-btn {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-}
-
-.arch-swiss .os-layout-bg {
-  opacity: 0.12;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   16. RAIL — tall hero + bottom control rail
-   ═══════════════════════════════════════════════════════════ */
-.arch-rail .os-layout-content {
-  padding: 0;
-}
-
-.arch-rail-hero {
-  flex: 1;
-  position: relative;
-  min-height: 0;
-}
-
-.arch-rail-avatar {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  overflow: hidden;
-}
-
-.arch-rail-copy {
-  position: absolute;
-  left: 18px;
-  right: 18px;
-  bottom: 18px;
-  z-index: 2;
-  display: grid;
-  gap: 6px;
-  padding: 16px;
-  border-radius: 16px;
-  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.55));
-}
-
-.arch-rail-bar {
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 0;
-  padding: 8px 6px;
-  background: rgba(8, 10, 14, 0.95);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.arch-rail-btn {
-  height: 56px;
-  display: grid;
-  place-items: center;
-  border-radius: 0;
-}
-
-.arch-rail .os-layout-bg {
-  opacity: 0.2;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   17. EDITORIAL — Stripe-like product narrative
-   ═══════════════════════════════════════════════════════════ */
-.arch-editorial .os-layout-content {
-  padding: 22px 0 8px;
-}
-
-.arch-ed-eyebrow {
-  margin: 0 20px;
-  font-size: 11px;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.45);
-}
-
-.arch-ed-display {
-  margin: 10px 20px 18px !important;
-  font-size: clamp(2rem, 10vw, 2.8rem) !important;
-  letter-spacing: -0.035em !important;
-  max-width: 10ch;
-}
-
-.arch-ed-band {
-  width: 100%;
-  height: 28dvh;
-  min-height: 180px;
-  overflow: hidden;
-}
-
-.arch-ed-avatar {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  overflow: hidden;
-}
-
-.arch-ed-lede {
-  margin: 16px 20px 0;
-  font-size: 15px;
-  line-height: 1.45;
-  color: rgba(226, 232, 240, 0.78);
-  max-width: 28ch;
-}
-
-.arch-ed-actions {
-  margin-top: auto;
-  padding: 18px 16px 6px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.arch-ed-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.arch-ed-b0 { order: 1; }
-.arch-ed-b1 { order: 3; }
-.arch-ed-b2 { order: 2; }
-.arch-ed-b3 { order: 4; }
-.arch-ed-b4 { order: 5; }
-
-/* ═══════════════════════════════════════════════════════════
-   18. GLYPH — Nothing OS sparse glyph grid
-   ═══════════════════════════════════════════════════════════ */
-.arch-glyph .os-layout-content {
-  padding: 32px 24px 10px;
-  align-items: center;
-  text-align: center;
-}
-
-.arch-glyph-avatar {
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 0;
-  margin-bottom: 20px;
-}
-
-.arch-glyph-title {
-  font-size: 1.15rem !important;
-  font-weight: 500 !important;
-  letter-spacing: 0.08em !important;
-  text-transform: uppercase;
-}
-
-.arch-glyph-status {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
-}
-
-.arch-glyph-grid {
-  margin-top: auto;
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
-  padding: 28px 0 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.arch-glyph-btn {
-  height: 64px;
-  display: grid;
-  place-items: center;
-  opacity: 0.9;
-}
-
-.arch-glyph .os-layout-bg {
-  opacity: 0.1;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   19. SPATIAL — depth deck + bottom tray (not side orbit)
-   ═══════════════════════════════════════════════════════════ */
-.arch-spatial .os-layout-content {
-  padding: 12px 12px 0;
-}
-
-.arch-spatial-stage {
-  flex: 1;
-  min-height: 0;
-  touch-action: none;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
-
-.arch-spatial-deck {
-  width: 86%;
-  max-width: 340px;
-  position: relative;
-  transition: transform 80ms linear;
-  will-change: transform;
-}
-
-.arch-spatial-card {
-  border-radius: 24px;
-  background: rgba(14, 16, 22, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
-}
-
-.arch-spatial-hero {
-  transform: scale(1.02);
-  overflow: hidden;
-}
-
-.arch-spatial-avatar {
-  width: 100%;
-  aspect-ratio: 4 / 5;
-  border: 0;
-  border-radius: 24px;
-  overflow: hidden;
-  padding: 0;
-}
-
-.arch-spatial-info {
-  margin-top: -36px;
-  margin-left: 18%;
-  width: 78%;
-  padding: 16px;
-  transform: translateZ(40px);
-  position: relative;
-  z-index: 2;
-  display: grid;
-  gap: 6px;
-}
-
-.arch-spatial-tray {
-  flex-shrink: 0;
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 10px 4px 8px;
-  padding: 12px 14px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(18px);
-}
-
-.arch-spatial-btn {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  border-radius: 14px;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   20. CONSOLE — game-dashboard mosaic / terminal board
-   ═══════════════════════════════════════════════════════════ */
-.arch-console .os-layout-content {
-  padding: 10px 10px 6px;
-  gap: 10px;
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-}
-
-.arch-con-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-}
-
-.arch-con-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.7);
-}
-
-.arch-con-state {
-  margin-left: auto;
-  color: rgb(var(--os-accent-rgb));
-}
-
-.arch-con-board {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr;
-  grid-template-rows: 1.3fr 0.8fr 0.8fr 0.8fr;
-  gap: 8px;
-  min-height: 0;
-}
-
-.arch-con-avatar {
-  grid-column: 1;
-  grid-row: 1 / span 2;
-  border: 0;
-  border-radius: 12px;
-  overflow: hidden;
-  padding: 0;
-  min-height: 0;
-}
-
-.arch-con-log {
-  grid-column: 2 / span 2;
-  grid-row: 1;
-  padding: 12px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 11px;
-  line-height: 1.55;
-  color: rgba(180, 255, 200, 0.75);
-  display: grid;
-  align-content: center;
-  gap: 2px;
-}
-
-.arch-con-log p {
-  margin: 0;
-}
-
-.arch-con-key {
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  min-height: 36px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  min-height: 64px;
 }
 
-.arch-con-k0 { grid-column: 2; grid-row: 2; }
-.arch-con-k1 { grid-column: 3; grid-row: 2; }
-.arch-con-k2 { grid-column: 1; grid-row: 3; }
-.arch-con-k3 { grid-column: 2 / span 2; grid-row: 3; flex-direction: row; gap: 10px; }
-.arch-con-k4 { grid-column: 1 / span 3; grid-row: 4; flex-direction: row; gap: 10px; }
-
-/* Motion (subtle, architecture-aware) */
-@media (prefers-reduced-motion: no-preference) {
-  .arch-poster-hero {
-    animation: arch-poster-rise 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-  .arch-poster-controls {
-    animation: arch-fade-up 560ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-  .arch-layer-hero {
-    animation: arch-layer-float-a 5.5s ease-in-out infinite;
-  }
-  .arch-layer-info {
-    animation: arch-layer-float-b 6.2s ease-in-out 0.4s infinite;
-  }
-  .arch-fold-b {
-    animation: arch-fold-settle 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-  .arch-spatial-tray {
-    animation: arch-fade-up 500ms 80ms both;
-  }
+.lay-desk-robots {
+  left: 10px;
+  right: 10px;
+  bottom: 12%;
+  width: auto;
+  z-index: 2;
 }
 
-@keyframes arch-poster-rise {
-  from { opacity: 0.6; transform: scale(1.04); }
-  to { opacity: 1; transform: none; }
+.lay-desk-gear {
+  right: 12px;
+  bottom: 28%;
+  width: 64px;
+  z-index: 4;
 }
 
-@keyframes arch-fade-up {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: none; }
+.lay-desk-gear-btn {
+  width: 42px;
+  height: 42px;
+  margin: 0 auto;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(var(--os-accent-rgb), 0.18);
+  border: 1px solid rgba(var(--os-accent-rgb), 0.4);
 }
 
-@keyframes arch-layer-float-a {
-  0%, 100% { transform: translateX(-8px) rotate(1.5deg) translateY(0); }
-  50% { transform: translateX(-8px) rotate(1.5deg) translateY(-6px); }
+/* ── Rail ───────────────────────────────────────────────────── */
+.lay-rail .os-layout-content {
+  flex-direction: row;
 }
 
-@keyframes arch-layer-float-b {
-  0%, 100% { transform: translateX(6px) translateY(0); }
-  50% { transform: translateX(6px) translateY(-5px); }
+.lay-rail-bar {
+  width: 58px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 6px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: rgba(5, 8, 14, 0.88);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 4;
 }
 
-@keyframes arch-fold-settle {
-  from { transform: rotateX(-10deg) translateY(16px); opacity: 0.5; }
-  to { transform: rotateX(-4deg); opacity: 1; }
+.lay-rail-thumb {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
-[data-animations='off'] .os-enter,
-[data-animations='off'] .arch-poster-hero,
-[data-animations='off'] .arch-poster-controls,
-[data-animations='off'] .arch-layer-hero,
-[data-animations='off'] .arch-layer-info,
-[data-animations='off'] .arch-fold-b,
-[data-animations='off'] .arch-spatial-tray {
+.lay-rail-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lay-rail-ico {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+
+.lay-rail-canvas {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 16px 14px 18px;
+}
+
+.lay-rail-hero {
+  position: absolute;
+  inset: 0;
+}
+
+.lay-rail-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lay-rail-copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 6px;
+  max-width: 90%;
+}
+
+.lay-rail-robots-sheet {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 3;
+  transform: translateY(120%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.28s ease, opacity 0.28s ease;
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(8, 12, 20, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.lay-rail-robots-sheet.is-open {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Dock behavior per layout */
+html[data-layout='hero']:not([data-dock-reveal='1']) .os-shell-stage {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html[data-layout='hero']:not([data-dock-reveal='1']) .os-dock-fixed {
+  transform: translateY(120%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.28s ease, opacity 0.28s ease;
+}
+
+html[data-layout='hero'][data-dock-reveal='1'] .os-dock-fixed {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+  transition: transform 0.28s ease, opacity 0.28s ease;
+}
+
+html[data-layout='split'] {
+  --os-dock-h: calc(58px + env(safe-area-inset-bottom, 0px));
+}
+
+html[data-layout='split'] .os-dock-fixed {
+  min-height: 52px;
+  padding-top: 6px;
+  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+}
+
+html[data-layout='split'] .os-dock-fixed .lay-dock-item span,
+html[data-layout='split'] .os-dock-fixed .os-ctrl span:not(:first-child) {
+  font-size: 10px;
+}
+
+html[data-animations='off'] .os-enter,
+html[data-animations='off'] .lay-hero-avatar,
+html[data-animations='off'] .lay-dom-sheet,
+html[data-animations='off'] .lay-rail-robots-sheet {
   animation: none !important;
+  transition: none !important;
 }
 
-/* Small phones — keep docks usable */
 @media (max-width: 360px) {
-  .os-dock-triple .lay-dock-item {
-    font-size: 8px !important;
+  .lay-start-circle {
+    width: 86px;
+    height: 86px;
   }
-  .arch-poster-btn,
-  .arch-ov-btn,
-  .arch-spatial-btn,
-  .arch-rail-btn {
-    width: 42px;
-    height: 42px;
+
+  .lay-hero-avatar {
+    width: min(40vw, 140px);
+    border-radius: 22px;
+  }
+
+  .lay-split-rail {
+    min-width: 100px;
+  }
+
+  .lay-rail-bar {
+    width: 52px;
   }
 }
