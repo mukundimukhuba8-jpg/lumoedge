@@ -63,7 +63,7 @@ export function AdminAuthPage() {
   };
 
   return (
-    <div className="page cyber-page" style={{ textAlign: 'center' }}>
+    <div className="page cyber-page admin-auth-static" style={{ textAlign: 'center' }}>
       <img
         src={appLogo}
         alt="Lumo Edge"

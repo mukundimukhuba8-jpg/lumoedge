@@ -316,6 +316,36 @@ a {
   z-index: 5;
 }
 
+/*
+ * Admin portal: kill motion that freezes Safari.
+ * Client /app keeps AmbientEnvironment + animations unchanged.
+ */
+html[data-admin-portal] .ambient-env {
+  display: none !important;
+}
+
+html[data-admin-portal] .admin-shell-dark,
+html[data-admin-portal] .admin-shell-dark *,
+html[data-admin-portal] .admin-shell-dark *::before,
+html[data-admin-portal] .admin-shell-dark *::after,
+html[data-admin-portal] .cyber-page,
+html[data-admin-portal] .cyber-page * {
+  animation: none !important;
+}
+
+html[data-admin-portal] .admin-stat-card,
+html[data-admin-portal] .admin-stat-card.is-loading::after {
+  animation: none !important;
+}
+
+html[data-admin-portal] .admin-shell-dark .glow-card,
+html[data-admin-portal] .admin-shell-dark .stat-card,
+html[data-admin-portal] .admin-shell-dark .admin-top,
+html[data-admin-portal] .admin-shell-dark .drawer {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 /* Clean dark admin portal — premium cyberpunk glass theme */
 .admin-shell-dark {
   --admin-cyan: #22d3ee;
