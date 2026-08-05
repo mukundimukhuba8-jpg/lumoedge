@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
-  Check,
   ImagePlus,
   Layers,
   Palette,
@@ -187,21 +186,19 @@ export function InterfaceStyleModal({
         <p className="muted iface-intro">
           Customise the operating system — look, feel, motion, and behaviour.
         </p>
-        <div className="iface-bento">
-          {HUB.map(({ id, label, description, Icon, size }) => (
+        <div className="iface-pack-grid iface-pack-grid-4">
+          {HUB.map(({ id, label, Icon }) => (
             <button
               key={id}
               type="button"
-              className={`iface-bento-card iface-bento-${size}`}
+              className="iface-pack"
               onClick={() => setView(id)}
+              title={label}
             >
-              <span className="iface-bento-ico" aria-hidden>
+              <span className="iface-pack-swatch iface-pack-hub" aria-hidden>
                 <Icon size={18} />
               </span>
-              <span className="iface-bento-copy">
-                <strong>{label}</strong>
-                <span>{description}</span>
-              </span>
+              <span>{label}</span>
             </button>
           ))}
         </div>
@@ -379,38 +376,33 @@ export function InterfaceStyleModal({
           Tap mentor media as the platform background. Choose{' '}
           <strong style={{ color: 'var(--text)' }}>Default</strong> to clear it.
         </p>
-        <div className="iface-custom-row">
+        <div className="iface-pack-grid iface-pack-grid-4">
           <button
             type="button"
-            className={`iface-custom-card${prefs.customBg === 'default' ? ' active' : ''}`}
+            className={`iface-pack${prefs.customBg === 'default' ? ' active' : ''}`}
             onClick={() => setCustomBg('default')}
+            aria-pressed={prefs.customBg === 'default'}
           >
-            <div className="iface-custom-preview default">Default</div>
-            <div className="iface-custom-meta">
-              {prefs.customBg === 'default' ? <Check size={14} color="var(--electric)" /> : null}
-              <span>Default</span>
-            </div>
+            <span className="iface-pack-swatch iface-pack-bg-default" aria-hidden />
+            <span>Default</span>
           </button>
           <button
             type="button"
-            className={`iface-custom-card${prefs.customBg === 'interface-1' ? ' active' : ''}`}
+            className={`iface-pack${prefs.customBg === 'interface-1' ? ' active' : ''}`}
             onClick={() => setCustomBg('interface-1')}
             disabled={!mentorBgUrl}
+            aria-pressed={prefs.customBg === 'interface-1'}
           >
-            <div
-              className="iface-custom-preview"
-              style={{
-                backgroundImage: mentorBgUrl ? `url(${mentorBgUrl})` : undefined,
-              }}
-            >
-              {!mentorBgUrl ? 'No image' : null}
-            </div>
-            <div className="iface-custom-meta">
-              {prefs.customBg === 'interface-1' ? (
-                <Check size={14} color="var(--electric)" />
-              ) : null}
-              <span>EA Image</span>
-            </div>
+            <span
+              className="iface-pack-swatch"
+              style={
+                mentorBgUrl
+                  ? ({ backgroundImage: `url(${mentorBgUrl})`, backgroundSize: 'cover' } as CSSProperties)
+                  : undefined
+              }
+              aria-hidden
+            />
+            <span>EA Image</span>
           </button>
           {uploaded.map((slot) => {
             const active = prefs.customBg === slot.id;
@@ -420,15 +412,15 @@ export function InterfaceStyleModal({
               <button
                 key={slot.id}
                 type="button"
-                className={`iface-custom-card${active ? ' active' : ''}`}
+                className={`iface-pack${active ? ' active' : ''}`}
                 onClick={() => setCustomBg(slot.id)}
+                aria-pressed={active}
               >
-                <div className="iface-custom-preview">
+                <span className="iface-pack-swatch iface-pack-bg-media" aria-hidden>
                   {item.kind === 'video' && previewUrl ? (
                     <video src={previewUrl} muted playsInline autoPlay loop />
                   ) : previewUrl ? (
                     <img
-                      className="iface-custom-preview-img"
                       src={previewUrl}
                       alt=""
                       onError={(e) => {
@@ -436,18 +428,16 @@ export function InterfaceStyleModal({
                         if (item.url.startsWith('img:') && !el.dataset.retry) {
                           el.dataset.retry = '1';
                           const key = item.url.replace(/^img:/, '');
-                          el.src = `/api/images/${encodeURIComponent(key)}`;
+                          el.src =
+                            item.kind === 'video'
+                              ? `/api/media/${encodeURIComponent(key)}`
+                              : `/api/images/${encodeURIComponent(key)}`;
                         }
                       }}
                     />
-                  ) : (
-                    <span className="muted">Loading…</span>
-                  )}
-                </div>
-                <div className="iface-custom-meta">
-                  {active ? <Check size={14} color="var(--electric)" /> : null}
-                  <span>{slot.label}</span>
-                </div>
+                  ) : null}
+                </span>
+                <span>{slot.label.replace('Background ', 'BG ')}</span>
               </button>
             );
           })}

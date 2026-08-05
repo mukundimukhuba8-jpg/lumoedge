@@ -24,6 +24,23 @@
   filter: saturate(1.05) contrast(1.04);
 }
 
+/* Keep motion backgrounds visible — layout washes used to bury video */
+.os-layout[data-bg-kind='video'] .lay-bg-media,
+.os-layout[data-bg-kind='video'] .lay-bg-video {
+  opacity: 1 !important;
+  filter: none !important;
+  z-index: 0;
+}
+
+.os-layout[data-bg-kind='video'] .os-layout-wash {
+  background:
+    linear-gradient(180deg, rgba(5, 6, 8, 0.18) 0%, rgba(5, 6, 8, 0.28) 45%, rgba(5, 6, 8, 0.62) 100%) !important;
+}
+
+.os-layout[data-bg-kind='video'] .os-ambient-depth {
+  opacity: 0.35;
+}
+
 .os-layout-wash {
   position: absolute;
   inset: 0;
