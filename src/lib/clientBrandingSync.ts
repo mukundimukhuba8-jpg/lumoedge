@@ -113,10 +113,17 @@ export async function hydrateCustomMediaImages(
         });
         continue;
       }
-      // Keep a fetchable public URL so <img> / CSS backgrounds still try the API
-      if (url.startsWith('img:')) url = imagePublicUrl(key);
-      else if (!url.startsWith('http') && !url.startsWith('/') && !url.startsWith('data:')) {
-        url = imagePublicUrl(key);
+      // Keep a fetchable public URL — videos stream better from /api/media
+      if (url.startsWith('img:')) {
+        url =
+          item.kind === 'video'
+            ? `/api/media/${encodeURIComponent(key)}`
+            : imagePublicUrl(key);
+      } else if (!url.startsWith('http') && !url.startsWith('/') && !url.startsWith('data:')) {
+        url =
+          item.kind === 'video'
+            ? `/api/media/${encodeURIComponent(key || url)}`
+            : imagePublicUrl(key || url);
       }
     }
 

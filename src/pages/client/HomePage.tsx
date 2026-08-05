@@ -10,10 +10,12 @@ import {
   type InterfacePrefs,
 } from '../../lib/interfaceStyle';
 import {
+  normalizeCustomMedia,
   resolveCustomBackdrop,
   resolveProfileImage,
   isPlaceholderMentorImage,
   isGenericLumoLabel,
+  type MentorMediaItem,
 } from '../../lib/mentorMedia';
 import { clearMt5Session } from '../../lib/mt5Session';
 import { getEaImage, isStreamableMediaUrl } from '../../lib/storage';
@@ -25,7 +27,24 @@ export function HomePage() {
   const { bot, isPaused, togglePause, deleteBot, user, refreshBranding } = useApp();
   const { openPortal } = useAdmin();
 
-  const profileAvatar = resolveProfileImage(bot.imageUrl, bot.customMedia);
+  const [playMedia, setPlayMedia] = useState<MentorMediaItem[]>(() =>
+    normalizeCustomMedia(bot.customMedia),
+  );
+
+  useEffect(() => {
+    const base = normalizeCustomMedia(bot.customMedia);
+    setPlayMedia(base);
+    let cancelled = false;
+    void import('../../lib/clientBrandingSync').then(async ({ hydrateCustomMediaImages }) => {
+      const next = await hydrateCustomMediaImages(base);
+      if (!cancelled && next.length) setPlayMedia(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bot.customMedia]);
+
+  const profileAvatar = resolveProfileImage(bot.imageUrl, playMedia);
   const coverImage = (() => {
     const raw = String(bot.imageUrl || '').trim();
     if (raw && !isPlaceholderMentorImage(raw) && !raw.startsWith('blob:')) return raw;
@@ -107,7 +126,7 @@ export function HomePage() {
   const customResolved = resolveCustomBackdrop(
     stylePrefs.customBg,
     eaImage,
-    bot.customMedia,
+    playMedia,
   );
   const platformBgUrl = customResolved?.src || displayCover || eaImage || '';
   const platformBgKind = customResolved?.kind || 'image';
@@ -251,7 +270,7 @@ export function HomePage() {
         onChange={updateStylePrefs}
         avatarUrl={displayAvatar || ''}
         mentorBgUrl={heroImage}
-        mentorMedia={bot.customMedia}
+        mentorMedia={playMedia}
         initialView={styleView}
         onOpenScanner={() => {
           setStyleOpen(false);

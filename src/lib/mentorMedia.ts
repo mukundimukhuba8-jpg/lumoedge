@@ -2,7 +2,7 @@
 
 import { firebaseUploadDataUrl, firebaseUploadFile, firebaseSaveImage } from './firebaseDb';
 import { isFirebaseConfigured } from './firebase';
-import { resolveStoredMediaUrl, saveEaImage } from './storage';
+import { getEaImage, resolveStoredMediaUrl, saveEaImage } from './storage';
 
 export type MentorMediaSlotId =
   | 'profile-1'
@@ -338,14 +338,40 @@ export function resolveCustomBackdrop(
   const hit = getMediaSlot(media, customBg as MentorMediaSlotId);
   if (hit?.url) {
     let src = resolveStoredMediaUrl(hit.url) || hit.url;
+    const kind: MentorMediaKind =
+      hit.kind === 'video' || looksLikeVideoUrl(src) ? 'video' : 'image';
+
     if (src.startsWith('img:')) {
       const key = src.replace(/^img:/, '');
-      src = `/api/images/${encodeURIComponent(key)}`;
-    } else if (src && !src.startsWith('data:') && !src.startsWith('http') && !src.startsWith('/') && !src.startsWith('blob:')) {
-      src = `/api/images/${encodeURIComponent(src)}`;
+      // Prefer local bytes so video can actually play (API image route is still-frame-ish)
+      const local = getEaImage(key) || getEaImage(`img:${key}`) || getEaImage(src) || '';
+      if (
+        local &&
+        (local.startsWith('data:') ||
+          local.startsWith('blob:') ||
+          local.startsWith('http') ||
+          local.startsWith('/api/media/'))
+      ) {
+        src = local;
+      } else {
+        src =
+          kind === 'video'
+            ? `/api/media/${encodeURIComponent(key)}`
+            : `/api/images/${encodeURIComponent(key)}`;
+      }
+    } else if (
+      src &&
+      !src.startsWith('data:') &&
+      !src.startsWith('http') &&
+      !src.startsWith('/') &&
+      !src.startsWith('blob:')
+    ) {
+      src =
+        kind === 'video'
+          ? `/api/media/${encodeURIComponent(src)}`
+          : `/api/images/${encodeURIComponent(src)}`;
     }
-    const kind =
-      hit.kind === 'video' || looksLikeVideoUrl(src) ? 'video' : 'image';
+
     return { src, kind };
   }
   return null;
@@ -355,6 +381,7 @@ export function looksLikeVideoUrl(url: string): boolean {
   const u = url.toLowerCase();
   return (
     u.startsWith('data:video/') ||
+    u.includes('/api/media/') ||
     /\.(mp4|webm|mov|m4v)(\?|$)/i.test(u)
   );
 }

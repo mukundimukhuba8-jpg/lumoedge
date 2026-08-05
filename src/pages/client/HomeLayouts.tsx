@@ -58,10 +58,14 @@ type ActionDef = {
 };
 
 function resolveBg(a: LayoutActions) {
-  const url = a.backdropUrl || a.eaImage || '';
+  const url = (a.backdropUrl || a.eaImage || '').trim();
+  const kind = a.backdropKind || 'image';
+  // Videos must keep their URL even if they look unusual; only drop true placeholders for images
+  if (!url) return { url: '', kind };
+  if (kind === 'video') return { url, kind };
   return {
     url: isMentorProfileImage(url) ? url : '',
-    kind: a.backdropKind || 'image',
+    kind,
   };
 }
 
@@ -121,6 +125,7 @@ function LayoutBackdrop({
   return (
     <div
       className={`os-layout os-layout-premium ${className}`}
+      data-bg-kind={isVideo ? 'video' : img ? 'image' : 'none'}
       style={
         {
           '--os-accent-rgb': accentRgb,
@@ -137,17 +142,14 @@ function LayoutBackdrop({
       }
     >
       <div className="os-ambient-depth" aria-hidden />
-      {!isVideo && img ? (
-        <div className="os-layout-bg" style={{ backgroundImage: `url(${img})` }} aria-hidden />
-      ) : null}
-      {isVideo ? (
+      {img ? (
         <BackdropMedia
           src={img}
-          kind="video"
+          kind={isVideo ? 'video' : 'image'}
           className="lay-bg-media"
           videoClassName="lay-bg-video"
-          imageClassName="lay-bg-video"
-          washClassName="lay-bg-wash"
+          imageClassName="os-layout-bg"
+          washClassName=""
         />
       ) : null}
       <div className="os-layout-wash" aria-hidden />

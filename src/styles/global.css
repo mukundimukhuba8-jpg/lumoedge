@@ -1635,6 +1635,30 @@ html[data-admin-portal] .admin-shell-dark .drawer {
   background: color-mix(in srgb, var(--electric) 16%, rgba(8, 12, 20, 0.9));
 }
 
+.iface-pack-hub {
+  color: var(--electric);
+  background: color-mix(in srgb, var(--electric) 14%, rgba(8, 12, 20, 0.92));
+  border-color: color-mix(in srgb, var(--electric) 35%, transparent);
+}
+
+.iface-pack-bg-default {
+  background: linear-gradient(145deg, #1a1f2b, #0a0c12);
+}
+
+.iface-pack-bg-media {
+  padding: 0;
+  overflow: hidden;
+}
+
+.iface-pack-bg-media img,
+.iface-pack-bg-media video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
 /* Mini layout schema diagrams inside swatches */
 .iface-schema {
   border-radius: 14px;
