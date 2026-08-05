@@ -57,6 +57,22 @@
     var(--bg);
 }
 
+/* Home owns its own layout backdrop — solid shell fill, no second media layer */
+.os-shell-home .os-shell-home-bg {
+  background: var(--bg);
+}
+
+.os-shell-home .os-shell-stage,
+.os-shell-home .os-shell-panel {
+  background: transparent;
+}
+
+.os-shell-home .os-home-shell,
+.os-shell-home .os-layout {
+  min-height: 100% !important;
+  height: 100%;
+}
+
 .os-shell-stage {
   position: relative;
   z-index: 2;
