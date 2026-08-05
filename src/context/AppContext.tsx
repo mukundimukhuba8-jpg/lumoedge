@@ -526,29 +526,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 return [...map.values()];
               })()
             : session.bot.customMedia;
+        const nextImage =
+          sync.imageUrl !== undefined
+            ? sync.imageUrl || session.bot.imageUrl || ''
+            : session.bot.imageUrl || '';
+        const nextSymbols =
+          sync.symbols !== undefined
+            ? sync.symbols.length
+              ? sync.symbols
+              : session.bot.symbols
+            : session.bot.symbols;
+        const nextName = sync.name
+          ? sync.name.replace(/\s+/g, '').toUpperCase()
+          : session.bot.name;
+        const nextCustom = normalizeCustomMedia(nextMedia);
+        // Skip no-op persists — JSON churn after re-login froze small phones
+        const mediaSig = (list: ReturnType<typeof normalizeCustomMedia>) =>
+          list
+            .map((m) => `${m.slot}:${m.kind}:${String(m.url || '').slice(0, 96)}`)
+            .sort()
+            .join('|');
+        if (
+          nextName === session.bot.name &&
+          nextDisplay === session.bot.displayName &&
+          nextMain === session.bot.mainText &&
+          nextImage === session.bot.imageUrl &&
+          nextSymbols.join(',') === session.bot.symbols.join(',') &&
+          mediaSig(nextCustom) === mediaSig(normalizeCustomMedia(session.bot.customMedia))
+        ) {
+          return;
+        }
         persist({
           ...session,
           accessStatus: session.bot.licenseKey ? 'licensed' : session.accessStatus,
           bot: {
             ...session.bot,
-            name: sync.name
-              ? sync.name.replace(/\s+/g, '').toUpperCase()
-              : session.bot.name,
+            name: nextName,
             displayName: nextDisplay,
             mainText: nextMain,
-            // Mentor portal symbols always win when provided
-            symbols:
-              sync.symbols !== undefined
-                ? sync.symbols.length
-                  ? sync.symbols
-                  : session.bot.symbols
-                : session.bot.symbols,
-            // Mentor portal image wins when provided — never wipe on failed sync
-            imageUrl:
-              sync.imageUrl !== undefined
-                ? sync.imageUrl || session.bot.imageUrl || ''
-                : session.bot.imageUrl || '',
-            customMedia: normalizeCustomMedia(nextMedia),
+            symbols: nextSymbols,
+            imageUrl: nextImage,
+            customMedia: nextCustom,
           },
         });
       },

@@ -1,7 +1,7 @@
 /** Pull mentor branding from cloud for licensed clients — no license key writes. */
 
 import type { LicenseSync } from '../context/AppContext';
-import { dbList, firebaseFetchImage, firebaseFetchWorkspace } from './firebaseDb';
+import { dbList, firebaseFetchWorkspace } from './firebaseDb';
 import {
   isPlaceholderMentorImage,
   isGenericLumoLabel,
@@ -16,13 +16,9 @@ import {
   imagePublicUrl,
   isStreamableMediaUrl,
   keysMatch,
-  loadJSON,
   normalizeLicenseKey,
-  saveEaImage,
   type VaultLicense,
 } from './storage';
-
-const IMAGE_STORE = 'ub-web/ea-images-v1';
 
 type VaultLike = {
   key?: string;
@@ -35,26 +31,31 @@ type VaultLike = {
   customMedia?: unknown[];
 };
 
-/** Union media slots — later sources fill empty slots / refresh urls. */
+function urlStrength(url: string): number {
+  const u = String(url || '').trim();
+  if (u.startsWith('https://') || u.startsWith('http://')) return 5;
+  if (u.startsWith('/api/media/')) return 4;
+  if (u.startsWith('/api/images/')) return 4;
+  if (u.startsWith('blob:')) return 3;
+  if (u.startsWith('data:')) return 2;
+  if (u.startsWith('img:')) return 1;
+  return 0;
+}
+
+/** Union media slots — prefer stronger/streamable URLs to avoid remount churn. */
 export function mergeCustomMedia(...sources: unknown[]): MentorMediaItem[] {
   const map = new Map<MentorMediaSlotId, MentorMediaItem>();
   for (const src of sources) {
     for (const item of normalizeCustomMedia(src)) {
       if (!item.url) continue;
       const prev = map.get(item.slot);
-      // Prefer non-empty, prefer http/data over bare img: when both exist
       if (!prev) {
         map.set(item.slot, item);
         continue;
       }
-      const prevWeak = prev.url.startsWith('img:') || prev.url.startsWith('/api/images/');
-      const nextStrong =
-        item.url.startsWith('http') ||
-        item.url.startsWith('data:') ||
-        item.url.startsWith('blob:');
-      if (prevWeak && nextStrong) map.set(item.slot, item);
-      else if (!prev.url) map.set(item.slot, item);
-      else map.set(item.slot, item);
+      if (urlStrength(item.url) >= urlStrength(prev.url)) {
+        map.set(item.slot, item);
+      }
     }
   }
   return [...map.values()];
@@ -70,15 +71,26 @@ function mediaKeyFromUrl(url: string, ownerAdminId?: string, slot?: string): str
       return u.replace('/api/images/', '').split('?')[0];
     }
   }
+  if (u.startsWith('/api/media/')) {
+    try {
+      return decodeURIComponent(u.replace('/api/media/', '').split('?')[0]);
+    } catch {
+      return u.replace('/api/media/', '').split('?')[0];
+    }
+  }
   if (ownerAdminId && slot) return `${ownerAdminId}-${slot}`;
   return '';
 }
 
-/** Pull background/profile bytes onto the client so Settings previews can render. */
+/**
+ * Resolve media to streamable URLs for client phones.
+ * NEVER firebaseFetch / saveEaImage base64 blobs here — that froze taps after re-login
+ * on small phones (Gunner Scalper Pro and other branded mentors).
+ */
 export async function hydrateCustomMediaImages(
   media: MentorMediaItem[] | undefined,
   ownerAdminId?: string,
-  dbImages?: Record<string, string>,
+  _dbImages?: Record<string, string>,
 ): Promise<MentorMediaItem[]> {
   const list = normalizeCustomMedia(media);
   if (!list.length) return list;
@@ -90,7 +102,6 @@ export async function hydrateCustomMediaImages(
 
     const key = mediaKeyFromUrl(url, ownerAdminId, item.slot);
 
-    // Videos must STREAM — never firebaseFetch / saveEaImage full blobs (freezes .com phones)
     if (item.kind === 'video') {
       if (isStreamableMediaUrl(url) || url.startsWith('http') || url.startsWith('blob:')) {
         out.push({ ...item, url });
@@ -111,70 +122,30 @@ export async function hydrateCustomMediaImages(
       continue;
     }
 
-    const fromMap =
-      (key && (dbImages?.[key] || dbImages?.[`img:${key}`])) ||
-      (key && (getEaImage(key) || getEaImage(`img:${key}`))) ||
-      '';
-
-    if (fromMap && (fromMap.startsWith('data:') || isStreamableMediaUrl(fromMap))) {
-      // Skip storing huge data:video disguised as image
-      if (fromMap.startsWith('data:video/')) {
-        out.push({
-          ...item,
-          kind: 'video',
-          url: key ? `/api/media/${encodeURIComponent(key)}` : url,
-        });
-        continue;
-      }
-      if (key && fromMap.startsWith('data:image/')) saveEaImage(key, fromMap);
-      out.push({
-        ...item,
-        url: fromMap.startsWith('data:') ? (key ? `img:${key}` : url) : fromMap,
-      });
+    // Images: stream only — local cache may already have a tiny preview
+    if (isStreamableMediaUrl(url) || url.startsWith('http') || url.startsWith('data:')) {
+      out.push({ ...item, url });
       continue;
     }
 
     if (key) {
-      const fromFb = await firebaseFetchImage(key).catch(() => '');
-      if (fromFb && !isPlaceholderMentorImage(fromFb)) {
-        if (fromFb.startsWith('data:video/') || looksLikeVideoPayload(fromFb)) {
-          out.push({
-            ...item,
-            kind: 'video',
-            url:
-              fromFb.startsWith('http') || fromFb.startsWith('/')
-                ? fromFb
-                : `/api/media/${encodeURIComponent(key)}`,
-          });
-          continue;
-        }
-        if (fromFb.startsWith('data:image/') || fromFb.startsWith('http') || fromFb.startsWith('/')) {
-          if (fromFb.startsWith('data:image/')) saveEaImage(key, fromFb);
-          out.push({
-            ...item,
-            url:
-              fromFb.startsWith('http') || fromFb.startsWith('/')
-                ? fromFb
-                : `img:${key}`,
-          });
-          continue;
-        }
+      const cached = getEaImage(key) || getEaImage(`img:${key}`);
+      if (cached && isStreamableMediaUrl(cached)) {
+        out.push({ ...item, url: cached });
+        continue;
       }
-      if (url.startsWith('img:')) {
-        url = imagePublicUrl(key);
-      } else if (!url.startsWith('http') && !url.startsWith('/') && !url.startsWith('data:')) {
-        url = imagePublicUrl(key || url);
-      }
+      // Prefer public API URL — browser loads it; no RTDB base64 pull
+      out.push({ ...item, url: imagePublicUrl(key) });
+      continue;
+    }
+
+    if (url.startsWith('img:')) {
+      url = imagePublicUrl(url.replace(/^img:/, ''));
     }
 
     out.push({ ...item, url });
   }
   return out;
-}
-
-function looksLikeVideoPayload(value: string): boolean {
-  const v = value.toLowerCase();
-  return v.startsWith('data:video/') || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(v);
 }
 
 type WorkspaceBag = {
@@ -197,7 +168,6 @@ function attachWorkspace(
   if (!entry) return null;
   const workspaces = workspaceMap(db);
   const ownerId = String(entry.ownerAdminId || '');
-  // Prefer owner workspace; fall back to scanning licenses
   if (ownerId && workspaces[ownerId]) {
     return { ...entry, _ws: workspaces[ownerId] };
   }
@@ -214,8 +184,6 @@ function findLicenseEntry(
   db: NonNullable<Awaited<ReturnType<typeof fetchDb>>>,
   key: string,
 ): (VaultLike & { _ws?: WorkspaceBag }) | null {
-  // Always attach mentor workspace so profile.customMedia / names are available
-  // even when the vault row is found first (previously skipped _ws attach).
   for (const v of dbList<VaultLike>(db.vault)) {
     if (keysMatch(String(v?.key || ''), key) && v?.status !== 'deleted') {
       return attachWorkspace(v, db);
@@ -254,8 +222,6 @@ function enrichBrandingFromWorkspace(
     ? String(raw.eaName || ownerEa?.name || ws?.profile?.eaDisplayName || '')
     : String(base.displayName || '');
   const mainText = base.mainText || String(raw.mainText || ws?.profile?.mainText || '');
-  // Merge vault + license + mentor profile so background slots are never dropped
-  // when the vault only has profile photos.
   const customMedia = mergeCustomMedia(
     base.customMedia,
     raw.customMedia,
@@ -278,36 +244,36 @@ function enrichBrandingFromWorkspace(
   };
 }
 
-/** Fast path — local vault + cached/API URL, no full fetchDb wait. */
-async function resolveMentorImage(
-  mentorId: string,
-  dbImages?: Record<string, string>,
-): Promise<string> {
+/** Cheap branding fingerprint — skip useless refreshBranding writes. */
+export function brandingSignature(sync: {
+  displayName?: string;
+  mainText?: string;
+  imageUrl?: string;
+  symbols?: string[];
+  customMedia?: MentorMediaItem[];
+}): string {
+  const media = normalizeCustomMedia(sync.customMedia)
+    .map((m) => `${m.slot}:${m.kind}:${String(m.url || '').slice(0, 120)}`)
+    .sort()
+    .join('|');
+  return [
+    String(sync.displayName || ''),
+    String(sync.mainText || ''),
+    String(sync.imageUrl || '').slice(0, 120),
+    (sync.symbols || []).join(','),
+    media,
+  ].join('::');
+}
+
+/** Fast path — streamable profile URL only, no RTDB image blob pull. */
+async function resolveMentorImage(mentorId: string): Promise<string> {
   if (!mentorId) return '';
   const profileKey = `profile-${mentorId}`;
   const cached = getEaImage(profileKey) || getEaImage(`img:${profileKey}`);
   if (cached && !isPlaceholderMentorImage(cached)) {
     if (isStreamableMediaUrl(cached) || cached.startsWith('data:')) return cached;
   }
-
-  const fromMap =
-    dbImages?.[profileKey] ||
-    dbImages?.[`img:${profileKey}`] ||
-    dbImages?.[mentorId] ||
-    '';
-  if (fromMap && !isPlaceholderMentorImage(fromMap)) {
-    if (isStreamableMediaUrl(fromMap) || fromMap.startsWith('data:')) return fromMap;
-  }
-
-  const apiUrl = `/api/images/${encodeURIComponent(profileKey)}`;
-
-  void firebaseFetchImage(profileKey).then((fromFb) => {
-    if (fromFb && !isPlaceholderMentorImage(fromFb)) {
-      saveEaImage(profileKey, fromFb);
-    }
-  });
-
-  return apiUrl;
+  return `/api/images/${encodeURIComponent(profileKey)}`;
 }
 
 /** Read mentor branding for an activated client — never mutates license keys. */
@@ -315,10 +281,9 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
   const normalizedKey = normalizeLicenseKey(licenseKey);
   if (!normalizedKey) return null;
 
-  const localImages = loadJSON<Record<string, string>>(IMAGE_STORE, {});
   const vaultHit = findInVault(normalizedKey);
   if (vaultHit && vaultHit.ownerAdminId) {
-    const imageUrl = await resolveMentorImage(vaultHit.ownerAdminId, localImages);
+    const imageUrl = await resolveMentorImage(vaultHit.ownerAdminId);
     // Scoped workspace read — never pull the full platform DB on client phones
     const ownerWsRaw = await firebaseFetchWorkspace(vaultHit.ownerAdminId);
     const ownerWs = ownerWsRaw
@@ -354,7 +319,6 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
     const customMedia = await hydrateCustomMediaImages(
       withProfileMedia.customMedia,
       vaultHit.ownerAdminId,
-      localImages,
     );
     return { ...withProfileMedia, customMedia };
   }
@@ -368,17 +332,12 @@ export async function fetchClientBranding(licenseKey: string): Promise<LicenseSy
   const ws = (raw as VaultLike & { _ws?: { profile?: Record<string, unknown>; eas?: Array<{ id: string; name?: string; symbols?: string[] }> } })._ws;
   const mentorId = String(raw.ownerAdminId || '');
   const ownerEa = ws?.eas?.find((e) => e.id === raw.eaId);
-  const dbImages =
-    db.images && typeof db.images === 'object'
-      ? { ...localImages, ...(db.images as Record<string, string>) }
-      : localImages;
-  const imageUrl = await resolveMentorImage(mentorId, dbImages);
+  const imageUrl = await resolveMentorImage(mentorId);
 
   const eaName = String(raw.eaName || ownerEa?.name || ws?.profile?.eaDisplayName || '');
   const customMedia = await hydrateCustomMediaImages(
     mergeCustomMedia(raw.customMedia, ws?.profile?.customMedia),
     mentorId,
-    dbImages,
   );
   return {
     name: eaName,
