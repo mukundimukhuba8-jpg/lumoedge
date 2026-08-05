@@ -1,5 +1,5 @@
-import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Suspense, lazy, useEffect } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AmbientEnvironment } from './components/AmbientEnvironment';
 import { ClientOsShell } from './components/ClientOsShell';
 import { ThemeEngine } from './components/ThemeEngine';
@@ -12,6 +12,24 @@ import { HomePage } from './pages/client/HomePage';
 import { RegisterPage } from './pages/client/RegisterPage';
 import { SubscribePage } from './pages/client/SubscribePage';
 import { WaitingApprovalPage } from './pages/client/WaitingApprovalPage';
+
+/** Particles/glow freeze mentor phones — keep them on the client app only. */
+function PortalAmbient() {
+  const { pathname } = useLocation();
+  if (pathname.startsWith('/admin')) return null;
+  return <AmbientEnvironment />;
+}
+
+/** Mark admin routes so CSS can kill portal motion without touching /app. */
+function AdminPortalMode() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const on = pathname.startsWith('/admin');
+    document.documentElement.toggleAttribute('data-admin-portal', on);
+    return () => document.documentElement.removeAttribute('data-admin-portal');
+  }, [pathname]);
+  return null;
+}
 
 const MetaTraderPage = lazy(() =>
   import('./pages/client/MetaTraderPage').then((m) => ({ default: m.MetaTraderPage })),
@@ -112,7 +130,8 @@ export default function App() {
   return (
     <div className="app-shell lumo-app">
       <ThemeEngine />
-      <AmbientEnvironment />
+      <AdminPortalMode />
+      <PortalAmbient />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<HomeRedirect />} />
