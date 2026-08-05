@@ -13,7 +13,7 @@ export function isAdminDrawerOpen() {
 }
 
 /** Call on sidebar item tap — blocks background sync while the route paints. */
-export function markAdminNavBusy(ms = 1200) {
+export function markAdminNavBusy(ms = 2800) {
   adminNavBusyUntil = Math.max(adminNavBusyUntil, Date.now() + ms);
 }
 

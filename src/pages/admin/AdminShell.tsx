@@ -80,8 +80,9 @@ export function AdminShell() {
   const pageTitle = titleForPath(location.pathname, isSuper);
 
   const go = (to: string) => {
-    // Pause sync/heal BEFORE closing — otherwise they stampede onto the new page
-    markAdminNavBusy(1400);
+    // Pause sync/heal BEFORE closing — otherwise they stampede onto the new page.
+    // Idle heals are 1.6–2s; keep the gate longer than those windows.
+    markAdminNavBusy(2800);
     setOpen(false);
     // Let the drawer start closing, then navigate off the critical path
     window.setTimeout(() => {

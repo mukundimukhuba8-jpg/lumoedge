@@ -572,13 +572,11 @@ export function ManageEAsPage() {
 
 export function GenerateLicensePage() {
   const {
-    admin,
     eas,
     licenses,
     generateLicense,
     deleteLicense,
     profile,
-    refreshClientQueue,
   } = useAdmin();
   const [eaId, setEaId] = useState('');
   const [clientName, setClientName] = useState('');
@@ -595,14 +593,6 @@ export function GenerateLicensePage() {
   const [copied, setCopied] = useState(false);
   const effectiveEaId = eaId || eas[0]?.id || '';
   const selected = eas.find((e) => e.id === effectiveEaId) ?? eas[0];
-
-  // Super Admin only — mentors must not pull 900+ clients when opening Generate License
-  useEffect(() => {
-    if (admin?.role !== 'super') return;
-    void refreshClientQueue();
-    // Mount-only — avoid refresh storms when context rebuilds
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [admin?.role]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -1589,23 +1579,27 @@ export function SubscriptionsPage() {
   const paidPending = pending.filter((c) => c.paymentClaimed).length;
 
   useEffect(() => {
-    // Mount once — do not re-run when refreshClientQueue identity changes
+    // Defer past nav busy gate so sidebar taps aren't crushed by 900+ client merge
     let cancelled = false;
-    void (async () => {
-      setRefreshing(true);
-      try {
-        const result = await refreshClientQueue();
-        if (!cancelled && result.ok) {
-          setRefreshMsg(
-            `${result.pending ?? 0} pending · ${result.approved ?? 0} approved`,
-          );
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      void (async () => {
+        setRefreshing(true);
+        try {
+          const result = await refreshClientQueue();
+          if (!cancelled && result.ok) {
+            setRefreshMsg(
+              `${result.pending ?? 0} pending · ${result.approved ?? 0} approved`,
+            );
+          }
+        } finally {
+          if (!cancelled) setRefreshing(false);
         }
-      } finally {
-        if (!cancelled) setRefreshing(false);
-      }
-    })();
+      })();
+    }, 900);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-only
   }, []);
