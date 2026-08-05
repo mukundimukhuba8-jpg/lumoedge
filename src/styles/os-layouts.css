@@ -24,13 +24,19 @@
   filter: saturate(1.08) contrast(1.06);
 }
 
-/* Keep mentor media readable — washes stay light enough for phones outdoors */
+/* Keep mentor media readable — avoid heavy CSS filters on video (GPU freeze on phones) */
 .os-layout[data-bg-kind='video'] .lay-bg-media,
-.os-layout[data-bg-kind='video'] .lay-bg-video,
+.os-layout[data-bg-kind='video'] .lay-bg-video {
+  opacity: 1 !important;
+  filter: none !important;
+  z-index: 0;
+  transform: translateZ(0);
+}
+
 .os-layout[data-bg-kind='image'] .lay-bg-media,
 .os-layout[data-bg-kind='image'] .os-layout-bg {
   opacity: 1 !important;
-  filter: saturate(1.08) contrast(1.06) !important;
+  filter: saturate(1.06) contrast(1.04) !important;
   z-index: 0;
 }
 
@@ -160,10 +166,9 @@
   gap: 6px;
   padding: 4px;
   border-radius: 999px;
-  background: rgba(8, 12, 20, 0.72);
+  background: rgba(8, 12, 20, 0.88);
   border: 1px solid rgba(var(--os-accent-rgb), 0.32);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  /* blur over video = main-thread jank on mid phones */
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
 }
 
@@ -542,6 +547,10 @@
   gap: 14px;
   width: 100%;
   animation: lay-float 4.8s ease-in-out infinite;
+}
+
+.os-layout[data-bg-kind='video'] .lay-hero-top {
+  animation: none;
 }
 
 .lay-hero-avatar {
@@ -1309,10 +1318,14 @@
 }
 
 /* ── Orbit ──────────────────────────────────────────────────── */
-.lay-orbit .os-layout-bg,
+.lay-orbit .os-layout-bg {
+  opacity: 1 !important;
+  filter: saturate(1.06) contrast(1.04) !important;
+}
+
 .lay-orbit .lay-bg-video {
   opacity: 1 !important;
-  filter: saturate(1.1) contrast(1.08) !important;
+  filter: none !important;
 }
 
 .lay-orbit-stage {

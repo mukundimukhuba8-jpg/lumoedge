@@ -34,6 +34,11 @@ export function HomePage() {
   useEffect(() => {
     const base = normalizeCustomMedia(bot.customMedia);
     setPlayMedia(base);
+    // Skip hydrate when only streamable videos / empty — avoids Firebase blob pulls on .com
+    const needsImageHydrate = base.some(
+      (m) => m.kind === 'image' && m.url && !m.url.startsWith('http') && !m.url.startsWith('data:'),
+    );
+    if (!needsImageHydrate) return;
     let cancelled = false;
     void import('../../lib/clientBrandingSync').then(async ({ hydrateCustomMediaImages }) => {
       const next = await hydrateCustomMediaImages(base);

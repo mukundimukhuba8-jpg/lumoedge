@@ -62,22 +62,9 @@ export function ClientOsShell() {
   const [panelKey, setPanelKey] = useState(location.pathname);
   const [eaInfoOpen, setEaInfoOpen] = useState(false);
   const [placeFloatTop, setPlaceFloatTop] = useState(false);
-  const [playMedia, setPlayMedia] = useState(() => bot.customMedia);
   const wasPaused = useRef(isPaused);
 
   useEffect(() => subscribeInterfacePrefs(() => setPrefs(loadInterfacePrefs())), []);
-
-  useEffect(() => {
-    setPlayMedia(bot.customMedia);
-    let cancelled = false;
-    void import('../lib/clientBrandingSync').then(async ({ hydrateCustomMediaImages }) => {
-      const next = await hydrateCustomMediaImages(bot.customMedia);
-      if (!cancelled && next?.length) setPlayMedia(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [bot.customMedia]);
 
   useEffect(() => {
     if (!user?.email) return;
@@ -100,12 +87,13 @@ export function ClientOsShell() {
     wasPaused.current = isPaused;
   }, [isPaused]);
 
+  // No media hydrate here — streaming URLs only. Full hydrate on Home freezes phones.
   const custom = resolveCustomBackdrop(
     prefs.customBg,
     bot.imageUrl || '',
-    playMedia,
+    bot.customMedia,
   );
-  const profileSrc = resolveProfileImage(bot.imageUrl, playMedia);
+  const profileSrc = resolveProfileImage(bot.imageUrl, bot.customMedia);
   const avatarUrl =
     resolveStoredMediaUrl(profileSrc) ||
     profileSrc ||
