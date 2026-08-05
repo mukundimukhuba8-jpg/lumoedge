@@ -18,27 +18,31 @@
   inset: 0;
   background-size: cover;
   background-position: center top;
-  opacity: 0.88;
+  opacity: 1;
   z-index: 0;
   pointer-events: none;
-  filter: saturate(1.05) contrast(1.04);
+  filter: saturate(1.08) contrast(1.06);
 }
 
-/* Keep motion backgrounds visible — layout washes used to bury video */
+/* Keep mentor media readable — washes stay light enough for phones outdoors */
 .os-layout[data-bg-kind='video'] .lay-bg-media,
-.os-layout[data-bg-kind='video'] .lay-bg-video {
+.os-layout[data-bg-kind='video'] .lay-bg-video,
+.os-layout[data-bg-kind='image'] .lay-bg-media,
+.os-layout[data-bg-kind='image'] .os-layout-bg {
   opacity: 1 !important;
-  filter: none !important;
+  filter: saturate(1.08) contrast(1.06) !important;
   z-index: 0;
 }
 
-.os-layout[data-bg-kind='video'] .os-layout-wash {
+.os-layout[data-bg-kind='video'] .os-layout-wash,
+.os-layout[data-bg-kind='image'] .os-layout-wash {
   background:
-    linear-gradient(180deg, rgba(5, 6, 8, 0.18) 0%, rgba(5, 6, 8, 0.28) 45%, rgba(5, 6, 8, 0.62) 100%) !important;
+    linear-gradient(180deg, rgba(5, 6, 8, 0.08) 0%, rgba(5, 6, 8, 0.22) 42%, rgba(5, 6, 8, 0.55) 100%) !important;
 }
 
-.os-layout[data-bg-kind='video'] .os-ambient-depth {
-  opacity: 0.35;
+.os-layout[data-bg-kind='video'] .os-ambient-depth,
+.os-layout[data-bg-kind='image'] .os-ambient-depth {
+  opacity: 0.2;
 }
 
 .os-layout-wash {
@@ -47,7 +51,7 @@
   z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(5, 6, 8, 0.12) 0%, rgba(5, 6, 8, 0.35) 45%, rgba(5, 6, 8, 0.88) 100%);
+    linear-gradient(180deg, rgba(5, 6, 8, 0.08) 0%, rgba(5, 6, 8, 0.28) 45%, rgba(5, 6, 8, 0.7) 100%);
 }
 
 .os-ambient-depth {
@@ -237,9 +241,11 @@
 
 .lay-brand-tag {
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.04em;
-  color: rgba(226, 232, 240, 0.62);
+  font-weight: 600;
+  color: rgba(248, 250, 252, 0.88);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
 }
 
 .lay-brand-title {
@@ -423,11 +429,13 @@
 }
 
 .lay-robots-label {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(226, 232, 240, 0.55);
+  font-weight: 700;
+  color: rgba(248, 250, 252, 0.78);
   margin-bottom: 8px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
 }
 
 .lay-robots-track {
@@ -937,8 +945,8 @@
 }
 
 .lay-desktop .os-layout-bg {
-  opacity: 0.28;
-  filter: blur(2px);
+  opacity: 0.75;
+  filter: saturate(1.05);
 }
 
 .lay-desktop .os-layout-content {
@@ -1185,14 +1193,14 @@
 
 /* ── Pills ──────────────────────────────────────────────────── */
 .lay-pills .os-layout-bg {
-  opacity: 0.55;
-  filter: blur(1px);
+  opacity: 0.92;
+  filter: saturate(1.08) contrast(1.05);
 }
 
 .lay-pills .os-layout-wash {
   background:
-    radial-gradient(circle at 50% 18%, rgba(var(--os-accent-rgb), 0.18), transparent 42%),
-    linear-gradient(180deg, rgba(5, 6, 8, 0.55), rgba(5, 6, 8, 0.92));
+    radial-gradient(circle at 50% 18%, rgba(var(--os-accent-rgb), 0.14), transparent 42%),
+    linear-gradient(180deg, rgba(5, 6, 8, 0.2), rgba(5, 6, 8, 0.68));
 }
 
 .lay-pills-stage {
@@ -1301,9 +1309,10 @@
 }
 
 /* ── Orbit ──────────────────────────────────────────────────── */
-.lay-orbit .os-layout-bg {
-  opacity: 0.22;
-  filter: blur(2px);
+.lay-orbit .os-layout-bg,
+.lay-orbit .lay-bg-video {
+  opacity: 1 !important;
+  filter: saturate(1.1) contrast(1.08) !important;
 }
 
 .lay-orbit-stage {
@@ -1320,17 +1329,11 @@
   z-index: 1;
 }
 
-/* Solid lower veil so nothing ghosts under the controls */
+/* Light top, stronger only at the very bottom for controls */
 .lay-orbit .os-layout-wash {
   background:
-    radial-gradient(circle at 50% 22%, rgba(var(--os-accent-rgb), 0.16), transparent 42%),
-    linear-gradient(180deg, rgba(5, 6, 8, 0.35) 0%, rgba(5, 6, 8, 0.72) 48%, #050608 78%) !important;
-}
-
-.lay-orbit[data-bg-kind='video'] .lay-bg-media {
-  /* Keep motion in the upper hero band only */
-  mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 88%);
-  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 88%);
+    radial-gradient(circle at 50% 18%, rgba(var(--os-accent-rgb), 0.12), transparent 45%),
+    linear-gradient(180deg, rgba(5, 6, 8, 0.12) 0%, rgba(5, 6, 8, 0.28) 45%, rgba(5, 6, 8, 0.78) 100%) !important;
 }
 
 .lay-orbit-head {
@@ -1440,13 +1443,13 @@
 
 /* ── Stack ──────────────────────────────────────────────────── */
 .lay-stack .os-layout-bg {
-  opacity: 0.2;
+  opacity: 0.9;
 }
 
 .lay-stack .os-layout-wash {
   background:
-    radial-gradient(circle at 50% 20%, rgba(var(--os-accent-rgb), 0.2), transparent 42%),
-    #050608;
+    radial-gradient(circle at 50% 20%, rgba(var(--os-accent-rgb), 0.14), transparent 42%),
+    linear-gradient(180deg, rgba(5, 6, 8, 0.18), rgba(5, 6, 8, 0.72));
 }
 
 .lay-stack-stage {
@@ -1559,14 +1562,14 @@
 
 /* ── Frame ──────────────────────────────────────────────────── */
 .lay-frame .os-layout-bg {
-  opacity: 0.28;
-  filter: grayscale(0.35);
+  opacity: 0.92;
+  filter: saturate(1.05) contrast(1.04);
 }
 
 .lay-frame .os-layout-wash {
   background:
-    radial-gradient(circle at 50% 22%, rgba(var(--os-accent-rgb), 0.16), transparent 40%),
-    linear-gradient(180deg, rgba(5, 6, 8, 0.65), #050608 70%);
+    radial-gradient(circle at 50% 22%, rgba(var(--os-accent-rgb), 0.12), transparent 40%),
+    linear-gradient(180deg, rgba(5, 6, 8, 0.2), rgba(5, 6, 8, 0.7));
 }
 
 .lay-frame-stage {
