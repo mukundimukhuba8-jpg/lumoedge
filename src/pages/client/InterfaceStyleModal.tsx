@@ -52,6 +52,8 @@ function resolveBgPreview(url: string): string {
   return getEaImage(raw) || `/api/images/${encodeURIComponent(raw)}`;
 }
 
+type HubId = StyleTab;
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -60,11 +62,11 @@ type Props = {
   avatarUrl: string;
   mentorBgUrl: string;
   mentorMedia?: MentorMediaItem[];
+  /** Open directly into a section (e.g. layouts / colours). */
+  initialView?: 'hub' | HubId;
   /** @deprecated Scanner is a tool, not a Settings category. */
   onOpenScanner?: () => void;
 };
-
-type HubId = StyleTab;
 
 const HUB: {
   id: HubId;
@@ -132,11 +134,16 @@ export function InterfaceStyleModal({
   avatarUrl,
   mentorBgUrl,
   mentorMedia = [],
+  initialView = 'hub',
 }: Props) {
-  const [view, setView] = useState<'hub' | HubId>('hub');
+  const [view, setView] = useState<'hub' | HubId>(initialView);
   const [resolvedMedia, setResolvedMedia] = useState<MentorMediaItem[]>(() =>
     normalizeCustomMedia(mentorMedia),
   );
+
+  useEffect(() => {
+    if (open) setView(initialView);
+  }, [open, initialView]);
 
   useEffect(() => {
     setResolvedMedia(normalizeCustomMedia(mentorMedia));
@@ -206,27 +213,30 @@ export function InterfaceStyleModal({
         <p className="muted iface-intro">
           Premium atmospheres — surfaces, depth, and mood update instantly.
         </p>
-        <div className="iface-theme-grid">
+        <div className="iface-pack-grid iface-pack-grid-4">
           {THEMES.map((theme) => {
             const active = prefs.theme === theme.id;
             return (
               <button
                 key={theme.id}
                 type="button"
-                className={`iface-theme-card${active ? ' active' : ''}`}
+                className={`iface-pack${active ? ' active' : ''}`}
                 onClick={() => setTheme(theme.id)}
-                style={
-                  {
-                    '--theme-preview-a': theme.tokens.electric,
-                    '--theme-preview-b': theme.tokens.cyan,
-                    '--theme-preview-c': theme.tokens.purple,
-                  } as CSSProperties
-                }
+                aria-pressed={active}
               >
-                <span className="iface-theme-preview" aria-hidden />
-                <strong>{theme.label}</strong>
-                <span className="muted">{theme.description}</span>
-                {active ? <Check size={14} className="iface-theme-check" /> : null}
+                <span
+                  className="iface-pack-swatch"
+                  style={
+                    {
+                      background: `linear-gradient(145deg, ${theme.tokens.electric}, ${theme.tokens.cyan} 55%, ${theme.tokens.bg})`,
+                      boxShadow: active
+                        ? `0 0 0 2px #fff, 0 0 14px ${theme.tokens.electric}`
+                        : undefined,
+                    } as CSSProperties
+                  }
+                  aria-hidden
+                />
+                <span>{theme.label}</span>
               </button>
             );
           })}
@@ -239,21 +249,23 @@ export function InterfaceStyleModal({
         <p className="muted iface-intro">
           Completely different interface architectures — same controls, new visual hierarchy.
         </p>
-        <div className="iface-layout-list">
+        <div className="iface-pack-grid iface-pack-grid-4">
           {LAYOUTS.map((layout) => {
             const active = prefs.layout === layout.id;
             return (
               <button
                 key={layout.id}
                 type="button"
-                className={`iface-layout-row${active ? ' active' : ''}`}
+                className={`iface-pack${active ? ' active' : ''}`}
                 onClick={() => setLayout(layout.id)}
+                aria-pressed={active}
+                title={layout.description}
               >
-                <span className="iface-layout-copy">
-                  <strong>{layout.label}</strong>
-                  <span>{layout.description}</span>
-                </span>
-                {active ? <Check size={16} className="iface-layout-check" /> : null}
+                <span
+                  className={`iface-pack-swatch iface-schema iface-schema-${layout.schema}`}
+                  aria-hidden
+                />
+                <span>{layout.label}</span>
               </button>
             );
           })}
@@ -264,22 +276,26 @@ export function InterfaceStyleModal({
     body = (
       <>
         <p className="muted iface-intro">Choose typography for the whole operating system.</p>
-        <div className="iface-layout-list">
+        <div className="iface-pack-grid iface-pack-grid-3">
           {FONTS.map((font) => {
             const active = prefs.font === font.id;
             return (
               <button
                 key={font.id}
                 type="button"
-                className={`iface-layout-row${active ? ' active' : ''}`}
+                className={`iface-pack${active ? ' active' : ''}`}
                 onClick={() => setFont(font.id)}
-                style={{ fontFamily: font.body } as CSSProperties}
+                aria-pressed={active}
+                title={font.description}
               >
-                <span className="iface-layout-copy">
-                  <strong style={{ fontFamily: font.display }}>{font.label}</strong>
-                  <span>{font.description}</span>
+                <span
+                  className="iface-pack-swatch iface-pack-font"
+                  style={{ fontFamily: font.display } as CSSProperties}
+                  aria-hidden
+                >
+                  Aa
                 </span>
-                {active ? <Check size={16} className="iface-layout-check" /> : null}
+                <span style={{ fontFamily: font.body }}>{font.label}</span>
               </button>
             );
           })}
@@ -304,24 +320,22 @@ export function InterfaceStyleModal({
             </button>
           </div>
         ) : null}
-        <div className="iface-effect-grid">
+        <div className="iface-pack-grid iface-pack-grid-4">
           {EFFECTS.map((fx) => {
             const on = prefs.effect === fx.id;
             return (
               <button
                 key={fx.id}
                 type="button"
-                className={`iface-effect-card${on ? ' active' : ''}`}
+                className={`iface-pack${on ? ' active' : ''}`}
                 onClick={() => toggleEffect(fx.id)}
+                aria-pressed={on}
+                title={fx.description}
               >
-                <span className="iface-effect-orb">
-                  <Sparkles size={22} color={on ? 'var(--electric)' : '#64748b'} />
+                <span className={`iface-pack-swatch iface-pack-fx${on ? ' on' : ''}`} aria-hidden>
+                  <Sparkles size={18} />
                 </span>
-                <strong>{fx.title}</strong>
-                <span className="muted" style={{ fontSize: 12 }}>
-                  {fx.description}
-                </span>
-                <span className={`iface-onoff${on ? ' on' : ''}`}>{on ? 'ON' : 'OFF'}</span>
+                <span>{fx.title}</span>
               </button>
             );
           })}

@@ -38,7 +38,7 @@ export type LayoutActions = {
   accentRgb: string;
   onPauseToggle: () => void;
   onSymbols: () => void;
-  onStyle: () => void;
+  onStyle: (view?: 'hub' | 'themes' | 'layouts' | 'colours' | 'fonts' | 'effects' | 'custom' | 'settings') => void;
   onDelete: () => void;
   onHomeTap: () => void;
   onMetaTrader: () => void;
@@ -159,15 +159,15 @@ function LayoutBackdrop({
 function SettingsBar({ a }: { a: LayoutActions }) {
   return (
     <div className="lay-settings-bar" role="toolbar" aria-label="Interface settings">
-      <button type="button" className="lay-settings-chip" onClick={a.onStyle}>
+      <button type="button" className="lay-settings-chip" onClick={() => a.onStyle('themes')}>
         <Palette size={14} />
         <span>Themes</span>
       </button>
-      <button type="button" className="lay-settings-chip" onClick={a.onStyle}>
+      <button type="button" className="lay-settings-chip" onClick={() => a.onStyle('layouts')}>
         <Layers size={14} />
         <span>Layouts</span>
       </button>
-      <button type="button" className="lay-settings-chip is-main" onClick={a.onStyle}>
+      <button type="button" className="lay-settings-chip is-main" onClick={() => a.onStyle('hub')}>
         <Settings size={14} />
         <span>Settings</span>
       </button>
@@ -326,10 +326,10 @@ function RobotsStrip({
             <span>{statusLine(a)}</span>
           </div>
         </button>
-        <button type="button" className="lay-robot-card lay-robot-thumb" onClick={a.onStyle} aria-label={brandName(a)}>
+        <button type="button" className="lay-robot-card lay-robot-thumb" onClick={() => a.onStyle()} aria-label={brandName(a)}>
           <AvatarButton a={a} className="lay-robot-avatar" />
         </button>
-        <button type="button" className="lay-robot-card lay-robot-connect" onClick={a.onStyle}>
+        <button type="button" className="lay-robot-card lay-robot-connect" onClick={() => a.onStyle()}>
           <span className="lay-robot-gear">
             <Plus size={18} />
           </span>
@@ -338,7 +338,7 @@ function RobotsStrip({
             <span>Themes & layouts</span>
           </div>
         </button>
-        <button type="button" className="lay-robot-card lay-robot-settings" onClick={a.onStyle}>
+        <button type="button" className="lay-robot-card lay-robot-settings" onClick={() => a.onStyle()}>
           <span className="lay-robot-gear">
             <Settings size={18} />
           </span>
@@ -530,7 +530,7 @@ function VerticalLayout(a: LayoutActions) {
               <span>{statusLine(a)}</span>
             </div>
           </button>
-          <button type="button" className="lay-vert-robot lay-vert-connect" onClick={a.onStyle}>
+          <button type="button" className="lay-vert-robot lay-vert-connect" onClick={() => a.onStyle()}>
             <span className="lay-vert-plus">
               <Plus size={20} />
             </span>
@@ -757,7 +757,7 @@ function OrbitLayout(a: LayoutActions) {
             <AvatarButton a={a} className="lay-orbit-card-avatar" ring />
             <strong>{brandName(a)}</strong>
           </button>
-          <button type="button" className="lay-orbit-card is-connect" onClick={a.onStyle}>
+          <button type="button" className="lay-orbit-card is-connect" onClick={() => a.onStyle()}>
             <span className="lay-orbit-plus">
               <Plus size={18} />
             </span>
@@ -798,7 +798,7 @@ function StackLayout(a: LayoutActions) {
               <AvatarButton a={a} className="lay-stack-robot-avatar" ring />
               <strong>{brandName(a)}</strong>
             </button>
-            <button type="button" className="lay-stack-robot is-connect" onClick={a.onStyle}>
+            <button type="button" className="lay-stack-robot is-connect" onClick={() => a.onStyle()}>
               <Plus size={16} />
               <strong>New</strong>
             </button>

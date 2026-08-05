@@ -85,7 +85,17 @@ export function HomePage() {
   }, [coverImage, profileAvatar]);
 
   const [styleOpen, setStyleOpen] = useState(false);
+  const [styleView, setStyleView] = useState<
+    'hub' | 'themes' | 'layouts' | 'colours' | 'fonts' | 'effects' | 'custom' | 'settings'
+  >('hub');
   const [stylePrefs, setStylePrefs] = useState<InterfacePrefs>(() => loadInterfacePrefs());
+
+  const openStyle = (
+    view: 'hub' | 'themes' | 'layouts' | 'colours' | 'fonts' | 'effects' | 'custom' | 'settings' = 'hub',
+  ) => {
+    setStyleView(view);
+    setStyleOpen(true);
+  };
   const taps = useRef(0);
   const timer = useRef<number | null>(null);
   const eaTitle =
@@ -224,7 +234,7 @@ export function HomePage() {
         accentRgb={accentRgb}
         onPauseToggle={() => togglePause()}
         onSymbols={openSymbols}
-        onStyle={() => setStyleOpen(true)}
+        onStyle={openStyle}
         onDelete={confirmDelete}
         onHomeTap={onHomeTap}
         onMetaTrader={() => navigate('/app/metatrader')}
@@ -233,12 +243,16 @@ export function HomePage() {
 
       <InterfaceStyleModal
         open={styleOpen}
-        onClose={() => setStyleOpen(false)}
+        onClose={() => {
+          setStyleOpen(false);
+          setStyleView('hub');
+        }}
         prefs={stylePrefs}
         onChange={updateStylePrefs}
         avatarUrl={displayAvatar || ''}
         mentorBgUrl={heroImage}
         mentorMedia={bot.customMedia}
+        initialView={styleView}
         onOpenScanner={() => {
           setStyleOpen(false);
           navigate('/app/scanner');
