@@ -13,6 +13,8 @@ import {
   BadgeCheck,
   Bot,
   CandlestickChart,
+  Layers,
+  Palette,
   Pause,
   Play,
   Plus,
@@ -154,6 +156,25 @@ function LayoutBackdrop({
   );
 }
 
+function SettingsBar({ a }: { a: LayoutActions }) {
+  return (
+    <div className="lay-settings-bar" role="toolbar" aria-label="Interface settings">
+      <button type="button" className="lay-settings-chip" onClick={a.onStyle}>
+        <Palette size={14} />
+        <span>Themes</span>
+      </button>
+      <button type="button" className="lay-settings-chip" onClick={a.onStyle}>
+        <Layers size={14} />
+        <span>Layouts</span>
+      </button>
+      <button type="button" className="lay-settings-chip is-main" onClick={a.onStyle}>
+        <Settings size={14} />
+        <span>Settings</span>
+      </button>
+    </div>
+  );
+}
+
 function Shell({
   a,
   className,
@@ -166,6 +187,7 @@ function Shell({
   const bg = resolveBg(a);
   return (
     <LayoutBackdrop className={className} url={bg.url} kind={bg.kind} accentRgb={a.accentRgb}>
+      <SettingsBar a={a} />
       {children}
     </LayoutBackdrop>
   );
@@ -314,6 +336,15 @@ function RobotsStrip({
           <div className="lay-robot-meta">
             <strong>{connectLabel}</strong>
             <span>Themes & layouts</span>
+          </div>
+        </button>
+        <button type="button" className="lay-robot-card lay-robot-settings" onClick={a.onStyle}>
+          <span className="lay-robot-gear">
+            <Settings size={18} />
+          </span>
+          <div className="lay-robot-meta">
+            <strong>Settings</strong>
+            <span>Change layout & theme</span>
           </div>
         </button>
       </div>
@@ -665,6 +696,7 @@ function PillsLayout(a: LayoutActions) {
 
 /* ── 9 Tiles (ref: Signals / List / History) ────────────────── */
 function TilesLayout(a: LayoutActions) {
+  const { settings } = coreActions(a);
   const signals: ActionDef = {
     key: 'signals',
     label: 'Signals',
@@ -701,6 +733,7 @@ function TilesLayout(a: LayoutActions) {
         <div className="lay-tiles-start">
           <StartCircle a={a} />
         </div>
+        <ActionButton action={settings} className="lay-tiles-settings" />
       </div>
     </Shell>
   );
@@ -778,7 +811,7 @@ function StackLayout(a: LayoutActions) {
 
 /* ── 12 Frame (ref: framed square + equal squares) ──────────── */
 function FrameLayout(a: LayoutActions) {
-  const { start, remove, symbols } = coreActions(a);
+  const { start, remove, symbols, settings } = coreActions(a);
   return (
     <Shell a={a} className="lay-frame">
       <div className="lay-frame-stage">
@@ -799,6 +832,7 @@ function FrameLayout(a: LayoutActions) {
           <button type="button" className="lay-frame-robot" onClick={a.onHomeTap}>
             <strong>{brandName(a)}</strong>
           </button>
+          <ActionButton action={settings} className="lay-frame-settings" />
         </div>
       </div>
     </Shell>
