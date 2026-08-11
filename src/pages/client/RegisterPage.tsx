@@ -18,7 +18,6 @@ export function RegisterPage() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [error, setError] = useState('');
-  const [deviceBusy, setDeviceBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const taps = useRef(0);
   const timer = useRef<number | null>(null);
@@ -49,7 +48,8 @@ export function RegisterPage() {
     navigate('/waiting', { replace: true });
   };
 
-  const runRegister = async (force = false) => {
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     const emailErr = registrationEmailError(email);
     if (emailErr) {
       setError(emailErr);
@@ -64,17 +64,15 @@ export function RegisterPage() {
     };
     setBusy(true);
     setError('');
-    setDeviceBusy(false);
     clearDeviceKickMessage();
     try {
       // Registration is recorded in the Super Admin Subscriptions queue —
       // no email is sent (the queue is the single source of truth)
-      if (!force) submitClientRegistration(profile);
-      const next = await registerLocal(profile, { force });
+      submitClientRegistration(profile);
+      const next = await registerLocal(profile);
       finishNavigate(next);
     } catch (err) {
       if (err instanceof DeviceInUseError) {
-        setDeviceBusy(true);
         setError(err.message);
       } else {
         setError(err instanceof Error ? err.message : 'Could not sign in. Try again.');
@@ -82,11 +80,6 @@ export function RegisterPage() {
     } finally {
       setBusy(false);
     }
-  };
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await runRegister(false);
   };
 
   return (
@@ -121,7 +114,10 @@ export function RegisterPage() {
       </p>
 
       {deviceKickMessage ? (
-        <p className="error" style={{ marginBottom: 14, textAlign: 'left', maxWidth: 420, marginInline: 'auto' }}>
+        <p
+          className="error"
+          style={{ marginBottom: 14, textAlign: 'left', maxWidth: 420, marginInline: 'auto' }}
+        >
           {deviceKickMessage}
         </p>
       ) : null}
@@ -131,10 +127,7 @@ export function RegisterPage() {
           <label>Email *</label>
           <input
             value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              setDeviceBusy(false);
-            }}
+            onChange={(e) => setEmail(e.target.value)}
             placeholder="your@email.com"
             autoComplete="email"
             inputMode="email"
@@ -162,17 +155,6 @@ export function RegisterPage() {
         <button className="btn btn-blue" type="submit" disabled={busy}>
           {busy ? 'Checking…' : 'Access Lumo Edge'}
         </button>
-        {deviceBusy ? (
-          <button
-            className="btn btn-ghost"
-            type="button"
-            style={{ marginTop: 10 }}
-            disabled={busy}
-            onClick={() => void runRegister(true)}
-          >
-            Continue on this device (sign out the other)
-          </button>
-        ) : null}
       </form>
     </div>
   );

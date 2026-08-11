@@ -19,7 +19,7 @@ export class DeviceInUseError extends Error {
     super(
       `This email is already signed in on another device${
         otherLabel ? ` (${otherLabel})` : ''
-      }. Sign out there first, or continue here to kick the other device.`,
+      }. Sign out on that device first — this device is not allowed while the other session is active.`,
     );
     this.name = 'DeviceInUseError';
     this.otherLabel = otherLabel;
@@ -97,8 +97,8 @@ export function isDeviceConflict(remoteDevice?: DeviceLock | null): boolean {
   return isDeviceRecentlyActive(remoteDevice);
 }
 
-export function assertDeviceAvailable(remoteDevice?: DeviceLock | null, force = false) {
-  if (force) return;
+/** Never allow a second device while the first is still active. */
+export function assertDeviceAvailable(remoteDevice?: DeviceLock | null) {
   if (isDeviceConflict(remoteDevice)) {
     throw new DeviceInUseError(remoteDevice?.label || 'another device');
   }

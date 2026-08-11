@@ -93,7 +93,7 @@ type Ctx = {
   deviceKickMessage: string;
   clearDeviceKickMessage: () => void;
   setAccessStatus: (status: AccessStatus) => void;
-  registerLocal: (u: UserProfile, opts?: { force?: boolean }) => Promise<Session>;
+  registerLocal: (u: UserProfile) => Promise<Session>;
   markPaid: () => void;
   activateWithLicense: (key: string, sync?: LicenseSync) => void;
   /** Update branding/media from mentor without changing pause/access */
@@ -380,16 +380,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
-  const persist = useCallback((next: Session) => {
-    const withDevice: Session = {
-      ...next,
-      device: next.device?.id === getDeviceId() ? touchDeviceClaim(next.device) : makeDeviceClaim(),
-    };
+  const persist = useCallback((next: Session, opts?: { releaseDevice?: boolean }) => {
+    const email = next.user?.email;
+    let withDevice: Session = next;
+    if (opts?.releaseDevice) {
+      withDevice = { ...next, device: undefined };
+    } else if (next.user) {
+      withDevice = {
+        ...next,
+        device:
+          next.device?.id === getDeviceId()
+            ? touchDeviceClaim(next.device)
+            : makeDeviceClaim(),
+      };
+    }
     const normalized = normalizeSession(withDevice);
     setSession(normalized);
     saveJSON(KEY, normalized);
-    if (normalized.user?.email) {
-      void pushSession(normalized.user.email, normalized);
+    if (email) {
+      void pushSession(email, normalized);
     }
   }, []);
 
@@ -547,8 +556,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         persist({ ...session, accessStatus });
       },
-      registerLocal: async (user, opts) => {
-        const force = Boolean(opts?.force);
+      registerLocal: async (user) => {
         const existing =
           session.user?.email?.toLowerCase() === user.email.toLowerCase()
             ? session
@@ -556,8 +564,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const sameEmail =
           existing.user?.email?.toLowerCase() === user.email.toLowerCase();
         const remote = await fetchSession<Session>(user.email);
-        // Block if another device still holds an active claim
-        assertDeviceAvailable(remote?.device, force);
+        // Hard block — another active device keeps the session; this device cannot enter
+        assertDeviceAvailable(remote?.device);
         const base: Session = normalizeSession({
           user,
           accessStatus:
@@ -575,7 +583,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             : { ...DEFAULT_BOT, licenseKey: '', imageUrl: '' },
         });
         let merged = mergeSessions(base, remote);
-        // Force / first claim always stamps THIS device
+        // Only claim this device when no other active device was found
         merged = normalizeSession({
           ...merged,
           user,
@@ -716,6 +724,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // still clear locally
           }
         }
+        // Keep this device's claim — another phone still cannot use the email
         persist({
           ...session,
           accessStatus: 'pending',
