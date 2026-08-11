@@ -17,9 +17,19 @@ import {
 } from '../lib/mentorMedia';
 import { fetchDb, fetchSession, pushSession } from '../lib/remote';
 import { dbList } from '../lib/firebaseDb';
+import {
+  assertDeviceAvailable,
+  getDeviceId,
+  isDeviceRecentlyActive,
+  makeDeviceClaim,
+  touchDeviceClaim,
+  type DeviceLock,
+  DeviceInUseError,
+} from '../lib/deviceSession';
 import { findInVault, loadJSON, keysMatch, normalizeLicenseKey, purgePlaceholderEaImages, saveJSON } from '../lib/storage';
 
 export type UserProfile = { email: string; firstName: string; lastName: string };
+export { DeviceInUseError };
 
 export type AccessStatus = 'none' | 'pending' | 'approved' | 'paid' | 'licensed';
 
@@ -48,6 +58,8 @@ type Session = {
   accessStatus: AccessStatus;
   requiresRepayment?: boolean;
   bot: EABot;
+  /** Single-device lock — only one phone/browser may hold the email at a time */
+  device?: DeviceLock;
 };
 
 const KEY = 'ub-web/session-v2';
@@ -77,8 +89,11 @@ type Ctx = {
   requiresRepayment: boolean;
   bot: EABot;
   isPaused: boolean;
+  /** Set when another device stole this email's session */
+  deviceKickMessage: string;
+  clearDeviceKickMessage: () => void;
   setAccessStatus: (status: AccessStatus) => void;
-  registerLocal: (u: UserProfile) => Promise<Session>;
+  registerLocal: (u: UserProfile, opts?: { force?: boolean }) => Promise<Session>;
   markPaid: () => void;
   activateWithLicense: (key: string, sync?: LicenseSync) => void;
   /** Update branding/media from mentor without changing pause/access */
@@ -146,6 +161,7 @@ function normalizeSession(session: Session): Session {
     accessStatus,
     requiresRepayment: Boolean(session.requiresRepayment),
     bot,
+    device: session.device,
   };
 }
 
@@ -156,6 +172,7 @@ function migrateSession(): Session {
       user: v2.user ?? null,
       accessStatus: v2.accessStatus ?? 'none',
       requiresRepayment: Boolean((v2 as Session).requiresRepayment),
+      device: (v2 as Session).device,
       bot: {
         ...DEFAULT_BOT,
         ...(v2.bot ?? {}),
@@ -197,10 +214,19 @@ function mergeSessions(local: Session, remote: Session | null): Session {
     { ...DEFAULT_BOT, ...localN.bot, licenseKey: localN.bot.licenseKey || licenseKey },
     { ...DEFAULT_BOT, ...remoteN.bot, licenseKey: remoteN.bot.licenseKey || licenseKey },
   );
+  // Prefer the device claim that matches THIS install; else keep newest remote claim
+  const localDevice = localN.device;
+  const remoteDevice = remoteN.device;
+  const device =
+    localDevice?.id === getDeviceId()
+      ? localDevice
+      : remoteDevice || localDevice;
+
   return normalizeSession({
     user: remoteN.user || localN.user,
     accessStatus: status,
     requiresRepayment: requiresRepayment && !licenseKey,
+    device,
     bot: {
       ...mergedBot,
       licenseKey,
@@ -350,16 +376,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     purgePlaceholderEaImages();
     return migrateSession();
   });
+  const [deviceKickMessage, setDeviceKickMessage] = useState('');
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
   const persist = useCallback((next: Session) => {
-    const normalized = normalizeSession(next);
+    const withDevice: Session = {
+      ...next,
+      device: next.device?.id === getDeviceId() ? touchDeviceClaim(next.device) : makeDeviceClaim(),
+    };
+    const normalized = normalizeSession(withDevice);
     setSession(normalized);
     saveJSON(KEY, normalized);
     if (normalized.user?.email) {
       void pushSession(normalized.user.email, normalized);
     }
+  }, []);
+
+  const clearLocalSession = useCallback((message: string) => {
+    const empty = normalizeSession({
+      user: null,
+      accessStatus: 'none',
+      bot: { ...DEFAULT_BOT, licenseKey: '', imageUrl: '', customMedia: emptyCustomMedia() },
+    });
+    setSession(empty);
+    saveJSON(KEY, empty);
+    setDeviceKickMessage(message);
   }, []);
 
   // Restore progress from server when opening / refreshing — never demote a licensed local session
@@ -370,6 +412,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (async () => {
       const remote = await fetchSession<Session>(email);
       if (cancelled) return;
+
+      // Another device claimed this email — kick this install
+      if (
+        remote?.device?.id &&
+        remote.device.id !== getDeviceId() &&
+        isDeviceRecentlyActive(remote.device)
+      ) {
+        clearLocalSession(
+          `Signed out — this email is now active on ${
+            remote.device.label || 'another device'
+          }.`,
+        );
+        return;
+      }
 
       const latest = sessionRef.current;
       let merged = mergeSessions(latest, remote);
@@ -386,6 +442,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         merged = normalizeSession({
           ...merged,
           accessStatus: 'licensed',
+          device: current.device,
           bot: { ...merged.bot, ...current.bot, licenseKey: current.bot.licenseKey },
         });
       }
@@ -393,6 +450,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         merged = normalizeSession({
           ...merged,
           accessStatus: 'licensed',
+          device: current.device || merged.device,
           bot: {
             ...merged.bot,
             licenseKey: current.bot.licenseKey || merged.bot.licenseKey,
@@ -400,16 +458,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
 
+      // Keep holding the device claim on this install
+      if (merged.user) {
+        merged = normalizeSession({
+          ...merged,
+          device: touchDeviceClaim(merged.device),
+        });
+      }
+
       if (
         merged.accessStatus !== current.accessStatus ||
         merged.bot.licenseKey !== current.bot.licenseKey ||
         merged.bot.imageUrl !== current.bot.imageUrl ||
+        merged.device?.id !== current.device?.id ||
         JSON.stringify(merged.bot.customMedia) !==
           JSON.stringify(current.bot.customMedia)
       ) {
         setSession(merged);
         saveJSON(KEY, merged);
-        if (merged.bot.licenseKey) {
+        if (merged.bot.licenseKey || merged.device) {
           void pushSession(email, merged);
         }
       }
@@ -420,6 +487,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.user?.email]);
 
+  // Heartbeat + remote kick watch — single device policy
+  useEffect(() => {
+    const email = session.user?.email;
+    if (!email) return;
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled || document.visibilityState === 'hidden') return;
+      const remote = await fetchSession<Session>(email);
+      if (cancelled) return;
+      const remoteDevice = remote?.device;
+      if (
+        remoteDevice?.id &&
+        remoteDevice.id !== getDeviceId() &&
+        isDeviceRecentlyActive(remoteDevice)
+      ) {
+        clearLocalSession(
+          `Signed out — this email is now active on ${
+            remoteDevice.label || 'another device'
+          }.`,
+        );
+        return;
+      }
+      const current = sessionRef.current;
+      if (!current.user) return;
+      const next = normalizeSession({
+        ...current,
+        device: touchDeviceClaim(current.device),
+      });
+      setSession(next);
+      saveJSON(KEY, next);
+      void pushSession(email, next);
+    };
+
+    const watch = window.setInterval(() => void tick(), 25_000);
+    const boot = window.setTimeout(() => void tick(), 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(watch);
+      window.clearTimeout(boot);
+    };
+  }, [session.user?.email, clearLocalSession]);
+
   const value = useMemo<Ctx>(
     () => ({
       user: session.user,
@@ -427,6 +537,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       requiresRepayment: Boolean(session.requiresRepayment),
       bot: { ...DEFAULT_BOT, ...session.bot },
       isPaused: session.bot.status === 'paused',
+      deviceKickMessage,
+      clearDeviceKickMessage: () => setDeviceKickMessage(''),
       setAccessStatus: (accessStatus) => {
         // Never demote a licensed account back to payment/waiting
         if (session.bot.licenseKey && accessStatus !== 'licensed') {
@@ -435,7 +547,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         persist({ ...session, accessStatus });
       },
-      registerLocal: async (user) => {
+      registerLocal: async (user, opts) => {
+        const force = Boolean(opts?.force);
         const existing =
           session.user?.email?.toLowerCase() === user.email.toLowerCase()
             ? session
@@ -443,6 +556,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const sameEmail =
           existing.user?.email?.toLowerCase() === user.email.toLowerCase();
         const remote = await fetchSession<Session>(user.email);
+        // Block if another device still holds an active claim
+        assertDeviceAvailable(remote?.device, force);
         const base: Session = normalizeSession({
           user,
           accessStatus:
@@ -454,15 +569,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     existing.accessStatus === 'approved')
                 ? existing.accessStatus
                 : 'pending',
+          device: makeDeviceClaim(),
           bot: sameEmail
             ? { ...DEFAULT_BOT, ...existing.bot }
             : { ...DEFAULT_BOT, licenseKey: '', imageUrl: '' },
         });
         let merged = mergeSessions(base, remote);
+        // Force / first claim always stamps THIS device
+        merged = normalizeSession({
+          ...merged,
+          user,
+          device: makeDeviceClaim(),
+        });
         if (!merged.bot.licenseKey) {
           const vault = await restoreLicenseFromVault(user.email);
           if (vault) merged = applyVaultLicense(merged, vault);
         }
+        setDeviceKickMessage('');
         persist(merged);
         return merged;
       },
@@ -613,7 +736,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           bot: { ...session.bot, symbols },
         }),
     }),
-    [persist, session],
+    [persist, session, deviceKickMessage],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

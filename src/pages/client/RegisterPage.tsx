@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { DeviceInUseError, useApp } from '../../context/AppContext';
 import { useAdmin } from '../../context/AdminContext';
-import { useApp } from '../../context/AppContext';
 import { useAppLogo } from '../../lib/appLogo';
 import {
   normalizeRegistrationEmail,
@@ -11,13 +11,15 @@ import {
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const { registerLocal } = useApp();
+  const { registerLocal, deviceKickMessage, clearDeviceKickMessage } = useApp();
   const { openPortal, submitClientRegistration } = useAdmin();
   const appLogo = useAppLogo();
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [error, setError] = useState('');
+  const [deviceBusy, setDeviceBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
   const taps = useRef(0);
   const timer = useRef<number | null>(null);
 
@@ -35,8 +37,19 @@ export function RegisterPage() {
     }, 900);
   };
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const finishNavigate = (next: { accessStatus: string; bot: { licenseKey?: string } }) => {
+    if (next.accessStatus === 'licensed' || next.bot.licenseKey?.trim()) {
+      navigate('/app', { replace: true });
+      return;
+    }
+    if (next.accessStatus === 'approved' || next.accessStatus === 'paid') {
+      navigate('/activate', { replace: true });
+      return;
+    }
+    navigate('/waiting', { replace: true });
+  };
+
+  const runRegister = async (force = false) => {
     const emailErr = registrationEmailError(email);
     if (emailErr) {
       setError(emailErr);
@@ -49,20 +62,31 @@ export function RegisterPage() {
       firstName: firstName.trim() || fromEmail.firstName,
       lastName: lastName.trim() || fromEmail.lastName,
     };
-    // Registration is recorded in the Super Admin Subscriptions queue —
-    // no email is sent (the queue is the single source of truth)
-    submitClientRegistration(profile);
-    const next = await registerLocal(profile);
-    // Already licensed (same email / vault) → home, not payment again
-    if (next.accessStatus === 'licensed' || next.bot.licenseKey?.trim()) {
-      navigate('/app', { replace: true });
-      return;
+    setBusy(true);
+    setError('');
+    setDeviceBusy(false);
+    clearDeviceKickMessage();
+    try {
+      // Registration is recorded in the Super Admin Subscriptions queue —
+      // no email is sent (the queue is the single source of truth)
+      if (!force) submitClientRegistration(profile);
+      const next = await registerLocal(profile, { force });
+      finishNavigate(next);
+    } catch (err) {
+      if (err instanceof DeviceInUseError) {
+        setDeviceBusy(true);
+        setError(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : 'Could not sign in. Try again.');
+      }
+    } finally {
+      setBusy(false);
     }
-    if (next.accessStatus === 'approved' || next.accessStatus === 'paid') {
-      navigate('/activate', { replace: true });
-      return;
-    }
-    navigate('/waiting', { replace: true });
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await runRegister(false);
   };
 
   return (
@@ -96,12 +120,21 @@ export function RegisterPage() {
         Create your account to get started — worldwide, email only required
       </p>
 
+      {deviceKickMessage ? (
+        <p className="error" style={{ marginBottom: 14, textAlign: 'left', maxWidth: 420, marginInline: 'auto' }}>
+          {deviceKickMessage}
+        </p>
+      ) : null}
+
       <form className="glow-card" onSubmit={onSubmit} style={{ textAlign: 'left' }}>
         <div className="field">
           <label>Email *</label>
           <input
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setDeviceBusy(false);
+            }}
             placeholder="your@email.com"
             autoComplete="email"
             inputMode="email"
@@ -126,9 +159,20 @@ export function RegisterPage() {
           />
         </div>
         {error ? <p className="error">{error}</p> : null}
-        <button className="btn btn-blue" type="submit">
-          Access Lumo Edge
+        <button className="btn btn-blue" type="submit" disabled={busy}>
+          {busy ? 'Checking…' : 'Access Lumo Edge'}
         </button>
+        {deviceBusy ? (
+          <button
+            className="btn btn-ghost"
+            type="button"
+            style={{ marginTop: 10 }}
+            disabled={busy}
+            onClick={() => void runRegister(true)}
+          >
+            Continue on this device (sign out the other)
+          </button>
+        ) : null}
       </form>
     </div>
   );
