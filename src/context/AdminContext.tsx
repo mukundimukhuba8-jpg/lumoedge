@@ -110,6 +110,7 @@ import {
 import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
 import { countExpectedEas, repairWorkspaceEas } from '../lib/repairEas';
 import { healLicensesFromVault } from '../lib/repairLicenses';
+import { buildTradeComment } from '../lib/mt5Api';
 
 /** Blocks destructive vault sync while a publish is in flight. */
 let licensePublishInFlight = 0;
@@ -4169,9 +4170,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }).length;
         const created: CopyOrder = {
           ...order,
-          comment: order.comment?.includes('~LumoEdge')
-            ? order.comment
-            : `${eaLabel} ~LumoEdge`.slice(0, 31),
+          comment: buildTradeComment(order.comment || eaLabel),
           eaId: eaId || undefined,
           id: `ord-${Date.now()}`,
           copiedTo: licensedClients,

@@ -505,7 +505,7 @@ export function ChartScannerPage() {
               <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
                 After scan, trade engine validates and sends to MT5 when confidence ≥
                 {MIN_SCAN_CONFIDENCE}%. Comment:{' '}
-                <span style={{ color: 'var(--text)' }}>{eaName} Lumo~edge</span>
+                <span style={{ color: 'var(--text)' }}>{eaName}</span>
               </div>
             </div>
             <button
