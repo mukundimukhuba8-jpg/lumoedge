@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { TradeEnginePanel } from '../../components/TradeEnginePanel';
+import { apiUrl } from '../../lib/apiBase';
 import {
   DAILY_SCAN_LIMIT,
   MIN_SCAN_CONFIDENCE,
@@ -78,6 +79,7 @@ export function ChartScannerPage() {
   const [status, setStatus] = useState('');
   const [tradeStatus, setTradeStatus] = useState('');
   const [aiLive, setAiLive] = useState<boolean | null>(null);
+  const [aiStatusError, setAiStatusError] = useState(false);
   const [editSymbol, setEditSymbol] = useState('');
   const [scanPreview, setScanPreview] = useState('');
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
@@ -102,16 +104,39 @@ export function ChartScannerPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch('/api/scan/status')
-      .then((r) => r.json())
-      .then((data: { configured?: boolean }) => {
-        if (!cancelled) setAiLive(Boolean(data?.configured));
-      })
-      .catch(() => {
-        if (!cancelled) setAiLive(false);
-      });
+    const check = async () => {
+      for (let attempt = 0; attempt < 3 && !cancelled; attempt += 1) {
+        try {
+          const r = await fetch(apiUrl('/api/scan/status'), {
+            cache: 'no-store',
+          });
+          if (!r.ok) throw new Error(`status ${r.status}`);
+          const data = (await r.json()) as { configured?: boolean };
+          if (!cancelled) {
+            setAiLive(Boolean(data?.configured));
+            setAiStatusError(false);
+          }
+          return;
+        } catch {
+          if (attempt < 2) {
+            await new Promise((ok) => setTimeout(ok, 400 * (attempt + 1)));
+          }
+        }
+      }
+      // Network/shell failure ≠ missing key — avoid a false "Demo" banner
+      if (!cancelled) {
+        setAiLive(null);
+        setAiStatusError(true);
+      }
+    };
+    void check();
+    const onFocus = () => {
+      void check();
+    };
+    window.addEventListener('focus', onFocus);
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', onFocus);
     };
   }, []);
 
@@ -332,7 +357,13 @@ export function ChartScannerPage() {
               <Bot size={16} />
             </span>
             <span>
-              {aiLive == null ? 'Checking…' : aiLive ? 'AI Live' : 'Demo mode'}
+              {aiLive == null
+                ? aiStatusError
+                  ? 'AI status offline'
+                  : 'Checking…'
+                : aiLive
+                  ? 'AI Live'
+                  : 'Demo mode'}
             </span>
           </div>
         </header>
@@ -364,7 +395,9 @@ export function ChartScannerPage() {
           <p className="muted scan-hero-sub">
             {aiLive
               ? 'AI reads the exact symbol & timeframe from your chart image.'
-              : 'Demo picks a random symbol until CHART_SCAN_API_KEY is set on Vercel.'}
+              : aiStatusError
+                ? 'Could not reach the scan service. Check your connection and try again.'
+                : 'Demo picks a random symbol until CHART_SCAN_API_KEY is set on Vercel.'}
           </p>
           <div className="scan-actions shape-actions">
             <button
@@ -434,6 +467,16 @@ export function ChartScannerPage() {
               <strong>Production</strong>, then Redeploy. Confirm at{' '}
               <code>/api/scan/status</code> shows{' '}
               <code>configured: true</code>.
+            </div>
+          </div>
+        ) : null}
+
+        {aiStatusError && aiLive == null ? (
+          <div className="scan-alert-card shape-polygon" role="status">
+            <strong>Could not verify AI status</strong>
+            <div>
+              The app could not reach <code>/api/scan/status</code>. Pull to
+              refresh or reopen Chart Scanner when you have a stable connection.
             </div>
           </div>
         ) : null}

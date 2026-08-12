@@ -26,6 +26,7 @@ import {
   type DeviceLock,
   DeviceInUseError,
 } from '../lib/deviceSession';
+import { apiUrl } from '../lib/apiBase';
 import { findInVault, loadJSON, keysMatch, normalizeLicenseKey, purgePlaceholderEaImages, saveJSON } from '../lib/storage';
 
 export type UserProfile = { email: string; firstName: string; lastName: string };
@@ -715,7 +716,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const key = session.bot.licenseKey?.trim();
         if (email && key) {
           try {
-            await fetch('/api/licenses/release', {
+            await fetch(apiUrl('/api/licenses/release'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ key, email }),

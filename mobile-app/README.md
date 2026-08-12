@@ -52,5 +52,6 @@ Archive + upload with Xcode (Apple Developer account required).
 
 ## Config
 
-[`capacitor.config.ts`](capacitor.config.ts) points `server.url` at `https://lumoedge.com`.  
-Change that only if you use a staging URL.
+[`capacitor.config.json`](capacitor.config.json) sets `server.url` to `https://lumoedge.com`
+so the Android shell loads the live site (and real `/api` backends) instead of local
+assets that fake the same hostname. Change that only for a staging URL.

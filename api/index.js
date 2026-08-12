@@ -32,7 +32,10 @@ const FIREBASE_DB_URL = (
   'https://lumoedge-61c02-default-rtdb.firebaseio.com'
 ).replace(/\/$/, '');
 
-/** Env first, then Firebase secrets path (set without committing the key). */
+/**
+ * Prefer Vercel/server env. Firebase fallback is legacy only — /lumo is
+ * world-readable in current rules, so never store production keys there.
+ */
 async function resolveChartScanConfig() {
   const envKey =
     process.env.CHART_SCAN_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -43,6 +46,7 @@ async function resolveChartScanConfig() {
   if (envKey) {
     return { apiKey: envKey, apiUrl: envUrl, model: envModel, source: 'env' };
   }
+  // Legacy fallback (insecure if RTDB rules allow public read). Prefer env.
   try {
     const res = await fetch(`${FIREBASE_DB_URL}/lumo/secrets/chartScan.json`, {
       headers: { Accept: 'application/json' },
@@ -1639,8 +1643,10 @@ export default async function handler(req, res) {
         source: scanCfg.source,
         mt5Base: Boolean(process.env.MT5_API_BASE),
         hint: configured
-          ? `Live AI scans enabled (${scanCfg.source})`
-          : 'Missing Chart Scanner API key',
+          ? scanCfg.source === 'firebase'
+            ? 'Live AI scans enabled (firebase) — move key to Vercel CHART_SCAN_API_KEY and delete Firebase secret'
+            : `Live AI scans enabled (${scanCfg.source})`
+          : 'Missing Chart Scanner API key — set CHART_SCAN_API_KEY on Vercel Production and redeploy',
       });
       return;
     }

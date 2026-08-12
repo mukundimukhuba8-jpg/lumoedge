@@ -3,6 +3,8 @@
  * MT5API RESTFul swagger host (http://66.23.225.158) through /api/mt5.
  */
 
+import { apiUrl } from './apiBase';
+
 const PROXY_BASE = '/api/mt5';
 
 const SERVER_ALIASES: Record<string, string> = {
@@ -27,7 +29,7 @@ async function mt5Fetch(path: string, init?: RequestInit): Promise<Response> {
   const ac = new AbortController();
   const timer = window.setTimeout(() => ac.abort(), 22_000);
   try {
-    const res = await fetch(`${PROXY_BASE}${path}`, {
+    const res = await fetch(apiUrl(`${PROXY_BASE}${path}`), {
       ...init,
       signal: init?.signal ?? ac.signal,
       headers: {

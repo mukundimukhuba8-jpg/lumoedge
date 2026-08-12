@@ -1,3 +1,4 @@
+import { apiUrl } from './apiBase';
 import { fetchDb, pushDb } from './remote';
 import { loadJSON, saveJSON } from './storage';
 
@@ -390,7 +391,7 @@ export async function runChartScan(
   }
   const timer = window.setTimeout(() => ac.abort(), SCAN_TIMEOUT_MS);
   try {
-    const res = await fetch('/api/scan', {
+    const res = await fetch(apiUrl('/api/scan'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: imageDataUrl }),

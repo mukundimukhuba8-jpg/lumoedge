@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { apiUrl } from '../lib/apiBase';
 import { isAdminUiBusy } from '../lib/adminUiGate';
 import { saveDashStats } from '../lib/adminDashCache';
 import {
@@ -169,7 +170,9 @@ async function maybeRepairEasOnServer(mentorId: string): Promise<boolean> {
   if (Date.now() - last < SERVER_EAS_REPAIR_COOLDOWN_MS) return false;
   lastServerEasRepair.set(mentorId, Date.now());
   try {
-    const res = await fetch('/api/workspaces/repair-eas', { method: 'POST' });
+    const res = await fetch(apiUrl('/api/workspaces/repair-eas'), {
+      method: 'POST',
+    });
     return res.ok;
   } catch {
     return false;
