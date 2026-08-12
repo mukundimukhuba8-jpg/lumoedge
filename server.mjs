@@ -448,20 +448,11 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // No key yet → demo scan so UI still works (70–90%)
       if (!CHART_SCAN_API_KEY) {
-        const accuracy = 70 + Math.floor(Math.random() * 21);
-        const demoSymbols = ['XAUUSD', 'EURUSD', 'GBPUSD', 'NAS100', 'BTCUSD'];
-        const symbol = demoSymbols[Math.floor(Math.random() * demoSymbols.length)];
-        const direction = Math.random() > 0.5 ? 'buy' : 'sell';
-        sendJson(res, 200, {
-          ok: true,
-          demo: true,
-          accuracy,
-          symbol,
-          timeframe: 'M15',
-          direction,
-          summary: 'Demo mode — add CHART_SCAN_API_KEY on the server for live AI scans.',
+        sendJson(res, 503, {
+          ok: false,
+          accuracy: 0,
+          error: 'Scanner unavailable. Please try again later.',
         });
         return;
       }

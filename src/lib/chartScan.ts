@@ -405,17 +405,20 @@ export async function runChartScan(
       return {
         ok: false,
         accuracy: 0,
-        error:
-          res.status === 404
-            ? 'Chart Scanner API not deployed yet. Redeploy the latest build.'
-            : `Scan failed (${res.status})`,
+        error: 'Scanner unavailable. Please try again later.',
       };
     }
     if (!res.ok) {
+      const msg = String(data?.error || '').trim();
+      const safe =
+        msg &&
+        !/CHART_SCAN|Vercel|OpenAI|API key|redeploy|configured/i.test(msg)
+          ? msg
+          : 'Scanner unavailable. Please try again later.';
       return {
         ok: false,
         accuracy: 0,
-        error: data.error || `Scan failed (${res.status})`,
+        error: safe,
       };
     }
     return data;
@@ -428,9 +431,7 @@ export async function runChartScan(
       accuracy: 0,
       error: aborted
         ? 'Scan timed out — try a clearer chart screenshot.'
-        : e instanceof Error
-          ? e.message
-          : 'Scan request failed',
+        : 'Scanner unavailable. Please try again later.',
     };
   } finally {
     window.clearTimeout(timer);

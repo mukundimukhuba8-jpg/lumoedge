@@ -316,17 +316,19 @@ export function ChartScannerPage() {
       setHistory(nextHistory);
       await playReveal(item);
       if (gen !== scanGenRef.current) return;
-      setStatus(
-        result.demo
-          ? 'Demo scan complete'
-          : 'Scan complete — launching trade engine…',
-      );
+      setStatus('Scan complete — launching trade engine…');
       await launchTradeEngine(item);
     } catch (e) {
       if (gen !== scanGenRef.current) return;
       setPhase('idle');
-      setStatus(e instanceof Error ? e.message : 'Scan failed');
-      alert(e instanceof Error ? e.message : 'Scan failed');
+      const raw = e instanceof Error ? e.message : '';
+      const msg =
+        raw &&
+        !/CHART_SCAN|Vercel|OpenAI|API key|redeploy|configured/i.test(raw)
+          ? raw
+          : 'Scanner unavailable. Please try again later.';
+      setStatus(msg);
+      alert(msg);
     } finally {
       if (gen === scanGenRef.current) {
         setPhase((p) => (p === 'scanning' ? 'idle' : p));
@@ -359,11 +361,11 @@ export function ChartScannerPage() {
             <span>
               {aiLive == null
                 ? aiStatusError
-                  ? 'AI status offline'
+                  ? 'Unavailable'
                   : 'Checking…'
                 : aiLive
                   ? 'AI Live'
-                  : 'Demo mode'}
+                  : 'Unavailable'}
             </span>
           </div>
         </header>
@@ -393,11 +395,9 @@ export function ChartScannerPage() {
           </div>
           <p className="scan-upload-label">Upload your MT5 chart</p>
           <p className="muted scan-hero-sub">
-            {aiLive
-              ? 'AI reads the exact symbol & timeframe from your chart image.'
-              : aiStatusError
-                ? 'Could not reach the scan service. Check your connection and try again.'
-                : 'Demo picks a random symbol until CHART_SCAN_API_KEY is set on Vercel.'}
+            {aiStatusError && aiLive == null
+              ? 'Scanner is temporarily unavailable. Try again shortly.'
+              : 'AI reads the exact symbol & timeframe from your chart image.'}
           </p>
           <div className="scan-actions shape-actions">
             <button
@@ -457,27 +457,10 @@ export function ChartScannerPage() {
           </p>
         ) : null}
 
-        {aiLive === false ? (
+        {aiLive === false || (aiStatusError && aiLive == null) ? (
           <div className="scan-alert-card shape-polygon" role="status">
-            <strong>Demo assistance only</strong>
-            <div>
-              OpenAI key is not on the live server yet. In Vercel → Settings →
-              Environment Variables, add{' '}
-              <code>CHART_SCAN_API_KEY</code> for{' '}
-              <strong>Production</strong>, then Redeploy. Confirm at{' '}
-              <code>/api/scan/status</code> shows{' '}
-              <code>configured: true</code>.
-            </div>
-          </div>
-        ) : null}
-
-        {aiStatusError && aiLive == null ? (
-          <div className="scan-alert-card shape-polygon" role="status">
-            <strong>Could not verify AI status</strong>
-            <div>
-              The app could not reach <code>/api/scan/status</code>. Pull to
-              refresh or reopen Chart Scanner when you have a stable connection.
-            </div>
+            <strong>Scanner unavailable</strong>
+            <div>Please try again in a moment. If it keeps failing, contact support.</div>
           </div>
         ) : null}
 

@@ -1495,18 +1495,10 @@ export default async function handler(req, res) {
       const CHART_SCAN_MODEL = scanCfg.model;
 
       if (!CHART_SCAN_API_KEY) {
-        const accuracy = 62 + Math.floor(Math.random() * 27); // 62-88, never 89+
-        const demoSymbols = ['XAUUSD', 'EURUSD', 'GBPUSD', 'NAS100', 'BTCUSD'];
-        const symbol = demoSymbols[Math.floor(Math.random() * demoSymbols.length)];
-        const direction = Math.random() > 0.5 ? 'buy' : 'sell';
-        send(res, 200, {
-          ok: true,
-          demo: true,
-          accuracy,
-          symbol,
-          timeframe: 'M15',
-          direction,
-          summary: 'Demo mode — Chart Scanner API key not configured.',
+        send(res, 503, {
+          ok: false,
+          accuracy: 0,
+          error: 'Scanner unavailable. Please try again later.',
         });
         return;
       }
@@ -1643,10 +1635,8 @@ export default async function handler(req, res) {
         source: scanCfg.source,
         mt5Base: Boolean(process.env.MT5_API_BASE),
         hint: configured
-          ? scanCfg.source === 'firebase'
-            ? 'Live AI scans enabled (firebase) — move key to Vercel CHART_SCAN_API_KEY and delete Firebase secret'
-            : `Live AI scans enabled (${scanCfg.source})`
-          : 'Missing Chart Scanner API key — set CHART_SCAN_API_KEY on Vercel Production and redeploy',
+          ? 'Live AI scans enabled'
+          : 'Scanner unavailable',
       });
       return;
     }
