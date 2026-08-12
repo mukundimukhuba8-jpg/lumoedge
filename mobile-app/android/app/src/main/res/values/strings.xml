@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Lumo Edge</string>
+    <string name="title_activity_main">Lumo Edge</string>
+    <string name="package_name">com.lumoedge.app</string>
+    <string name="custom_url_scheme">com.lumoedge.app</string>
+</resources>
