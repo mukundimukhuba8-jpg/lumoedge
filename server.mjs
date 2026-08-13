@@ -617,53 +617,58 @@ const server = http.createServer(async (req, res) => {
         });
         return;
       }
+      const normalizeTok = (raw) => {
+        let v = String(raw || '').trim();
+        const m = v.match(
+          /(?:https?:\/\/)?api\.telegram\.org\/bot([0-9]+:[A-Za-z0-9_-]+)/i,
+        );
+        if (m?.[1]) return m[1].trim();
+        return v.replace(/^bot/i, '').trim().split('/')[0] || v;
+      };
       const fbUrl = (
         process.env.FIREBASE_DATABASE_URL ||
         process.env.VITE_FIREBASE_DATABASE_URL ||
         'https://lumoedge-61c02-default-rtdb.firebaseio.com'
       ).replace(/\/$/, '');
-      let botToken = '';
-      let chatId = '';
+      let botToken = normalizeTok(body?.botToken);
+      let chatId = String(body?.chatId || '').trim();
       try {
-        const authRes = await fetch(`${fbUrl}/lumo/auth.json`, { cache: 'no-store' });
-        const auth = authRes.ok ? await authRes.json() : {};
-        const admins = Array.isArray(auth?.admins)
-          ? auth.admins
-          : auth?.admins
-            ? Object.values(auth.admins)
-            : [];
-        const preferredId = String(body?.mentorId || '').trim();
-        const ordered = [
-          ...admins.filter((a) => String(a?.id || '') === preferredId),
-          ...admins.filter(
-            (a) =>
-              String(a?.role || '').toLowerCase() === 'super' &&
-              String(a?.id || '') !== preferredId,
-          ),
-        ];
-        for (const admin of ordered) {
-          const id = String(admin?.id || '').trim();
-          if (!id) continue;
-          const r = await fetch(`${fbUrl}/lumo/store/workspaces/${id}.json`, {
+        if (!botToken || !chatId) {
+          const secretRes = await fetch(`${fbUrl}/lumo/secrets/telegramAlerts.json`, {
             cache: 'no-store',
           });
-          if (!r.ok) continue;
-          const ws = await r.json();
-          const profile = (ws && ws.profile) || {};
-          const token = String(profile.telegramBotToken || '').trim();
-          const chat = String(profile.telegramChatId || '').trim();
-          if (token && chat) {
-            botToken = token;
-            chatId = chat;
-            break;
+          const secret = secretRes.ok ? await secretRes.json() : {};
+          botToken = botToken || normalizeTok(secret?.botToken);
+          chatId = chatId || String(secret?.chatId || '').trim();
+        }
+        if (!botToken || !chatId) {
+          const preferredId = String(body?.mentorId || '').trim();
+          if (preferredId) {
+            const r = await fetch(
+              `${fbUrl}/lumo/store/workspaces/${preferredId}.json`,
+              { cache: 'no-store' },
+            );
+            if (r.ok) {
+              const ws = await r.json();
+              const profile = (ws && ws.profile) || {};
+              botToken = botToken || normalizeTok(profile.telegramBotToken);
+              chatId = chatId || String(profile.telegramChatId || '').trim();
+            }
           }
         }
       } catch {
-        botToken = '';
-        chatId = '';
+        /* keep whatever we have */
       }
       if (!botToken || !chatId) {
         sendJson(res, 200, { ok: false, skipped: true, error: 'not configured' });
+        return;
+      }
+      if (!/^\d+:[A-Za-z0-9_-]+$/.test(botToken)) {
+        sendJson(res, 400, {
+          ok: false,
+          error:
+            'Bot token looks wrong. Paste only the token from BotFather, not a full URL.',
+        });
         return;
       }
       try {
