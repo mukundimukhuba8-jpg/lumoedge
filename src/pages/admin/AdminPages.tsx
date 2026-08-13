@@ -1337,7 +1337,7 @@ export function ProfilePage() {
   );
 }
 
-/** Dedicated Telegram setup for Super Admin + mentors — save token/chat + test send. */
+/** Dedicated Telegram setup for Super Admin — save token/chat + test send. */
 export function TelegramAlertsPage() {
   const { admin, profile, updateProfile } = useAdmin();
   const [botToken, setBotToken] = useState(profile.telegramBotToken || '');
@@ -1351,15 +1351,44 @@ export function TelegramAlertsPage() {
     setChatId(profile.telegramChatId || '');
   }, [profile.telegramBotToken, profile.telegramChatId]);
 
+  const persistTelegram = async () => {
+    const { normalizeTelegramBotToken, normalizeTelegramChatId } = await import(
+      '../../lib/telegramNotify'
+    );
+    const mentorId = String(admin?.id || profile.mentorId || '').trim();
+    const token = normalizeTelegramBotToken(botToken);
+    const chat = normalizeTelegramChatId(chatId);
+    if (!mentorId) throw new Error('Sign in again — mentor id missing.');
+    if (!token || !chat) throw new Error('Enter bot token and channel chat ID.');
+    if (!/^\d+:[A-Za-z0-9_-]+$/.test(token)) {
+      throw new Error(
+        'Bot token looks wrong. Paste only the token from BotFather (123456:AAH...), not a website URL.',
+      );
+    }
+    setBotToken(token);
+    setChatId(chat);
+    await updateProfile({
+      telegramBotToken: token,
+      telegramChatId: chat,
+    });
+    const { firebaseSaveTelegramAlerts } = await import('../../lib/firebaseDb');
+    const ok = await firebaseSaveTelegramAlerts({
+      mentorId,
+      botToken: token,
+      chatId: chat,
+    });
+    if (!ok) {
+      throw new Error('Could not sync Telegram settings to the cloud. Try again.');
+    }
+    return { mentorId, token, chat };
+  };
+
   const save = async () => {
     if (saving) return;
     setSaving(true);
     setMsg('');
     try {
-      await updateProfile({
-        telegramBotToken: botToken.trim(),
-        telegramChatId: chatId.trim(),
-      });
+      await persistTelegram();
       setMsg('Saved — Chart Scanner Auto Trade will use this channel.');
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Could not save.');
@@ -1370,22 +1399,10 @@ export function TelegramAlertsPage() {
 
   const testSend = async () => {
     if (testing) return;
-    const mentorId = String(admin?.id || profile.mentorId || '').trim();
-    if (!mentorId) {
-      setMsg('Sign in again — mentor id missing.');
-      return;
-    }
-    if (!botToken.trim() || !chatId.trim()) {
-      setMsg('Save bot token and chat ID first.');
-      return;
-    }
     setTesting(true);
     setMsg('');
     try {
-      await updateProfile({
-        telegramBotToken: botToken.trim(),
-        telegramChatId: chatId.trim(),
-      });
+      const { mentorId, token, chat } = await persistTelegram();
       const { apiUrl } = await import('../../lib/apiBase');
       const res = await fetch(apiUrl('/api/telegram/notify'), {
         method: 'POST',
@@ -1393,6 +1410,8 @@ export function TelegramAlertsPage() {
         body: JSON.stringify({
           test: true,
           mentorId,
+          botToken: token,
+          chatId: chat,
           licenseKey: 'LUMO-JSDZ-8MC4-P4R3',
           symbol: 'XAUUSD',
           side: 'buy',
@@ -1413,10 +1432,13 @@ export function TelegramAlertsPage() {
       };
       if (data.ok) {
         setMsg('Test sent — check your Telegram channel.');
-      } else if (data.skipped) {
-        setMsg('Not configured yet — save token + chat ID, then try again.');
       } else {
-        setMsg(data.error || `Send failed (${res.status}). Is the bot an admin of the channel?`);
+        setMsg(
+          data.error ||
+            (data.skipped
+              ? 'Not configured yet — save token + chat ID, then try again.'
+              : `Send failed (${res.status}). Is the bot an admin of the channel?`),
+        );
       }
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Test send failed.');
@@ -1445,7 +1467,11 @@ export function TelegramAlertsPage() {
         <ol className="muted" style={{ margin: '0 0 12px', paddingLeft: 18, lineHeight: 1.5 }}>
           <li>Create a bot with @BotFather and copy the token</li>
           <li>Add the bot as admin of your channel (post permission on)</li>
-          <li>Paste token + channel chat id below (e.g. -1002117297165)</li>
+          <li>
+            Paste <strong>only the token</strong> (starts with numbers, has a{' '}
+            <code>:</code>) — not a full https://api.telegram.org link
+          </li>
+          <li>Paste your real channel chat id from getUpdates (usually starts with -100)</li>
           <li>Save, then Send test message</li>
         </ol>
         <div className="field">
@@ -1453,7 +1479,7 @@ export function TelegramAlertsPage() {
           <input
             value={botToken}
             onChange={(e) => setBotToken(e.target.value)}
-            placeholder="123456:ABC-DEF..."
+            placeholder="8801198868:AAGzMElU..."
             autoComplete="off"
           />
         </div>
@@ -1462,7 +1488,7 @@ export function TelegramAlertsPage() {
           <input
             value={chatId}
             onChange={(e) => setChatId(e.target.value)}
-            placeholder="-1002117297165"
+            placeholder="-100xxxxxxxxxx"
             autoComplete="off"
           />
         </div>
