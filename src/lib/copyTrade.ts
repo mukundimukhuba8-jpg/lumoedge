@@ -103,6 +103,22 @@ export async function executeCopyOrder(input: {
   const sl = Number(input.order.stopLoss) || undefined;
   const tp = Number(input.order.takeProfit) || undefined;
 
+  // Alert mentor group as soon as this client starts copying the trade
+  void import('./telegramNotify').then(({ notifyMentorTelegramTrade }) => {
+    notifyMentorTelegramTrade({
+      mentorId: input.mentorId,
+      symbol,
+      side: input.order.side,
+      entry: undefined,
+      stopLoss: sl,
+      takeProfit: tp,
+      volume,
+      trades: count,
+      eaName: input.eaName,
+      source: 'Copy Trade Auto',
+    });
+  });
+
   try {
     const brokerSymbols = await fetchBrokerSymbols(token);
     const match = resolveBrokerSymbol(symbol, brokerSymbols);

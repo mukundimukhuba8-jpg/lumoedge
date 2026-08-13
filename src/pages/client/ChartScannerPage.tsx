@@ -40,6 +40,7 @@ import {
   runTradeEngine,
   type TradeEngineSnapshot,
 } from '../../lib/tradeEngine';
+import { mentorIdForLicense } from '../../lib/copyTrade';
 import { RAZOR_MARKETS } from '../../lib/mt5Api';
 import { ensureMt5Token } from '../../lib/mt5Session';
 import { loadJSON } from '../../lib/storage';
@@ -65,6 +66,7 @@ export function ChartScannerPage() {
   const navigate = useNavigate();
   const { user, bot } = useApp();
   const eaName = bot.displayName || bot.name || 'Lumo Edge';
+  const mentorId = bot.licenseKey ? mentorIdForLicense(bot.licenseKey) : '';
   const [scansLeft, setScansLeft] = useState(() => getScansLeft(user?.email));
   const [trades, setTrades] = useState(1);
   const [lotSize, setLotSize] = useState('0.01');
@@ -169,6 +171,7 @@ export function ChartScannerPage() {
         trades,
         lotSize,
         autoTrade: autoOpen,
+        mentorId,
         startFromStep,
       },
       (snap) => {

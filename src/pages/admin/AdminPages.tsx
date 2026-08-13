@@ -1050,6 +1050,8 @@ export function ProfilePage() {
       profile.eaDisplayName,
       profile.mainText,
       String(profile.eaImage || '').length,
+      String(profile.telegramBotToken || ''),
+      String(profile.telegramChatId || ''),
       mediaSig,
     ].join('|');
     if (snapshot === lastProfileSig.current) return;
@@ -1317,6 +1319,42 @@ export function ProfilePage() {
           ) : null}
         </div>
       ) : null}
+
+      <div className="glow-card">
+        <h3 style={{ marginTop: 0 }}>Telegram trade alerts</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          When a licensed client starts Auto Trade (Chart Scanner), symbol, SL
+          and TP are posted to your Telegram group. Create a bot with{' '}
+          <strong>@BotFather</strong>, add it to your group, then paste the bot
+          token and group chat id here.
+        </p>
+        <div className="field">
+          <label>Bot token</label>
+          <input
+            value={form.telegramBotToken || ''}
+            onChange={(e) =>
+              setForm({ ...form, telegramBotToken: e.target.value })
+            }
+            placeholder="123456:ABC-DEF..."
+            autoComplete="off"
+          />
+        </div>
+        <div className="field">
+          <label>Group chat ID</label>
+          <input
+            value={form.telegramChatId || ''}
+            onChange={(e) =>
+              setForm({ ...form, telegramChatId: e.target.value })
+            }
+            placeholder="-1001234567890"
+            autoComplete="off"
+          />
+        </div>
+        <p className="muted" style={{ marginBottom: 0, fontSize: 12 }}>
+          Tip: add <strong>@userinfobot</strong> or <strong>@getidsbot</strong>{' '}
+          to the group to copy the chat id (usually starts with -100).
+        </p>
+      </div>
 
       <button
         className="btn btn-blue"

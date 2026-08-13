@@ -1641,6 +1641,41 @@ export default async function handler(req, res) {
       return;
     }
 
+    if (pathname === '/api/telegram/notify' && req.method === 'POST') {
+      const body = await readBody(req);
+      const mentorId = String(body?.mentorId || '').trim();
+      if (!mentorId) {
+        send(res, 400, { ok: false, error: 'mentorId required' });
+        return;
+      }
+      const ws = (await firebaseRead(`lumo/store/workspaces/${mentorId}`)) || {};
+      const profile = (ws && ws.profile) || {};
+      const botToken = String(
+        profile.telegramBotToken || profile.telegramToken || '',
+      ).trim();
+      const chatId = String(
+        profile.telegramChatId || profile.telegramGroupId || '',
+      ).trim();
+      if (!botToken || !chatId) {
+        send(res, 200, { ok: false, skipped: true, error: 'not configured' });
+        return;
+      }
+      const { buildTelegramTradeMessage, sendTelegramMessage } = await import(
+        './_lib/telegramNotify.mjs'
+      );
+      const text = buildTelegramTradeMessage(body || {});
+      try {
+        const result = await sendTelegramMessage(botToken, chatId, text);
+        send(res, result.ok ? 200 : 502, result);
+      } catch (e) {
+        send(res, 502, {
+          ok: false,
+          error: e instanceof Error ? e.message : 'Telegram send failed',
+        });
+      }
+      return;
+    }
+
     if (pathname.startsWith('/api/copy/')) {
       const {
         ackCopyOrder,

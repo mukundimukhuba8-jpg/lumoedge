@@ -589,6 +589,66 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (pathname === '/api/telegram/notify' && req.method === 'POST') {
+      const chunks = [];
+      await new Promise((resolve, reject) => {
+        req.on('data', (c) => chunks.push(c));
+        req.on('end', resolve);
+        req.on('error', reject);
+      });
+      let body = {};
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      } catch {
+        body = {};
+      }
+      const mentorId = String(body?.mentorId || '').trim();
+      if (!mentorId) {
+        sendJson(res, 400, { ok: false, error: 'mentorId required' });
+        return;
+      }
+      const fbUrl = (
+        process.env.FIREBASE_DATABASE_URL ||
+        process.env.VITE_FIREBASE_DATABASE_URL ||
+        'https://lumoedge-61c02-default-rtdb.firebaseio.com'
+      ).replace(/\/$/, '');
+      let profile = {};
+      try {
+        const r = await fetch(`${fbUrl}/lumo/store/workspaces/${mentorId}.json`, {
+          cache: 'no-store',
+        });
+        if (r.ok) {
+          const ws = await r.json();
+          profile = (ws && ws.profile) || {};
+        }
+      } catch {
+        profile = {};
+      }
+      const botToken = String(profile.telegramBotToken || '').trim();
+      const chatId = String(profile.telegramChatId || '').trim();
+      if (!botToken || !chatId) {
+        sendJson(res, 200, { ok: false, skipped: true, error: 'not configured' });
+        return;
+      }
+      const { buildTelegramTradeMessage, sendTelegramMessage } = await import(
+        './api/_lib/telegramNotify.mjs'
+      );
+      try {
+        const result = await sendTelegramMessage(
+          botToken,
+          chatId,
+          buildTelegramTradeMessage(body || {}),
+        );
+        sendJson(res, result.ok ? 200 : 502, result);
+      } catch (e) {
+        sendJson(res, 502, {
+          ok: false,
+          error: e instanceof Error ? e.message : 'Telegram send failed',
+        });
+      }
+      return;
+    }
+
     // Backend broker connect — resolves web terminal host from server name
     if (pathname === '/api/mt5/connect' && req.method === 'POST') {
       const { connectMt5Broker } = await import('./api/_lib/mt5Bridge.mjs');
