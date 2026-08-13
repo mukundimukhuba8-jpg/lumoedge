@@ -73,6 +73,9 @@ const VpsSetupPage = lazy(() =>
 const ProfilePage = lazy(() =>
   import('./pages/admin/AdminPages').then((m) => ({ default: m.ProfilePage })),
 );
+const TelegramAlertsPage = lazy(() =>
+  import('./pages/admin/AdminPages').then((m) => ({ default: m.TelegramAlertsPage })),
+);
 
 function RouteFallback() {
   return (
@@ -202,6 +205,7 @@ export default function App() {
               }
             />
             <Route path="profile" element={<ProfilePage />} />
+            <Route path="telegram" element={<TelegramAlertsPage />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -1195,6 +1195,9 @@ export function ProfilePage() {
           <Link to="/admin/eas" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
             <Cpu size={16} /> Manage EAs
           </Link>
+          <Link to="/admin/telegram" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
+            Telegram Alerts
+          </Link>
           {isSuper ? (
             <Link to="/admin/approve" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
               <UserCheck size={16} /> Approve mentors
@@ -1320,42 +1323,6 @@ export function ProfilePage() {
         </div>
       ) : null}
 
-      <div className="glow-card">
-        <h3 style={{ marginTop: 0 }}>Telegram trade alerts</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
-          When a licensed client starts Auto Trade (Chart Scanner), symbol, SL
-          and TP are posted to your Telegram group. Create a bot with{' '}
-          <strong>@BotFather</strong>, add it to your group, then paste the bot
-          token and group chat id here.
-        </p>
-        <div className="field">
-          <label>Bot token</label>
-          <input
-            value={form.telegramBotToken || ''}
-            onChange={(e) =>
-              setForm({ ...form, telegramBotToken: e.target.value })
-            }
-            placeholder="123456:ABC-DEF..."
-            autoComplete="off"
-          />
-        </div>
-        <div className="field">
-          <label>Group chat ID</label>
-          <input
-            value={form.telegramChatId || ''}
-            onChange={(e) =>
-              setForm({ ...form, telegramChatId: e.target.value })
-            }
-            placeholder="-1001234567890"
-            autoComplete="off"
-          />
-        </div>
-        <p className="muted" style={{ marginBottom: 0, fontSize: 12 }}>
-          Tip: add <strong>@userinfobot</strong> or <strong>@getidsbot</strong>{' '}
-          to the group to copy the chat id (usually starts with -100).
-        </p>
-      </div>
-
       <button
         className="btn btn-blue"
         type="button"
@@ -1364,6 +1331,162 @@ export function ProfilePage() {
       >
         {savingProfile ? 'Updating…' : 'Update Profile'}
       </button>
+    </div>
+  );
+}
+
+/** Dedicated Telegram setup for Super Admin + mentors — save token/chat + test send. */
+export function TelegramAlertsPage() {
+  const { admin, profile, updateProfile } = useAdmin();
+  const [botToken, setBotToken] = useState(profile.telegramBotToken || '');
+  const [chatId, setChatId] = useState(profile.telegramChatId || '');
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    setBotToken(profile.telegramBotToken || '');
+    setChatId(profile.telegramChatId || '');
+  }, [profile.telegramBotToken, profile.telegramChatId]);
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    setMsg('');
+    try {
+      await updateProfile({
+        telegramBotToken: botToken.trim(),
+        telegramChatId: chatId.trim(),
+      });
+      setMsg('Saved — Chart Scanner Auto Trade will use this channel.');
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Could not save.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const testSend = async () => {
+    if (testing) return;
+    const mentorId = String(admin?.id || profile.mentorId || '').trim();
+    if (!mentorId) {
+      setMsg('Sign in again — mentor id missing.');
+      return;
+    }
+    if (!botToken.trim() || !chatId.trim()) {
+      setMsg('Save bot token and chat ID first.');
+      return;
+    }
+    setTesting(true);
+    setMsg('');
+    try {
+      await updateProfile({
+        telegramBotToken: botToken.trim(),
+        telegramChatId: chatId.trim(),
+      });
+      const { apiUrl } = await import('../../lib/apiBase');
+      const res = await fetch(apiUrl('/api/telegram/notify'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mentorId,
+          symbol: 'XAUUSD',
+          side: 'buy',
+          entry: '2350.00',
+          stopLoss: '2345.00',
+          takeProfit: '2360.00',
+          volume: '0.01',
+          trades: 1,
+          eaName: profile.eaDisplayName || 'Test',
+          accuracy: 88,
+          source: 'Telegram test',
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        skipped?: boolean;
+        error?: string;
+      };
+      if (data.ok) {
+        setMsg('Test sent — check your Telegram channel.');
+      } else if (data.skipped) {
+        setMsg('Not configured yet — save token + chat ID, then try again.');
+      } else {
+        setMsg(data.error || `Send failed (${res.status}). Is the bot an admin of the channel?`);
+      }
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Test send failed.');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <div className="glow-card">
+        <h3 style={{ marginTop: 0 }}>Telegram Alerts</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          How it works: when a client activates <strong>your</strong> license key
+          and runs Chart Scanner with Auto Trade on, the app looks up the mentor
+          who owns that key (you) and posts symbol / SL / TP to{' '}
+          <strong>your</strong> Telegram channel.
+        </p>
+        <ol className="muted" style={{ margin: '0 0 12px', paddingLeft: 18, lineHeight: 1.5 }}>
+          <li>Create a bot with @BotFather and copy the token</li>
+          <li>Add the bot as admin of your channel (post permission on)</li>
+          <li>Paste token + channel chat id below (e.g. -1002117297165)</li>
+          <li>Save, then Send test message</li>
+        </ol>
+        <div className="field">
+          <label>Bot token</label>
+          <input
+            value={botToken}
+            onChange={(e) => setBotToken(e.target.value)}
+            placeholder="123456:ABC-DEF..."
+            autoComplete="off"
+          />
+        </div>
+        <div className="field">
+          <label>Channel / group chat ID</label>
+          <input
+            value={chatId}
+            onChange={(e) => setChatId(e.target.value)}
+            placeholder="-1002117297165"
+            autoComplete="off"
+          />
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          <button
+            type="button"
+            className="btn btn-blue"
+            disabled={saving || testing}
+            onClick={() => void save()}
+          >
+            {saving ? 'Saving…' : 'Save Telegram settings'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={saving || testing}
+            onClick={() => void testSend()}
+          >
+            {testing ? 'Sending…' : 'Send test message'}
+          </button>
+        </div>
+        {msg ? (
+          <p
+            style={{
+              margin: '12px 0 0',
+              fontWeight: 700,
+              color: msg.startsWith('Test sent') || msg.startsWith('Saved')
+                ? 'var(--green)'
+                : '#f87171',
+            }}
+          >
+            {msg}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
