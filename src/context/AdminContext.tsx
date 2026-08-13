@@ -2244,8 +2244,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
       if (resumeTimer) window.clearTimeout(resumeTimer);
-      // Soft resume — give Safari a beat before network work
-      resumeTimer = window.setTimeout(() => void syncWorkspace(), 700);
+      // Soft resume — wait longer after app-switch so iOS can paint before Firebase sync
+      resumeTimer = window.setTimeout(() => {
+        if (document.visibilityState !== 'visible') return;
+        if (isAdminUiBusy()) return;
+        void syncWorkspace().catch(() => {
+          /* ignore resume sync failures — never blank the UI */
+        });
+      }, 2200);
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {

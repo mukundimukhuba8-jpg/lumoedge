@@ -144,9 +144,9 @@
           shell.setAttribute('aria-busy', 'false');
         }
 
-        /** Non-blocking chip — NEVER full-screen trap after first paint window */
+        /** Non-blocking chip — allowed after first paint when resume freezes black */
         function showReloadChip(msg) {
-          if (!shell || ready) return;
+          if (!shell) return;
           if (status && msg) status.textContent = msg;
           shell.classList.remove('is-hidden');
           shell.classList.add('is-chip', 'needs-reload');
@@ -156,12 +156,24 @@
         function appAlive() {
           var root = document.getElementById('root');
           if (!root) return false;
-          if (root.childElementCount > 0) return true;
-          return Boolean(
+          // Empty React root = dead
+          if (root.childElementCount === 0) return false;
+          // Known shell markers
+          if (
             root.querySelector(
-              '.app-shell, .lumo-app, .welcome-splash, .admin-shell-dark, .os-home-shell',
-            ),
-          );
+              '.app-shell, .lumo-app, .welcome-splash, .admin-shell-dark, .os-home-shell, .admin-shell',
+            )
+          ) {
+            // Frozen black screen still has DOM — require some readable text or controls
+            var text = (root.innerText || '').replace(/\s+/g, ' ').trim();
+            if (text.length >= 8) return true;
+            var controls = root.querySelectorAll('button, a, input, textarea, select');
+            if (controls.length > 0) return true;
+            return false;
+          }
+          // Generic: any substantial painted content
+          var generic = (root.innerText || '').replace(/\s+/g, ' ').trim();
+          return generic.length >= 8;
         }
 
         function hadWarmSession() {
@@ -173,12 +185,13 @@
         }
 
         function softReload() {
-          if (recovering || !capped) return;
+          if (recovering) return;
+          // Allow resume recovery even before the 2s boot cap
           recovering = true;
           try {
             var n = Number(sessionStorage.getItem(RELOAD_KEY) || '0');
             if (n >= 2) {
-              showReloadChip('Tap Reload');
+              showReloadChip('Page froze — Reload');
               recovering = false;
               return;
             }
@@ -222,14 +235,26 @@
         function checkResume(force) {
           if (document.visibilityState && document.visibilityState !== 'visible') return;
           if (!force && !ready && !hadWarmSession()) return;
+          // Phone app-switch: give WebKit a beat, then verify UI is still alive
           window.setTimeout(function () {
+            if (document.visibilityState && document.visibilityState !== 'visible') return;
             if (appAlive()) {
               hideShell();
               return;
             }
-            // Blank after tab discard — one soft reload, never a blocking splash loop
+            // Blank / frozen after Cursor or another app — soft reload
             softReload();
-          }, 400);
+          }, force ? 250 : 650);
+          // Second pass — some phones paint empty first then stay black
+          window.setTimeout(function () {
+            if (document.visibilityState && document.visibilityState !== 'visible') return;
+            if (appAlive()) {
+              hideShell();
+              return;
+            }
+            showReloadChip('Page froze — Reload');
+            softReload();
+          }, force ? 1200 : 1800);
         }
 
         window.addEventListener('pageshow', function (ev) {
@@ -241,7 +266,12 @@
         });
 
         document.addEventListener('visibilitychange', function () {
-          if (document.visibilityState === 'visible') checkResume(false);
+          if (document.visibilityState === 'visible') checkResume(true);
+        });
+
+        // iOS sometimes freezes without firing a useful pageshow — focus also recovers
+        window.addEventListener('focus', function () {
+          if (hadWarmSession() || ready) checkResume(false);
         });
 
         window.addEventListener('lumo-ready', function () {
