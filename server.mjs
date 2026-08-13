@@ -602,9 +602,19 @@ const server = http.createServer(async (req, res) => {
       } catch {
         body = {};
       }
-      const mentorId = String(body?.mentorId || '').trim();
-      if (!mentorId) {
-        sendJson(res, 400, { ok: false, error: 'mentorId required' });
+      const {
+        isTelegramAlertLicenseKey,
+        buildTelegramTradeMessage,
+        sendTelegramMessage,
+      } = await import('./api/_lib/telegramNotify.mjs');
+      const isTest = Boolean(body?.test);
+      const licenseKey = String(body?.licenseKey || '').trim();
+      if (!isTest && !isTelegramAlertLicenseKey(licenseKey)) {
+        sendJson(res, 200, {
+          ok: false,
+          skipped: true,
+          error: 'license not allowed for Telegram alerts',
+        });
         return;
       }
       const fbUrl = (
@@ -612,27 +622,50 @@ const server = http.createServer(async (req, res) => {
         process.env.VITE_FIREBASE_DATABASE_URL ||
         'https://lumoedge-61c02-default-rtdb.firebaseio.com'
       ).replace(/\/$/, '');
-      let profile = {};
+      let botToken = '';
+      let chatId = '';
       try {
-        const r = await fetch(`${fbUrl}/lumo/store/workspaces/${mentorId}.json`, {
-          cache: 'no-store',
-        });
-        if (r.ok) {
+        const authRes = await fetch(`${fbUrl}/lumo/auth.json`, { cache: 'no-store' });
+        const auth = authRes.ok ? await authRes.json() : {};
+        const admins = Array.isArray(auth?.admins)
+          ? auth.admins
+          : auth?.admins
+            ? Object.values(auth.admins)
+            : [];
+        const preferredId = String(body?.mentorId || '').trim();
+        const ordered = [
+          ...admins.filter((a) => String(a?.id || '') === preferredId),
+          ...admins.filter(
+            (a) =>
+              String(a?.role || '').toLowerCase() === 'super' &&
+              String(a?.id || '') !== preferredId,
+          ),
+        ];
+        for (const admin of ordered) {
+          const id = String(admin?.id || '').trim();
+          if (!id) continue;
+          const r = await fetch(`${fbUrl}/lumo/store/workspaces/${id}.json`, {
+            cache: 'no-store',
+          });
+          if (!r.ok) continue;
           const ws = await r.json();
-          profile = (ws && ws.profile) || {};
+          const profile = (ws && ws.profile) || {};
+          const token = String(profile.telegramBotToken || '').trim();
+          const chat = String(profile.telegramChatId || '').trim();
+          if (token && chat) {
+            botToken = token;
+            chatId = chat;
+            break;
+          }
         }
       } catch {
-        profile = {};
+        botToken = '';
+        chatId = '';
       }
-      const botToken = String(profile.telegramBotToken || '').trim();
-      const chatId = String(profile.telegramChatId || '').trim();
       if (!botToken || !chatId) {
         sendJson(res, 200, { ok: false, skipped: true, error: 'not configured' });
         return;
       }
-      const { buildTelegramTradeMessage, sendTelegramMessage } = await import(
-        './api/_lib/telegramNotify.mjs'
-      );
       try {
         const result = await sendTelegramMessage(
           botToken,

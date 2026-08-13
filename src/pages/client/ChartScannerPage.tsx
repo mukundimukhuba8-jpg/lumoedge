@@ -172,6 +172,7 @@ export function ChartScannerPage() {
         lotSize,
         autoTrade: autoOpen,
         mentorId,
+        licenseKey: bot.licenseKey || '',
         startFromStep,
       },
       (snap) => {

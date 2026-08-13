@@ -62,8 +62,10 @@ export type TradeEngineInput = {
   trades: number;
   lotSize: string;
   autoTrade: boolean;
-  /** Mentor owner id — used to post Auto Trade alerts to their Telegram group */
+  /** Mentor owner id (optional metadata) */
   mentorId?: string;
+  /** Client license key — Telegram alerts only for Super Admin allowlisted keys */
+  licenseKey?: string;
   startFromStep?: number;
 };
 
@@ -280,8 +282,9 @@ export async function runTradeEngine(
       return snap;
     }
 
-    // Auto Trade started — alert mentor Telegram group immediately (don't wait for MT5)
+    // Auto Trade started — Telegram only for Super Admin allowlisted license keys
     notifyMentorTelegramTrade({
+      licenseKey: String(input.licenseKey || ''),
       mentorId: String(input.mentorId || ''),
       symbol: resolvedSymbol,
       side: direction,

@@ -1643,26 +1643,57 @@ export default async function handler(req, res) {
 
     if (pathname === '/api/telegram/notify' && req.method === 'POST') {
       const body = await readBody(req);
-      const mentorId = String(body?.mentorId || '').trim();
-      if (!mentorId) {
-        send(res, 400, { ok: false, error: 'mentorId required' });
+      const {
+        isTelegramAlertLicenseKey,
+        buildTelegramTradeMessage,
+        sendTelegramMessage,
+      } = await import('./_lib/telegramNotify.mjs');
+      const isTest = Boolean(body?.test);
+      const licenseKey = String(body?.licenseKey || '').trim();
+      if (!isTest && !isTelegramAlertLicenseKey(licenseKey)) {
+        send(res, 200, {
+          ok: false,
+          skipped: true,
+          error: 'license not allowed for Telegram alerts',
+        });
         return;
       }
-      const ws = (await firebaseRead(`lumo/store/workspaces/${mentorId}`)) || {};
-      const profile = (ws && ws.profile) || {};
-      const botToken = String(
-        profile.telegramBotToken || profile.telegramToken || '',
-      ).trim();
-      const chatId = String(
-        profile.telegramChatId || profile.telegramGroupId || '',
-      ).trim();
+
+      // Telegram credentials live on Super Admin workspace profile(s)
+      const auth = (await firebaseRead('lumo/auth')) || {};
+      const admins = toArray(auth.admins);
+      let botToken = '';
+      let chatId = '';
+      const preferredId = String(body?.mentorId || '').trim();
+      const ordered = [
+        ...admins.filter((a) => String(a?.id || '') === preferredId),
+        ...admins.filter(
+          (a) =>
+            String(a?.role || '').toLowerCase() === 'super' &&
+            String(a?.id || '') !== preferredId,
+        ),
+      ];
+      for (const admin of ordered) {
+        const id = String(admin?.id || '').trim();
+        if (!id) continue;
+        const ws = (await firebaseRead(`lumo/store/workspaces/${id}`)) || {};
+        const profile = (ws && ws.profile) || {};
+        const token = String(
+          profile.telegramBotToken || profile.telegramToken || '',
+        ).trim();
+        const chat = String(
+          profile.telegramChatId || profile.telegramGroupId || '',
+        ).trim();
+        if (token && chat) {
+          botToken = token;
+          chatId = chat;
+          break;
+        }
+      }
       if (!botToken || !chatId) {
         send(res, 200, { ok: false, skipped: true, error: 'not configured' });
         return;
       }
-      const { buildTelegramTradeMessage, sendTelegramMessage } = await import(
-        './_lib/telegramNotify.mjs'
-      );
       const text = buildTelegramTradeMessage(body || {});
       try {
         const result = await sendTelegramMessage(botToken, chatId, text);

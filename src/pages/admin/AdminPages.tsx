@@ -1195,9 +1195,11 @@ export function ProfilePage() {
           <Link to="/admin/eas" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
             <Cpu size={16} /> Manage EAs
           </Link>
-          <Link to="/admin/telegram" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
-            Telegram Alerts
-          </Link>
+          {isSuper ? (
+            <Link to="/admin/telegram" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
+              Telegram Alerts
+            </Link>
+          ) : null}
           {isSuper ? (
             <Link to="/admin/approve" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
               <UserCheck size={16} /> Approve mentors
@@ -1389,7 +1391,9 @@ export function TelegramAlertsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          test: true,
           mentorId,
+          licenseKey: 'LUMO-JSDZ-8MC4-P4R3',
           symbol: 'XAUUSD',
           side: 'buy',
           entry: '2350.00',
@@ -1426,11 +1430,18 @@ export function TelegramAlertsPage() {
       <div className="glow-card">
         <h3 style={{ marginTop: 0 }}>Telegram Alerts</h3>
         <p className="muted" style={{ marginTop: 0 }}>
-          How it works: when a client activates <strong>your</strong> license key
-          and runs Chart Scanner with Auto Trade on, the app looks up the mentor
-          who owns that key (you) and posts symbol / SL / TP to{' '}
-          <strong>your</strong> Telegram channel.
+          Super Admin only. Chart Scanner Auto Trade posts to your Telegram
+          channel <strong>only</strong> when the client uses one of these
+          license keys:
         </p>
+        <ul className="muted" style={{ margin: '0 0 12px', paddingLeft: 18 }}>
+          <li>
+            <code>LUMO-JSDZ-8MC4-P4R3</code>
+          </li>
+          <li>
+            <code>LUMO-WB5J-4YBH-RK8P</code>
+          </li>
+        </ul>
         <ol className="muted" style={{ margin: '0 0 12px', paddingLeft: 18, lineHeight: 1.5 }}>
           <li>Create a bot with @BotFather and copy the token</li>
           <li>Add the bot as admin of your channel (post permission on)</li>

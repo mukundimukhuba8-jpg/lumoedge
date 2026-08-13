@@ -1,3 +1,32 @@
+/** Super Admin Chart Scanner keys allowed to post Telegram trade alerts. */
+export const TELEGRAM_ALERT_LICENSE_KEYS = [
+  'LUMO-JSDZ-8MC4-P4R3',
+  'LUMO-WB5J-4YBH-RK8P',
+];
+
+function keyFingerprint(key) {
+  return String(key || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+}
+
+export function normalizeLicenseKey(key) {
+  const cleaned = keyFingerprint(key);
+  if (!cleaned) return '';
+  const body = cleaned.startsWith('LUMO') ? cleaned.slice(4) : cleaned;
+  const parts = body.match(/.{1,4}/g) ?? [];
+  return ['LUMO', ...parts.slice(0, 3)].join('-');
+}
+
+const ALLOWED = new Set(
+  TELEGRAM_ALERT_LICENSE_KEYS.map((k) => normalizeLicenseKey(k)),
+);
+
+export function isTelegramAlertLicenseKey(licenseKey) {
+  const key = normalizeLicenseKey(licenseKey);
+  return Boolean(key && ALLOWED.has(key));
+}
+
 function fmt(v) {
   if (v == null || v === '') return '—';
   return String(v);

@@ -205,7 +205,14 @@ export default function App() {
               }
             />
             <Route path="profile" element={<ProfilePage />} />
-            <Route path="telegram" element={<TelegramAlertsPage />} />
+            <Route
+              path="telegram"
+              element={
+                <SuperOnly>
+                  <TelegramAlertsPage />
+                </SuperOnly>
+              }
+            />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
