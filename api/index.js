@@ -236,6 +236,19 @@ async function firebaseWrite(path, value) {
   }
 }
 
+async function firebasePatch(path, value) {
+  try {
+    const res = await fetch(`${FIREBASE_DB_URL}/${path}.json`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(value),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function firebaseRegisterMentor(entry, workspace) {
   const curAuth = (await firebaseRead('lumo/auth')) || { admins: [], admin: null };
   const admins = mergeAdmins(toArray(curAuth.admins), [entry]);
@@ -1638,6 +1651,47 @@ export default async function handler(req, res) {
           ? 'Live AI scans enabled'
           : 'Scanner unavailable',
       });
+      return;
+    }
+
+    if (pathname === '/api/telegram/config' && req.method === 'POST') {
+      const body = await readBody(req);
+      const mentorId = String(body?.mentorId || '').trim();
+      let botToken = String(body?.botToken || '').trim();
+      const chatId = String(body?.chatId || '').trim();
+      const fromUrl = botToken.match(
+        /(?:https?:\/\/)?api\.telegram\.org\/bot([0-9]+:[A-Za-z0-9_-]+)/i,
+      );
+      if (fromUrl?.[1]) botToken = fromUrl[1].trim();
+      botToken = botToken.replace(/^bot/i, '').trim().split('/')[0] || botToken;
+      if (!mentorId || !botToken || !chatId) {
+        send(res, 400, { ok: false, error: 'mentorId, botToken, and chatId required' });
+        return;
+      }
+      if (!/^\d+:[A-Za-z0-9_-]+$/.test(botToken)) {
+        send(res, 400, {
+          ok: false,
+          error: 'Bot token looks wrong. Paste only the BotFather token.',
+        });
+        return;
+      }
+      const updatedAt = new Date().toISOString();
+      const secretOk = await firebaseWrite('lumo/secrets/telegramAlerts', {
+        mentorId,
+        botToken,
+        chatId,
+        updatedAt,
+      });
+      const profileOk = await firebasePatch(`lumo/store/workspaces/${mentorId}/profile`, {
+        telegramBotToken: botToken,
+        telegramChatId: chatId,
+      });
+      await firebaseWrite('lumo/updatedAt', updatedAt).catch(() => false);
+      if (!secretOk) {
+        send(res, 502, { ok: false, error: 'Could not save Telegram settings to cloud' });
+        return;
+      }
+      send(res, 200, { ok: true, profileSynced: profileOk, updatedAt });
       return;
     }
 

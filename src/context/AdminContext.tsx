@@ -4107,6 +4107,23 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             });
           }
 
+          const patchKeys = Object.keys(resolvedPatch).filter(
+            (k) => (resolvedPatch as Record<string, unknown>)[k] !== undefined,
+          );
+          const telegramOnly =
+            patchKeys.length > 0 &&
+            patchKeys.every(
+              (k) => k === 'telegramBotToken' || k === 'telegramChatId',
+            );
+
+          // Telegram settings must not wait on branding / license image sync
+          if (telegramOnly) {
+            void pushDb({
+              store: { workspaces: { [adminId]: branded } },
+            }).catch(() => undefined);
+            return;
+          }
+
           void (async () => {
             try {
               const licenses = await withTimeout(
@@ -4125,7 +4142,24 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                   prev.workspaces[adminId],
                   auth.admin ?? { id: adminId },
                 );
-                const merged: AdminWorkspace = { ...cur, ...branded, licenses };
+                // Merge profile — never let a stale branding callback wipe Telegram fields
+                const merged: AdminWorkspace = {
+                  ...cur,
+                  ...branded,
+                  profile: {
+                    ...cur.profile,
+                    ...branded.profile,
+                    telegramBotToken: pickNonEmptyStr(
+                      branded.profile.telegramBotToken,
+                      cur.profile.telegramBotToken,
+                    ),
+                    telegramChatId: pickNonEmptyStr(
+                      branded.profile.telegramChatId,
+                      cur.profile.telegramChatId,
+                    ),
+                  },
+                  licenses,
+                };
                 const next = {
                   ...prev,
                   workspaces: { ...prev.workspaces, [adminId]: merged },
