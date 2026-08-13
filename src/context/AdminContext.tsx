@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { apiUrl } from '../lib/apiBase';
 import { isAdminUiBusy } from '../lib/adminUiGate';
 import { saveDashStats } from '../lib/adminDashCache';
 import {
@@ -109,6 +110,7 @@ import {
 import { licenseError, licenseLog, licenseWarn } from '../lib/licenseLog';
 import { countExpectedEas, repairWorkspaceEas } from '../lib/repairEas';
 import { healLicensesFromVault } from '../lib/repairLicenses';
+import { buildTradeComment } from '../lib/mt5Api';
 
 /** Blocks destructive vault sync while a publish is in flight. */
 let licensePublishInFlight = 0;
@@ -169,7 +171,9 @@ async function maybeRepairEasOnServer(mentorId: string): Promise<boolean> {
   if (Date.now() - last < SERVER_EAS_REPAIR_COOLDOWN_MS) return false;
   lastServerEasRepair.set(mentorId, Date.now());
   try {
-    const res = await fetch('/api/workspaces/repair-eas', { method: 'POST' });
+    const res = await fetch(apiUrl('/api/workspaces/repair-eas'), {
+      method: 'POST',
+    });
     return res.ok;
   } catch {
     return false;
@@ -362,6 +366,10 @@ export type AdminProfile = {
   eaImage: string;
   /** 2 profile + 3 background media slots (image/video) */
   customMedia: MentorMediaItem[];
+  /** BotFather token for this mentor's trade-alert bot */
+  telegramBotToken?: string;
+  /** Telegram group/chat id (often negative for groups) */
+  telegramChatId?: string;
 };
 
 export type CopyOrder = {
@@ -671,6 +679,8 @@ function emptyProfile(seed?: {
     mainText: seed?.mainText ?? '',
     eaImage: '',
     customMedia: emptyCustomMedia(),
+    telegramBotToken: '',
+    telegramChatId: '',
   };
 }
 
@@ -877,6 +887,14 @@ function mergeWorkspaceKeepAll(a: AdminWorkspace, b: AdminWorkspace): AdminWorks
         (a.profile?.eaImage && String(a.profile.eaImage).trim()) ||
         (b.profile?.eaImage && String(b.profile.eaImage).trim()) ||
         '',
+      telegramBotToken: pickNonEmptyStr(
+        b.profile?.telegramBotToken,
+        a.profile?.telegramBotToken,
+      ),
+      telegramChatId: pickNonEmptyStr(
+        b.profile?.telegramChatId,
+        a.profile?.telegramChatId,
+      ),
       customMedia: (() => {
         const map = new Map(
           normalizeCustomMedia(a.profile?.customMedia).map((m) => [m.slot, m]),
@@ -4166,9 +4184,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }).length;
         const created: CopyOrder = {
           ...order,
-          comment: order.comment?.includes('~LumoEdge')
-            ? order.comment
-            : `${eaLabel} ~LumoEdge`.slice(0, 31),
+          comment: buildTradeComment(order.comment || eaLabel),
           eaId: eaId || undefined,
           id: `ord-${Date.now()}`,
           copiedTo: licensedClients,

@@ -1,4 +1,5 @@
 import type { MentorMediaItem } from './mentorMedia';
+import { apiUrl } from './apiBase';
 import { isFirebaseConfigured } from './firebase';
 import {
   firebaseSaveImage,
@@ -311,7 +312,7 @@ export function loadRevokedKeys(): string[] {
 export function saveRevokedKeys(keys: string[]) {
   const unique = [...new Set(keys.map((k) => normalizeLicenseKey(k)).filter(Boolean))];
   localStorage.setItem(REVOKED_KEY, JSON.stringify(unique));
-  void fetch('/api/db', {
+  void fetch(apiUrl('/api/db'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ revokedKeys: unique }),
@@ -419,7 +420,7 @@ export function saveEaImage(id: string, dataUrl: string) {
     // Client phones were freezing when every resolve wrote megabytes back to /api.
     if (value.startsWith('data:')) return;
 
-    void fetch('/api/db', {
+    void fetch(apiUrl('/api/db'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ images: { [id]: value } }),
@@ -457,7 +458,7 @@ export async function publishEaImage(id: string, dataUrl: string): Promise<strin
   }
 
   try {
-    const health = await fetch('/api/health')
+    const health = await fetch(apiUrl('/api/health'))
       .then((r) => r.json())
       .catch(() => null as { durable?: boolean } | null);
     const res = await fetch(imagePublicUrl(id), {
@@ -501,7 +502,7 @@ export async function publishMentorMediaImage(
 
 async function pushDbImages(id: string, dataUrl: string) {
   try {
-    await fetch('/api/db', {
+    await fetch(apiUrl('/api/db'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ images: { [id]: dataUrl } }),

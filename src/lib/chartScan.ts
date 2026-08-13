@@ -1,3 +1,4 @@
+import { apiUrl } from './apiBase';
 import { fetchDb, pushDb } from './remote';
 import { loadJSON, saveJSON } from './storage';
 
@@ -390,7 +391,7 @@ export async function runChartScan(
   }
   const timer = window.setTimeout(() => ac.abort(), SCAN_TIMEOUT_MS);
   try {
-    const res = await fetch('/api/scan', {
+    const res = await fetch(apiUrl('/api/scan'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image: imageDataUrl }),
@@ -404,17 +405,20 @@ export async function runChartScan(
       return {
         ok: false,
         accuracy: 0,
-        error:
-          res.status === 404
-            ? 'Chart Scanner API not deployed yet. Redeploy the latest build.'
-            : `Scan failed (${res.status})`,
+        error: 'Scanner unavailable. Please try again later.',
       };
     }
     if (!res.ok) {
+      const msg = String(data?.error || '').trim();
+      const safe =
+        msg &&
+        !/CHART_SCAN|Vercel|OpenAI|API key|redeploy|configured/i.test(msg)
+          ? msg
+          : 'Scanner unavailable. Please try again later.';
       return {
         ok: false,
         accuracy: 0,
-        error: data.error || `Scan failed (${res.status})`,
+        error: safe,
       };
     }
     return data;
@@ -427,9 +431,7 @@ export async function runChartScan(
       accuracy: 0,
       error: aborted
         ? 'Scan timed out — try a clearer chart screenshot.'
-        : e instanceof Error
-          ? e.message
-          : 'Scan request failed',
+        : 'Scanner unavailable. Please try again later.',
     };
   } finally {
     window.clearTimeout(timer);

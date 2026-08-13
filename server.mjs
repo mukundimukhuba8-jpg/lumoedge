@@ -448,20 +448,11 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      // No key yet → demo scan so UI still works (70–90%)
       if (!CHART_SCAN_API_KEY) {
-        const accuracy = 70 + Math.floor(Math.random() * 21);
-        const demoSymbols = ['XAUUSD', 'EURUSD', 'GBPUSD', 'NAS100', 'BTCUSD'];
-        const symbol = demoSymbols[Math.floor(Math.random() * demoSymbols.length)];
-        const direction = Math.random() > 0.5 ? 'buy' : 'sell';
-        sendJson(res, 200, {
-          ok: true,
-          demo: true,
-          accuracy,
-          symbol,
-          timeframe: 'M15',
-          direction,
-          summary: 'Demo mode — add CHART_SCAN_API_KEY on the server for live AI scans.',
+        sendJson(res, 503, {
+          ok: false,
+          accuracy: 0,
+          error: 'Scanner unavailable. Please try again later.',
         });
         return;
       }
@@ -595,6 +586,99 @@ const server = http.createServer(async (req, res) => {
         model: CHART_SCAN_MODEL,
         url: CHART_SCAN_API_URL,
       });
+      return;
+    }
+
+    if (pathname === '/api/telegram/notify' && req.method === 'POST') {
+      const chunks = [];
+      await new Promise((resolve, reject) => {
+        req.on('data', (c) => chunks.push(c));
+        req.on('end', resolve);
+        req.on('error', reject);
+      });
+      let body = {};
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      } catch {
+        body = {};
+      }
+      const {
+        isTelegramAlertLicenseKey,
+        buildTelegramTradeMessage,
+        sendTelegramMessage,
+      } = await import('./api/_lib/telegramNotify.mjs');
+      const isTest = Boolean(body?.test);
+      const licenseKey = String(body?.licenseKey || '').trim();
+      if (!isTest && !isTelegramAlertLicenseKey(licenseKey)) {
+        sendJson(res, 200, {
+          ok: false,
+          skipped: true,
+          error: 'license not allowed for Telegram alerts',
+        });
+        return;
+      }
+      const fbUrl = (
+        process.env.FIREBASE_DATABASE_URL ||
+        process.env.VITE_FIREBASE_DATABASE_URL ||
+        'https://lumoedge-61c02-default-rtdb.firebaseio.com'
+      ).replace(/\/$/, '');
+      let botToken = '';
+      let chatId = '';
+      try {
+        const authRes = await fetch(`${fbUrl}/lumo/auth.json`, { cache: 'no-store' });
+        const auth = authRes.ok ? await authRes.json() : {};
+        const admins = Array.isArray(auth?.admins)
+          ? auth.admins
+          : auth?.admins
+            ? Object.values(auth.admins)
+            : [];
+        const preferredId = String(body?.mentorId || '').trim();
+        const ordered = [
+          ...admins.filter((a) => String(a?.id || '') === preferredId),
+          ...admins.filter(
+            (a) =>
+              String(a?.role || '').toLowerCase() === 'super' &&
+              String(a?.id || '') !== preferredId,
+          ),
+        ];
+        for (const admin of ordered) {
+          const id = String(admin?.id || '').trim();
+          if (!id) continue;
+          const r = await fetch(`${fbUrl}/lumo/store/workspaces/${id}.json`, {
+            cache: 'no-store',
+          });
+          if (!r.ok) continue;
+          const ws = await r.json();
+          const profile = (ws && ws.profile) || {};
+          const token = String(profile.telegramBotToken || '').trim();
+          const chat = String(profile.telegramChatId || '').trim();
+          if (token && chat) {
+            botToken = token;
+            chatId = chat;
+            break;
+          }
+        }
+      } catch {
+        botToken = '';
+        chatId = '';
+      }
+      if (!botToken || !chatId) {
+        sendJson(res, 200, { ok: false, skipped: true, error: 'not configured' });
+        return;
+      }
+      try {
+        const result = await sendTelegramMessage(
+          botToken,
+          chatId,
+          buildTelegramTradeMessage(body || {}),
+        );
+        sendJson(res, result.ok ? 200 : 502, result);
+      } catch (e) {
+        sendJson(res, 502, {
+          ok: false,
+          error: e instanceof Error ? e.message : 'Telegram send failed',
+        });
+      }
       return;
     }
 

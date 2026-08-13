@@ -32,7 +32,10 @@ const FIREBASE_DB_URL = (
   'https://lumoedge-61c02-default-rtdb.firebaseio.com'
 ).replace(/\/$/, '');
 
-/** Env first, then Firebase secrets path (set without committing the key). */
+/**
+ * Prefer Vercel/server env. Firebase fallback is legacy only — /lumo is
+ * world-readable in current rules, so never store production keys there.
+ */
 async function resolveChartScanConfig() {
   const envKey =
     process.env.CHART_SCAN_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -43,6 +46,7 @@ async function resolveChartScanConfig() {
   if (envKey) {
     return { apiKey: envKey, apiUrl: envUrl, model: envModel, source: 'env' };
   }
+  // Legacy fallback (insecure if RTDB rules allow public read). Prefer env.
   try {
     const res = await fetch(`${FIREBASE_DB_URL}/lumo/secrets/chartScan.json`, {
       headers: { Accept: 'application/json' },
@@ -1491,18 +1495,10 @@ export default async function handler(req, res) {
       const CHART_SCAN_MODEL = scanCfg.model;
 
       if (!CHART_SCAN_API_KEY) {
-        const accuracy = 62 + Math.floor(Math.random() * 27); // 62-88, never 89+
-        const demoSymbols = ['XAUUSD', 'EURUSD', 'GBPUSD', 'NAS100', 'BTCUSD'];
-        const symbol = demoSymbols[Math.floor(Math.random() * demoSymbols.length)];
-        const direction = Math.random() > 0.5 ? 'buy' : 'sell';
-        send(res, 200, {
-          ok: true,
-          demo: true,
-          accuracy,
-          symbol,
-          timeframe: 'M15',
-          direction,
-          summary: 'Demo mode — Chart Scanner API key not configured.',
+        send(res, 503, {
+          ok: false,
+          accuracy: 0,
+          error: 'Scanner unavailable. Please try again later.',
         });
         return;
       }
@@ -1639,9 +1635,75 @@ export default async function handler(req, res) {
         source: scanCfg.source,
         mt5Base: Boolean(process.env.MT5_API_BASE),
         hint: configured
-          ? `Live AI scans enabled (${scanCfg.source})`
-          : 'Missing Chart Scanner API key',
+          ? 'Live AI scans enabled'
+          : 'Scanner unavailable',
       });
+      return;
+    }
+
+    if (pathname === '/api/telegram/notify' && req.method === 'POST') {
+      const body = await readBody(req);
+      const {
+        isTelegramAlertLicenseKey,
+        buildTelegramTradeMessage,
+        sendTelegramMessage,
+      } = await import('./_lib/telegramNotify.mjs');
+      const isTest = Boolean(body?.test);
+      const licenseKey = String(body?.licenseKey || '').trim();
+      if (!isTest && !isTelegramAlertLicenseKey(licenseKey)) {
+        send(res, 200, {
+          ok: false,
+          skipped: true,
+          error: 'license not allowed for Telegram alerts',
+        });
+        return;
+      }
+
+      // Telegram credentials live on Super Admin workspace profile(s)
+      const auth = (await firebaseRead('lumo/auth')) || {};
+      const admins = toArray(auth.admins);
+      let botToken = '';
+      let chatId = '';
+      const preferredId = String(body?.mentorId || '').trim();
+      const ordered = [
+        ...admins.filter((a) => String(a?.id || '') === preferredId),
+        ...admins.filter(
+          (a) =>
+            String(a?.role || '').toLowerCase() === 'super' &&
+            String(a?.id || '') !== preferredId,
+        ),
+      ];
+      for (const admin of ordered) {
+        const id = String(admin?.id || '').trim();
+        if (!id) continue;
+        const ws = (await firebaseRead(`lumo/store/workspaces/${id}`)) || {};
+        const profile = (ws && ws.profile) || {};
+        const token = String(
+          profile.telegramBotToken || profile.telegramToken || '',
+        ).trim();
+        const chat = String(
+          profile.telegramChatId || profile.telegramGroupId || '',
+        ).trim();
+        if (token && chat) {
+          botToken = token;
+          chatId = chat;
+          break;
+        }
+      }
+      if (!botToken || !chatId) {
+        send(res, 200, { ok: false, skipped: true, error: 'not configured' });
+        return;
+      }
+      const text = buildTelegramTradeMessage(body || {});
+      try {
+        const result = await sendTelegramMessage(botToken, chatId, text);
+        send(res, result.ok ? 200 : 502, result);
+      } catch (e) {
+        send(res, 502, {
+          ok: false,
+          error: e instanceof Error ? e.message : 'Telegram send failed',
+        });
+      }
       return;
     }
 

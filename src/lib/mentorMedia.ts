@@ -1,5 +1,6 @@
 /** Mentor Custom media — 2 profile + 3 background slots (image/video only). */
 
+import { apiUrl } from './apiBase';
 import { firebaseUploadDataUrl, firebaseUploadFile, firebaseSaveImage } from './firebaseDb';
 import { isFirebaseConfigured } from './firebase';
 import { getEaImage, resolveStoredMediaUrl, saveEaImage } from './storage';
@@ -145,7 +146,7 @@ export async function uploadMentorMedia(
 
     try {
       const res = await Promise.race([
-        fetch(`/api/images/${encodeURIComponent(key)}`, {
+        fetch(apiUrl(`/api/images/${encodeURIComponent(key)}`), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ dataUrl }),
@@ -164,7 +165,7 @@ export async function uploadMentorMedia(
 
     try {
       const res = await Promise.race([
-        fetch('/api/media', {
+        fetch(apiUrl('/api/media'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key, dataUrl }),
@@ -207,7 +208,7 @@ export async function uploadMentorMediaFile(
 
   // Try local binary media endpoint first (Range streaming for video)
   try {
-    const res = await fetch('/api/media/binary', {
+    const res = await fetch(apiUrl('/api/media/binary'), {
       method: 'POST',
       headers: {
         'Content-Type': mime,
@@ -235,12 +236,12 @@ export async function uploadMentorMediaFile(
 
 export async function deleteMentorMedia(key: string): Promise<void> {
   try {
-    await fetch(`/api/media/${encodeURIComponent(key)}`, { method: 'DELETE' });
+    await fetch(apiUrl(`/api/media/${encodeURIComponent(key)}`), { method: 'DELETE' });
   } catch {
     // offline / static host
   }
   try {
-    await fetch(`/api/images/${encodeURIComponent(key)}`, {
+    await fetch(apiUrl(`/api/images/${encodeURIComponent(key)}`), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ dataUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }),

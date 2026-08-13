@@ -3,6 +3,7 @@
   "appName": "Lumo Edge",
   "webDir": "www",
   "server": {
+    "url": "https://lumoedge.com",
     "hostname": "lumoedge.com",
     "androidScheme": "https",
     "cleartext": false,

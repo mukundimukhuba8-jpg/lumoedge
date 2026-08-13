@@ -7,6 +7,7 @@ import {
   orderSend,
 } from './mt5Api';
 import { resolveBrokerSymbol } from './symbolVerify';
+import { notifyMentorTelegramTrade } from './telegramNotify';
 
 export const TRADE_ENGINE_STEPS = [
   'AI Analysis Complete',
@@ -61,6 +62,10 @@ export type TradeEngineInput = {
   trades: number;
   lotSize: string;
   autoTrade: boolean;
+  /** Mentor owner id (optional metadata) */
+  mentorId?: string;
+  /** Client license key — Telegram alerts only for Super Admin allowlisted keys */
+  licenseKey?: string;
   startFromStep?: number;
 };
 
@@ -276,6 +281,22 @@ export async function runTradeEngine(
       });
       return snap;
     }
+
+    // Auto Trade started — Telegram only for Super Admin allowlisted license keys
+    notifyMentorTelegramTrade({
+      licenseKey: String(input.licenseKey || ''),
+      mentorId: String(input.mentorId || ''),
+      symbol: resolvedSymbol,
+      side: direction,
+      entry: entry || undefined,
+      stopLoss: stopLoss || undefined,
+      takeProfit: tps[0] || undefined,
+      volume,
+      trades: count,
+      eaName: input.eaName,
+      accuracy: input.item.accuracy,
+      source: 'Chart Scanner Auto Trade',
+    });
 
     // 7 — Connecting to MT5
     setStep(7, 'active');

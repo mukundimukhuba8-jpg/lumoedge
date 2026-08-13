@@ -19,11 +19,12 @@ import {
 import { isFirebaseConfigured } from './firebase';
 import { approvalError, approvalLog, approvalWarn } from './approvalLog';
 import { mergeClientsLive, normalizeClientStatus } from './clientQueue';
+import { apiUrl } from './apiBase';
 
 export type { RemoteDb };
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetch(apiUrl(url), {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -361,7 +362,7 @@ export async function loginMentorRemote(
 } | null> {
   const work = (async () => {
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -746,7 +747,7 @@ export async function pushSession(email: string, session: unknown) {
 export async function apiHealthy() {
   if (isFirebaseConfigured() && (await firebaseHealthy())) return true;
   try {
-    const r = await fetch('/api/health');
+    const r = await fetch(apiUrl('/api/health'));
     return r.ok;
   } catch {
     return false;

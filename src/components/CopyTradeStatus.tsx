@@ -97,7 +97,7 @@ export function CopyTradeStatus({
               Signal from your mentor
             </span>
             <span className="te-popup-sub copy-engine-popup-ea">
-              <strong>{displayEa}</strong> opening trades · ~LumoEdge
+              <strong>{displayEa}</strong> opening trades
             </span>
             {sideLabel && symbol ? (
               <span className="copy-engine-popup-trade">

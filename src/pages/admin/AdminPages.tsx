@@ -1050,6 +1050,8 @@ export function ProfilePage() {
       profile.eaDisplayName,
       profile.mainText,
       String(profile.eaImage || '').length,
+      String(profile.telegramBotToken || ''),
+      String(profile.telegramChatId || ''),
       mediaSig,
     ].join('|');
     if (snapshot === lastProfileSig.current) return;
@@ -1194,6 +1196,11 @@ export function ProfilePage() {
             <Cpu size={16} /> Manage EAs
           </Link>
           {isSuper ? (
+            <Link to="/admin/telegram" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
+              Telegram Alerts
+            </Link>
+          ) : null}
+          {isSuper ? (
             <Link to="/admin/approve" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
               <UserCheck size={16} /> Approve mentors
             </Link>
@@ -1326,6 +1333,171 @@ export function ProfilePage() {
       >
         {savingProfile ? 'Updating…' : 'Update Profile'}
       </button>
+    </div>
+  );
+}
+
+/** Dedicated Telegram setup for Super Admin + mentors — save token/chat + test send. */
+export function TelegramAlertsPage() {
+  const { admin, profile, updateProfile } = useAdmin();
+  const [botToken, setBotToken] = useState(profile.telegramBotToken || '');
+  const [chatId, setChatId] = useState(profile.telegramChatId || '');
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    setBotToken(profile.telegramBotToken || '');
+    setChatId(profile.telegramChatId || '');
+  }, [profile.telegramBotToken, profile.telegramChatId]);
+
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    setMsg('');
+    try {
+      await updateProfile({
+        telegramBotToken: botToken.trim(),
+        telegramChatId: chatId.trim(),
+      });
+      setMsg('Saved — Chart Scanner Auto Trade will use this channel.');
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Could not save.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const testSend = async () => {
+    if (testing) return;
+    const mentorId = String(admin?.id || profile.mentorId || '').trim();
+    if (!mentorId) {
+      setMsg('Sign in again — mentor id missing.');
+      return;
+    }
+    if (!botToken.trim() || !chatId.trim()) {
+      setMsg('Save bot token and chat ID first.');
+      return;
+    }
+    setTesting(true);
+    setMsg('');
+    try {
+      await updateProfile({
+        telegramBotToken: botToken.trim(),
+        telegramChatId: chatId.trim(),
+      });
+      const { apiUrl } = await import('../../lib/apiBase');
+      const res = await fetch(apiUrl('/api/telegram/notify'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          test: true,
+          mentorId,
+          licenseKey: 'LUMO-JSDZ-8MC4-P4R3',
+          symbol: 'XAUUSD',
+          side: 'buy',
+          entry: '2350.00',
+          stopLoss: '2345.00',
+          takeProfit: '2360.00',
+          volume: '0.01',
+          trades: 1,
+          eaName: profile.eaDisplayName || 'Test',
+          accuracy: 88,
+          source: 'Telegram test',
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        skipped?: boolean;
+        error?: string;
+      };
+      if (data.ok) {
+        setMsg('Test sent — check your Telegram channel.');
+      } else if (data.skipped) {
+        setMsg('Not configured yet — save token + chat ID, then try again.');
+      } else {
+        setMsg(data.error || `Send failed (${res.status}). Is the bot an admin of the channel?`);
+      }
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Test send failed.');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <div className="glow-card">
+        <h3 style={{ marginTop: 0 }}>Telegram Alerts</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Super Admin only. Chart Scanner Auto Trade posts to your Telegram
+          channel <strong>only</strong> when the client uses one of these
+          license keys:
+        </p>
+        <ul className="muted" style={{ margin: '0 0 12px', paddingLeft: 18 }}>
+          <li>
+            <code>LUMO-JSDZ-8MC4-P4R3</code>
+          </li>
+          <li>
+            <code>LUMO-WB5J-4YBH-RK8P</code>
+          </li>
+        </ul>
+        <ol className="muted" style={{ margin: '0 0 12px', paddingLeft: 18, lineHeight: 1.5 }}>
+          <li>Create a bot with @BotFather and copy the token</li>
+          <li>Add the bot as admin of your channel (post permission on)</li>
+          <li>Paste token + channel chat id below (e.g. -1002117297165)</li>
+          <li>Save, then Send test message</li>
+        </ol>
+        <div className="field">
+          <label>Bot token</label>
+          <input
+            value={botToken}
+            onChange={(e) => setBotToken(e.target.value)}
+            placeholder="123456:ABC-DEF..."
+            autoComplete="off"
+          />
+        </div>
+        <div className="field">
+          <label>Channel / group chat ID</label>
+          <input
+            value={chatId}
+            onChange={(e) => setChatId(e.target.value)}
+            placeholder="-1002117297165"
+            autoComplete="off"
+          />
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          <button
+            type="button"
+            className="btn btn-blue"
+            disabled={saving || testing}
+            onClick={() => void save()}
+          >
+            {saving ? 'Saving…' : 'Save Telegram settings'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={saving || testing}
+            onClick={() => void testSend()}
+          >
+            {testing ? 'Sending…' : 'Send test message'}
+          </button>
+        </div>
+        {msg ? (
+          <p
+            style={{
+              margin: '12px 0 0',
+              fontWeight: 700,
+              color: msg.startsWith('Test sent') || msg.startsWith('Saved')
+                ? 'var(--green)'
+                : '#f87171',
+            }}
+          >
+            {msg}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

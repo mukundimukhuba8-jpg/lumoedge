@@ -18,4 +18,5 @@ Without these rules published, uploads and sync will fail in the browser.
 
 - The web `firebaseConfig` is public by design (it is in the client). Security comes from **Database + Storage rules**.
 - Current rules allow read/write under `/lumo` so the app can sync without Firebase Auth. Tighten later with Auth if needed.
+- **Never store OpenAI / Chart Scanner keys under `/lumo/secrets`.** That path is world-readable with the current rules. Put `CHART_SCAN_API_KEY` only in Vercel → Environment Variables (Production), then redeploy.
 - After deploy: re-upload your portal profile once so it is stored in Firebase Storage and syncs to client home avatars.

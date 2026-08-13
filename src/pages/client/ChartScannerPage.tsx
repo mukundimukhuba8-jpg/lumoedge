@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { TradeEnginePanel } from '../../components/TradeEnginePanel';
+import { apiUrl } from '../../lib/apiBase';
 import {
   DAILY_SCAN_LIMIT,
   MIN_SCAN_CONFIDENCE,
@@ -39,6 +40,7 @@ import {
   runTradeEngine,
   type TradeEngineSnapshot,
 } from '../../lib/tradeEngine';
+import { mentorIdForLicense } from '../../lib/copyTrade';
 import { RAZOR_MARKETS } from '../../lib/mt5Api';
 import { ensureMt5Token } from '../../lib/mt5Session';
 import { loadJSON } from '../../lib/storage';
@@ -64,6 +66,7 @@ export function ChartScannerPage() {
   const navigate = useNavigate();
   const { user, bot } = useApp();
   const eaName = bot.displayName || bot.name || 'Lumo Edge';
+  const mentorId = bot.licenseKey ? mentorIdForLicense(bot.licenseKey) : '';
   const [scansLeft, setScansLeft] = useState(() => getScansLeft(user?.email));
   const [trades, setTrades] = useState(1);
   const [lotSize, setLotSize] = useState('0.01');
@@ -78,6 +81,7 @@ export function ChartScannerPage() {
   const [status, setStatus] = useState('');
   const [tradeStatus, setTradeStatus] = useState('');
   const [aiLive, setAiLive] = useState<boolean | null>(null);
+  const [aiStatusError, setAiStatusError] = useState(false);
   const [editSymbol, setEditSymbol] = useState('');
   const [scanPreview, setScanPreview] = useState('');
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
@@ -102,16 +106,39 @@ export function ChartScannerPage() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch('/api/scan/status')
-      .then((r) => r.json())
-      .then((data: { configured?: boolean }) => {
-        if (!cancelled) setAiLive(Boolean(data?.configured));
-      })
-      .catch(() => {
-        if (!cancelled) setAiLive(false);
-      });
+    const check = async () => {
+      for (let attempt = 0; attempt < 3 && !cancelled; attempt += 1) {
+        try {
+          const r = await fetch(apiUrl('/api/scan/status'), {
+            cache: 'no-store',
+          });
+          if (!r.ok) throw new Error(`status ${r.status}`);
+          const data = (await r.json()) as { configured?: boolean };
+          if (!cancelled) {
+            setAiLive(Boolean(data?.configured));
+            setAiStatusError(false);
+          }
+          return;
+        } catch {
+          if (attempt < 2) {
+            await new Promise((ok) => setTimeout(ok, 400 * (attempt + 1)));
+          }
+        }
+      }
+      // Network/shell failure ≠ missing key — avoid a false "Demo" banner
+      if (!cancelled) {
+        setAiLive(null);
+        setAiStatusError(true);
+      }
+    };
+    void check();
+    const onFocus = () => {
+      void check();
+    };
+    window.addEventListener('focus', onFocus);
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', onFocus);
     };
   }, []);
 
@@ -144,6 +171,8 @@ export function ChartScannerPage() {
         trades,
         lotSize,
         autoTrade: autoOpen,
+        mentorId,
+        licenseKey: bot.licenseKey || '',
         startFromStep,
       },
       (snap) => {
@@ -291,17 +320,19 @@ export function ChartScannerPage() {
       setHistory(nextHistory);
       await playReveal(item);
       if (gen !== scanGenRef.current) return;
-      setStatus(
-        result.demo
-          ? 'Demo scan complete'
-          : 'Scan complete — launching trade engine…',
-      );
+      setStatus('Scan complete — launching trade engine…');
       await launchTradeEngine(item);
     } catch (e) {
       if (gen !== scanGenRef.current) return;
       setPhase('idle');
-      setStatus(e instanceof Error ? e.message : 'Scan failed');
-      alert(e instanceof Error ? e.message : 'Scan failed');
+      const raw = e instanceof Error ? e.message : '';
+      const msg =
+        raw &&
+        !/CHART_SCAN|Vercel|OpenAI|API key|redeploy|configured/i.test(raw)
+          ? raw
+          : 'Scanner unavailable. Please try again later.';
+      setStatus(msg);
+      alert(msg);
     } finally {
       if (gen === scanGenRef.current) {
         setPhase((p) => (p === 'scanning' ? 'idle' : p));
@@ -332,7 +363,13 @@ export function ChartScannerPage() {
               <Bot size={16} />
             </span>
             <span>
-              {aiLive == null ? 'Checking…' : aiLive ? 'AI Live' : 'Demo mode'}
+              {aiLive == null
+                ? aiStatusError
+                  ? 'Unavailable'
+                  : 'Checking…'
+                : aiLive
+                  ? 'AI Live'
+                  : 'Unavailable'}
             </span>
           </div>
         </header>
@@ -362,9 +399,9 @@ export function ChartScannerPage() {
           </div>
           <p className="scan-upload-label">Upload your MT5 chart</p>
           <p className="muted scan-hero-sub">
-            {aiLive
-              ? 'AI reads the exact symbol & timeframe from your chart image.'
-              : 'Demo picks a random symbol until CHART_SCAN_API_KEY is set on Vercel.'}
+            {aiStatusError && aiLive == null
+              ? 'Scanner is temporarily unavailable. Try again shortly.'
+              : 'AI reads the exact symbol & timeframe from your chart image.'}
           </p>
           <div className="scan-actions shape-actions">
             <button
@@ -424,17 +461,10 @@ export function ChartScannerPage() {
           </p>
         ) : null}
 
-        {aiLive === false ? (
+        {aiLive === false || (aiStatusError && aiLive == null) ? (
           <div className="scan-alert-card shape-polygon" role="status">
-            <strong>Demo assistance only</strong>
-            <div>
-              OpenAI key is not on the live server yet. In Vercel → Settings →
-              Environment Variables, add{' '}
-              <code>CHART_SCAN_API_KEY</code> for{' '}
-              <strong>Production</strong>, then Redeploy. Confirm at{' '}
-              <code>/api/scan/status</code> shows{' '}
-              <code>configured: true</code>.
-            </div>
+            <strong>Scanner unavailable</strong>
+            <div>Please try again in a moment. If it keeps failing, contact support.</div>
           </div>
         ) : null}
 
@@ -479,7 +509,7 @@ export function ChartScannerPage() {
               <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
                 After scan, trade engine validates and sends to MT5 when confidence ≥
                 {MIN_SCAN_CONFIDENCE}%. Comment:{' '}
-                <span style={{ color: 'var(--text)' }}>{eaName} Lumo~edge</span>
+                <span style={{ color: 'var(--text)' }}>{eaName}</span>
               </div>
             </div>
             <button
