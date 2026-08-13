@@ -589,6 +589,77 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (pathname === '/api/telegram/config' && req.method === 'POST') {
+      const chunks = [];
+      await new Promise((resolve, reject) => {
+        req.on('data', (c) => chunks.push(c));
+        req.on('end', resolve);
+        req.on('error', reject);
+      });
+      let body = {};
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      } catch {
+        body = {};
+      }
+      const fbUrl = (
+        process.env.FIREBASE_DATABASE_URL ||
+        process.env.VITE_FIREBASE_DATABASE_URL ||
+        'https://lumoedge-61c02-default-rtdb.firebaseio.com'
+      ).replace(/\/$/, '');
+      const mentorId = String(body?.mentorId || '').trim();
+      let botToken = String(body?.botToken || '').trim();
+      const chatId = String(body?.chatId || '').trim();
+      const fromUrl = botToken.match(
+        /(?:https?:\/\/)?api\.telegram\.org\/bot([0-9]+:[A-Za-z0-9_-]+)/i,
+      );
+      if (fromUrl?.[1]) botToken = fromUrl[1].trim();
+      botToken = botToken.replace(/^bot/i, '').trim().split('/')[0] || botToken;
+      if (!mentorId || !botToken || !chatId) {
+        sendJson(res, 400, {
+          ok: false,
+          error: 'mentorId, botToken, and chatId required',
+        });
+        return;
+      }
+      if (!/^\d+:[A-Za-z0-9_-]+$/.test(botToken)) {
+        sendJson(res, 400, {
+          ok: false,
+          error: 'Bot token looks wrong. Paste only the BotFather token.',
+        });
+        return;
+      }
+      const updatedAt = new Date().toISOString();
+      try {
+        const secretRes = await fetch(`${fbUrl}/lumo/secrets/telegramAlerts.json`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mentorId, botToken, chatId, updatedAt }),
+        });
+        if (!secretRes.ok) {
+          sendJson(res, 502, { ok: false, error: 'Could not save Telegram settings to cloud' });
+          return;
+        }
+        await fetch(`${fbUrl}/lumo/store/workspaces/${mentorId}/profile.json`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            telegramBotToken: botToken,
+            telegramChatId: chatId,
+          }),
+        }).catch(() => null);
+        await fetch(`${fbUrl}/lumo/updatedAt.json`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedAt),
+        }).catch(() => null);
+        sendJson(res, 200, { ok: true, updatedAt });
+      } catch {
+        sendJson(res, 502, { ok: false, error: 'Could not save Telegram settings to cloud' });
+      }
+      return;
+    }
+
     if (pathname === '/api/telegram/notify' && req.method === 'POST') {
       const chunks = [];
       await new Promise((resolve, reject) => {

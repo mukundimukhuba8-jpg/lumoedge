@@ -1165,7 +1165,7 @@ export async function firebaseSaveTelegramAlerts(input: {
   const botToken = String(input.botToken || '').trim();
   const chatId = String(input.chatId || '').trim();
   if (!mentorId || !botToken || !chatId) return false;
-  return enqueueWrite(async () => {
+  const write = enqueueWrite(async () => {
     try {
       const updatedAt = new Date().toISOString();
       await update(ref(getFirebaseDb(), ROOT), {
@@ -1185,6 +1185,13 @@ export async function firebaseSaveTelegramAlerts(input: {
       return false;
     }
   });
+  // Phone write queues can stall — never leave the Save button spinning forever
+  return Promise.race([
+    write,
+    new Promise<boolean>((resolve) => {
+      window.setTimeout(() => resolve(false), 12_000);
+    }),
+  ]);
 }
 
 export async function firebaseHealthy(): Promise<boolean> {

@@ -1340,21 +1340,59 @@ export function ProfilePage() {
 /** Dedicated Telegram setup for Super Admin — save token/chat + test send. */
 export function TelegramAlertsPage() {
   const { admin, profile, updateProfile } = useAdmin();
-  const [botToken, setBotToken] = useState(profile.telegramBotToken || '');
-  const [chatId, setChatId] = useState(profile.telegramChatId || '');
+  const DRAFT_KEY = 'lumo-telegram-alerts-draft';
+  const [botToken, setBotToken] = useState(() => {
+    try {
+      const draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || '{}') as {
+        botToken?: string;
+        chatId?: string;
+      };
+      return draft.botToken || profile.telegramBotToken || '';
+    } catch {
+      return profile.telegramBotToken || '';
+    }
+  });
+  const [chatId, setChatId] = useState(() => {
+    try {
+      const draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || '{}') as {
+        botToken?: string;
+        chatId?: string;
+      };
+      return draft.chatId || profile.telegramChatId || '';
+    } catch {
+      return profile.telegramChatId || '';
+    }
+  });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState('');
+  const dirtyRef = useRef(false);
 
   useEffect(() => {
+    // Never wipe what the user typed while saving / editing
+    if (saving || dirtyRef.current) return;
+    if (!profile.telegramBotToken && !profile.telegramChatId) return;
     setBotToken(profile.telegramBotToken || '');
     setChatId(profile.telegramChatId || '');
-  }, [profile.telegramBotToken, profile.telegramChatId]);
+  }, [profile.telegramBotToken, profile.telegramChatId, saving]);
+
+  const rememberDraft = (token: string, chat: string) => {
+    try {
+      sessionStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({ botToken: token, chatId: chat }),
+      );
+    } catch {
+      /* ignore */
+    }
+  };
 
   const persistTelegram = async () => {
     const { normalizeTelegramBotToken, normalizeTelegramChatId } = await import(
       '../../lib/telegramNotify'
     );
+    const { apiUrl } = await import('../../lib/apiBase');
+    const { markAdminNavBusy } = await import('../../lib/adminUiGate');
     const mentorId = String(admin?.id || profile.mentorId || '').trim();
     const token = normalizeTelegramBotToken(botToken);
     const chat = normalizeTelegramChatId(chatId);
@@ -1367,19 +1405,74 @@ export function TelegramAlertsPage() {
     }
     setBotToken(token);
     setChatId(chat);
+    rememberDraft(token, chat);
+    dirtyRef.current = true;
+    // Pause background Firebase sync so it cannot wipe the form mid-save
+    markAdminNavBusy(20_000);
+
+    // Fast server write — avoids the phone Firebase write queue / branding hang
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 12_000);
+    let saved = false;
+    let lastError: Error | null = null;
+    try {
+      const res = await fetch(apiUrl('/api/telegram/config'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mentorId,
+          botToken: token,
+          chatId: chat,
+        }),
+        signal: controller.signal,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (res.ok && data.ok) {
+        saved = true;
+      } else if (res.status >= 400 && res.status < 500 && res.status !== 404) {
+        throw new Error(data.error || `Save failed (${res.status}). Try again.`);
+      } else {
+        lastError = new Error(data.error || `Save failed (${res.status}). Try again.`);
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        throw new Error('Save timed out — check signal and try again.');
+      }
+      if (e instanceof Error && /Bot token looks wrong|required/i.test(e.message)) {
+        throw e;
+      }
+      lastError = e instanceof Error ? e : new Error('Could not save.');
+    } finally {
+      window.clearTimeout(timer);
+    }
+
+    if (!saved) {
+      // Fall back to client Firebase if API route is not deployed yet
+      const { firebaseSaveTelegramAlerts } = await import('../../lib/firebaseDb');
+      const ok = await Promise.race([
+        firebaseSaveTelegramAlerts({
+          mentorId,
+          botToken: token,
+          chatId: chat,
+        }),
+        new Promise<boolean>((resolve) => {
+          window.setTimeout(() => resolve(false), 10_000);
+        }),
+      ]);
+      if (!ok) {
+        throw lastError || new Error('Could not sync Telegram settings. Try again.');
+      }
+    }
+
+    // Local profile only — telegram-only path skips branding sync
     await updateProfile({
       telegramBotToken: token,
       telegramChatId: chat,
     });
-    const { firebaseSaveTelegramAlerts } = await import('../../lib/firebaseDb');
-    const ok = await firebaseSaveTelegramAlerts({
-      mentorId,
-      botToken: token,
-      chatId: chat,
-    });
-    if (!ok) {
-      throw new Error('Could not sync Telegram settings to the cloud. Try again.');
-    }
+    dirtyRef.current = false;
     return { mentorId, token, chat };
   };
 
@@ -1478,7 +1571,12 @@ export function TelegramAlertsPage() {
           <label>Bot token</label>
           <input
             value={botToken}
-            onChange={(e) => setBotToken(e.target.value)}
+            onChange={(e) => {
+              dirtyRef.current = true;
+              const v = e.target.value;
+              setBotToken(v);
+              rememberDraft(v, chatId);
+            }}
             placeholder="8801198868:AAGzMElU..."
             autoComplete="off"
           />
@@ -1487,7 +1585,12 @@ export function TelegramAlertsPage() {
           <label>Channel / group chat ID</label>
           <input
             value={chatId}
-            onChange={(e) => setChatId(e.target.value)}
+            onChange={(e) => {
+              dirtyRef.current = true;
+              const v = e.target.value;
+              setChatId(v);
+              rememberDraft(botToken, v);
+            }}
             placeholder="-100xxxxxxxxxx"
             autoComplete="off"
           />
