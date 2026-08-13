@@ -1659,39 +1659,72 @@ export default async function handler(req, res) {
         return;
       }
 
-      // Telegram credentials live on Super Admin workspace profile(s)
-      const auth = (await firebaseRead('lumo/auth')) || {};
-      const admins = toArray(auth.admins);
-      let botToken = '';
-      let chatId = '';
-      const preferredId = String(body?.mentorId || '').trim();
-      const ordered = [
-        ...admins.filter((a) => String(a?.id || '') === preferredId),
-        ...admins.filter(
-          (a) =>
-            String(a?.role || '').toLowerCase() === 'super' &&
-            String(a?.id || '') !== preferredId,
-        ),
-      ];
-      for (const admin of ordered) {
-        const id = String(admin?.id || '').trim();
-        if (!id) continue;
-        const ws = (await firebaseRead(`lumo/store/workspaces/${id}`)) || {};
-        const profile = (ws && ws.profile) || {};
-        const token = String(
-          profile.telegramBotToken || profile.telegramToken || '',
-        ).trim();
-        const chat = String(
-          profile.telegramChatId || profile.telegramGroupId || '',
-        ).trim();
-        if (token && chat) {
-          botToken = token;
-          chatId = chat;
-          break;
+      const normalizeTok = (raw) => {
+        let v = String(raw || '').trim();
+        const m = v.match(
+          /(?:https?:\/\/)?api\.telegram\.org\/bot([0-9]+:[A-Za-z0-9_-]+)/i,
+        );
+        if (m?.[1]) return m[1].trim();
+        v = v.replace(/^bot/i, '').trim().split('/')[0] || v;
+        return v.trim();
+      };
+
+      let botToken = normalizeTok(body?.botToken);
+      let chatId = String(body?.chatId || '').trim();
+
+      // Preferred durable store
+      if (!botToken || !chatId) {
+        const secret = (await firebaseRead('lumo/secrets/telegramAlerts')) || {};
+        botToken = botToken || normalizeTok(secret.botToken || secret.telegramBotToken);
+        chatId = chatId || String(secret.chatId || secret.telegramChatId || '').trim();
+      }
+
+      // Fallback: mentor / super workspace profile
+      if (!botToken || !chatId) {
+        const preferredId = String(body?.mentorId || '').trim();
+        const auth = (await firebaseRead('lumo/auth')) || {};
+        const admins = toArray(auth.admins);
+        const orderedIds = [
+          preferredId,
+          ...admins
+            .filter((a) => String(a?.role || '').toLowerCase() === 'super')
+            .map((a) => String(a?.id || '').trim()),
+          ...admins.map((a) => String(a?.id || '').trim()),
+        ].filter(Boolean);
+        const seen = new Set();
+        for (const id of orderedIds) {
+          if (seen.has(id)) continue;
+          seen.add(id);
+          const ws = (await firebaseRead(`lumo/store/workspaces/${id}`)) || {};
+          const profile = (ws && ws.profile) || {};
+          const token = normalizeTok(
+            profile.telegramBotToken || profile.telegramToken || '',
+          );
+          const chat = String(
+            profile.telegramChatId || profile.telegramGroupId || '',
+          ).trim();
+          if (token && chat) {
+            botToken = token;
+            chatId = chat;
+            break;
+          }
         }
       }
+
       if (!botToken || !chatId) {
-        send(res, 200, { ok: false, skipped: true, error: 'not configured' });
+        send(res, 200, {
+          ok: false,
+          skipped: true,
+          error: 'not configured',
+        });
+        return;
+      }
+      if (!/^\d+:[A-Za-z0-9_-]+$/.test(botToken)) {
+        send(res, 400, {
+          ok: false,
+          error:
+            'Bot token looks wrong. Paste only the token from BotFather (like 123456:AAH...), not a full URL.',
+        });
         return;
       }
       const text = buildTelegramTradeMessage(body || {});

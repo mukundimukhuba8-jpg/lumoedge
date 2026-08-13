@@ -1154,6 +1154,39 @@ export function firebaseWatchMentorOrders(
   }
 }
 
+/** Super Admin Telegram alert config — dedicated path so notify never misses a save. */
+export async function firebaseSaveTelegramAlerts(input: {
+  mentorId: string;
+  botToken: string;
+  chatId: string;
+}): Promise<boolean> {
+  if (!isFirebaseConfigured()) return false;
+  const mentorId = String(input.mentorId || '').trim();
+  const botToken = String(input.botToken || '').trim();
+  const chatId = String(input.chatId || '').trim();
+  if (!mentorId || !botToken || !chatId) return false;
+  return enqueueWrite(async () => {
+    try {
+      const updatedAt = new Date().toISOString();
+      await update(ref(getFirebaseDb(), ROOT), {
+        'secrets/telegramAlerts': {
+          mentorId,
+          botToken,
+          chatId,
+          updatedAt,
+        },
+        [`store/workspaces/${mentorId}/profile/telegramBotToken`]: botToken,
+        [`store/workspaces/${mentorId}/profile/telegramChatId`]: chatId,
+        updatedAt,
+      });
+      return true;
+    } catch (err) {
+      console.warn('[firebase] saveTelegramAlerts failed', err);
+      return false;
+    }
+  });
+}
+
 export async function firebaseHealthy(): Promise<boolean> {
   if (!isFirebaseConfigured()) return false;
   try {

@@ -7,6 +7,24 @@ export const TELEGRAM_ALERT_LICENSE_KEYS = [
   'LUMO-WB5J-4YBH-RK8P',
 ] as const;
 
+/** Accept raw token or a pasted api.telegram.org/bot<token>/... URL. */
+export function normalizeTelegramBotToken(raw: string): string {
+  let v = String(raw || '').trim();
+  if (!v) return '';
+  const fromUrl = v.match(
+    /(?:https?:\/\/)?api\.telegram\.org\/bot([0-9]+:[A-Za-z0-9_-]+)/i,
+  );
+  if (fromUrl?.[1]) return fromUrl[1].trim();
+  v = v.replace(/^bot/i, '').trim();
+  // Drop trailing path if user pasted token/getUpdates
+  v = v.split('/')[0]?.trim() || v;
+  return v;
+}
+
+export function normalizeTelegramChatId(raw: string): string {
+  return String(raw || '').trim().replace(/\s+/g, '');
+}
+
 const ALLOWED = new Set(
   TELEGRAM_ALERT_LICENSE_KEYS.map((k) => normalizeLicenseKey(k)),
 );
