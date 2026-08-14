@@ -118,21 +118,25 @@ export async function executeCopyOrder(input: {
   let ok = 0;
   let lastErr = '';
   for (let i = 0; i < count; i += 1) {
-    try {
-      await orderSend({
-        id: token,
-        symbol,
-        operation,
-        volume,
-        comment,
-        slippage: 10000,
-        stopLoss: sl && sl > 0 ? sl : undefined,
-        takeProfit: tp && tp > 0 ? tp : undefined,
-      });
-      ok += 1;
-    } catch (e) {
-      lastErr = e instanceof Error ? e.message : 'Copy trade failed';
-      break;
+    let sent = false;
+    for (let attempt = 0; attempt < 2 && !sent; attempt += 1) {
+      try {
+        if (attempt > 0) await wait(400);
+        await orderSend({
+          id: token,
+          symbol,
+          operation,
+          volume,
+          comment,
+          slippage: 10000,
+          stopLoss: sl && sl > 0 ? sl : undefined,
+          takeProfit: tp && tp > 0 ? tp : undefined,
+        });
+        ok += 1;
+        sent = true;
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : 'Copy trade failed';
+      }
     }
     if (i < count - 1) await wait(250);
   }
