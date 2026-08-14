@@ -610,11 +610,58 @@ const server = http.createServer(async (req, res) => {
       const mentorId = String(body?.mentorId || '').trim();
       let botToken = String(body?.botToken || '').trim();
       const chatId = String(body?.chatId || '').trim();
+      const hasEnabled = typeof body?.enabled === 'boolean';
+      const enabled = hasEnabled ? Boolean(body.enabled) : true;
       const fromUrl = botToken.match(
         /(?:https?:\/\/)?api\.telegram\.org\/bot([0-9]+:[A-Za-z0-9_-]+)/i,
       );
       if (fromUrl?.[1]) botToken = fromUrl[1].trim();
       botToken = botToken.replace(/^bot/i, '').trim().split('/')[0] || botToken;
+
+      if (mentorId && hasEnabled && !botToken && !chatId) {
+        try {
+          const secretRes = await fetch(`${fbUrl}/lumo/secrets/telegramAlerts.json`, {
+            cache: 'no-store',
+          });
+          const secret = secretRes.ok ? await secretRes.json() : {};
+          const existingTok = String(secret?.botToken || '').trim();
+          const existingChat = String(secret?.chatId || '').trim();
+          if (!existingTok || !existingChat) {
+            sendJson(res, 400, {
+              ok: false,
+              error: 'Save bot token and chat ID first, then use On/Off.',
+            });
+            return;
+          }
+          const updatedAt = new Date().toISOString();
+          const put = await fetch(`${fbUrl}/lumo/secrets/telegramAlerts.json`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...secret,
+              mentorId: String(secret?.mentorId || mentorId).trim() || mentorId,
+              botToken: existingTok,
+              chatId: existingChat,
+              enabled,
+              updatedAt,
+            }),
+          });
+          await fetch(`${fbUrl}/lumo/store/workspaces/${mentorId}/profile.json`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ telegramAlertsEnabled: enabled }),
+          }).catch(() => null);
+          if (!put.ok) {
+            sendJson(res, 502, { ok: false, error: 'Could not update Telegram On/Off' });
+            return;
+          }
+          sendJson(res, 200, { ok: true, enabled, updatedAt });
+        } catch {
+          sendJson(res, 502, { ok: false, error: 'Could not update Telegram On/Off' });
+        }
+        return;
+      }
+
       if (!mentorId || !botToken || !chatId) {
         sendJson(res, 400, {
           ok: false,
@@ -634,7 +681,7 @@ const server = http.createServer(async (req, res) => {
         const secretRes = await fetch(`${fbUrl}/lumo/secrets/telegramAlerts.json`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mentorId, botToken, chatId, updatedAt }),
+          body: JSON.stringify({ mentorId, botToken, chatId, enabled, updatedAt }),
         });
         if (!secretRes.ok) {
           sendJson(res, 502, { ok: false, error: 'Could not save Telegram settings to cloud' });
@@ -646,6 +693,7 @@ const server = http.createServer(async (req, res) => {
           body: JSON.stringify({
             telegramBotToken: botToken,
             telegramChatId: chatId,
+            telegramAlertsEnabled: enabled,
           }),
         }).catch(() => null);
         await fetch(`${fbUrl}/lumo/updatedAt.json`, {
@@ -653,7 +701,7 @@ const server = http.createServer(async (req, res) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updatedAt),
         }).catch(() => null);
-        sendJson(res, 200, { ok: true, updatedAt });
+        sendJson(res, 200, { ok: true, enabled, updatedAt });
       } catch {
         sendJson(res, 502, { ok: false, error: 'Could not save Telegram settings to cloud' });
       }
@@ -680,6 +728,10 @@ const server = http.createServer(async (req, res) => {
       } = await import('./api/_lib/telegramNotify.mjs');
       const isTest = Boolean(body?.test);
       const licenseKey = String(body?.licenseKey || '').trim();
+      if (!isTest && body?.notify === false) {
+        sendJson(res, 200, { ok: false, skipped: true, error: 'telegram notify off' });
+        return;
+      }
       if (!isTest && !isTelegramAlertLicenseKey(licenseKey)) {
         sendJson(res, 200, {
           ok: false,
@@ -703,14 +755,24 @@ const server = http.createServer(async (req, res) => {
       ).replace(/\/$/, '');
       let botToken = normalizeTok(body?.botToken);
       let chatId = String(body?.chatId || '').trim();
+      let alertsEnabled = true;
       try {
+        const secretRes = await fetch(`${fbUrl}/lumo/secrets/telegramAlerts.json`, {
+          cache: 'no-store',
+        });
+        const secret = secretRes.ok ? await secretRes.json() : {};
+        if (typeof secret?.enabled === 'boolean') alertsEnabled = secret.enabled;
         if (!botToken || !chatId) {
-          const secretRes = await fetch(`${fbUrl}/lumo/secrets/telegramAlerts.json`, {
-            cache: 'no-store',
-          });
-          const secret = secretRes.ok ? await secretRes.json() : {};
           botToken = botToken || normalizeTok(secret?.botToken);
           chatId = chatId || String(secret?.chatId || '').trim();
+        }
+        if (!isTest && !alertsEnabled) {
+          sendJson(res, 200, {
+            ok: false,
+            skipped: true,
+            error: 'Telegram alerts are turned Off',
+          });
+          return;
         }
         if (!botToken || !chatId) {
           const preferredId = String(body?.mentorId || '').trim();

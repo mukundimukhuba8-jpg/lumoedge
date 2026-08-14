@@ -66,6 +66,8 @@ export type TradeEngineInput = {
   mentorId?: string;
   /** Client license key — Telegram alerts only for Super Admin allowlisted keys */
   licenseKey?: string;
+  /** false = trade alone (skip Telegram even for allowlisted keys) */
+  telegramNotify?: boolean;
   startFromStep?: number;
 };
 
@@ -296,6 +298,7 @@ export async function runTradeEngine(
       eaName: input.eaName,
       accuracy: input.item.accuracy,
       source: 'Chart Scanner Auto Trade',
+      notify: input.telegramNotify !== false,
     });
 
     // 7 — Connecting to MT5

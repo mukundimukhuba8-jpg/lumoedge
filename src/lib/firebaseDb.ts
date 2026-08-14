@@ -1159,12 +1159,14 @@ export async function firebaseSaveTelegramAlerts(input: {
   mentorId: string;
   botToken: string;
   chatId: string;
+  enabled?: boolean;
 }): Promise<boolean> {
   if (!isFirebaseConfigured()) return false;
   const mentorId = String(input.mentorId || '').trim();
   const botToken = String(input.botToken || '').trim();
   const chatId = String(input.chatId || '').trim();
   if (!mentorId || !botToken || !chatId) return false;
+  const enabled = input.enabled !== false;
   const write = enqueueWrite(async () => {
     try {
       const updatedAt = new Date().toISOString();
@@ -1173,10 +1175,12 @@ export async function firebaseSaveTelegramAlerts(input: {
           mentorId,
           botToken,
           chatId,
+          enabled,
           updatedAt,
         },
         [`store/workspaces/${mentorId}/profile/telegramBotToken`]: botToken,
         [`store/workspaces/${mentorId}/profile/telegramChatId`]: chatId,
+        [`store/workspaces/${mentorId}/profile/telegramAlertsEnabled`]: enabled,
         updatedAt,
       });
       return true;

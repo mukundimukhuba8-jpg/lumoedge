@@ -44,6 +44,11 @@ import { mentorIdForLicense } from '../../lib/copyTrade';
 import { RAZOR_MARKETS } from '../../lib/mt5Api';
 import { ensureMt5Token } from '../../lib/mt5Session';
 import { loadJSON } from '../../lib/storage';
+import {
+  isTelegramAlertLicenseKey,
+  loadScannerTelegramPref,
+  saveScannerTelegramPref,
+} from '../../lib/telegramNotify';
 
 type RevealPhase = 'idle' | 'scanning' | 'symbol' | 'direction' | 'accuracy';
 
@@ -67,10 +72,14 @@ export function ChartScannerPage() {
   const { user, bot } = useApp();
   const eaName = bot.displayName || bot.name || 'Lumo Edge';
   const mentorId = bot.licenseKey ? mentorIdForLicense(bot.licenseKey) : '';
+  const canTelegram = isTelegramAlertLicenseKey(bot.licenseKey);
   const [scansLeft, setScansLeft] = useState(() => getScansLeft(user?.email));
   const [trades, setTrades] = useState(1);
   const [lotSize, setLotSize] = useState('0.01');
   const [autoOpen, setAutoOpen] = useState(true);
+  const [telegramOn, setTelegramOn] = useState(() =>
+    loadScannerTelegramPref(user?.email),
+  );
   const [phase, setPhase] = useState<RevealPhase>('idle');
   const [accuracy, setAccuracy] = useState(0);
   const [targetAccuracy, setTargetAccuracy] = useState<number | null>(null);
@@ -96,6 +105,10 @@ export function ChartScannerPage() {
   const scanAbortRef = useRef<AbortController | null>(null);
   const scanGenRef = useRef(0);
   const scanning = phase === 'scanning';
+
+  useEffect(() => {
+    setTelegramOn(loadScannerTelegramPref(user?.email));
+  }, [user?.email]);
 
   useEffect(() => {
     return () => {
@@ -173,6 +186,7 @@ export function ChartScannerPage() {
         autoTrade: autoOpen,
         mentorId,
         licenseKey: bot.licenseKey || '',
+        telegramNotify: !canTelegram || telegramOn,
         startFromStep,
       },
       (snap) => {
@@ -523,6 +537,35 @@ export function ChartScannerPage() {
               <span />
             </button>
           </div>
+          {canTelegram ? (
+            <div className="scan-auto shape-open-strip" style={{ marginTop: 10 }}>
+              <div>
+                <strong>Send to Telegram</strong>
+                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                  {telegramOn
+                    ? 'On — Auto Trade posts to your channel'
+                    : 'Off — trade alone (no Telegram post)'}
+                </div>
+              </div>
+              <button
+                type="button"
+                className={`scan-toggle${telegramOn ? ' on' : ''}`}
+                onClick={() => {
+                  setTelegramOn((v) => {
+                    const next = !v;
+                    saveScannerTelegramPref(user?.email, next);
+                    return next;
+                  });
+                }}
+                aria-pressed={telegramOn}
+                aria-label={
+                  telegramOn ? 'Turn Telegram alerts off' : 'Turn Telegram alerts on'
+                }
+              >
+                <span />
+              </button>
+            </div>
+          ) : null}
           {tradeStatus ? (
             <p className="muted scan-hint" style={{ marginTop: 0 }}>
               {tradeStatus}

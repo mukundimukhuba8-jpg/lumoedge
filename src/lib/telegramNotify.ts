@@ -7,6 +7,8 @@ export const TELEGRAM_ALERT_LICENSE_KEYS = [
   'LUMO-WB5J-4YBH-RK8P',
 ] as const;
 
+const SCANNER_TG_PREF = 'lumo-scanner-telegram-on';
+
 /** Accept raw token or a pasted api.telegram.org/bot<token>/... URL. */
 export function normalizeTelegramBotToken(raw: string): string {
   let v = String(raw || '').trim();
@@ -34,6 +36,29 @@ export function isTelegramAlertLicenseKey(licenseKey?: string): boolean {
   return Boolean(key && ALLOWED.has(key));
 }
 
+/** Per-device Chart Scanner preference — trade alone when off. */
+export function loadScannerTelegramPref(email?: string): boolean {
+  try {
+    const v = localStorage.getItem(`${SCANNER_TG_PREF}:${String(email || '').toLowerCase()}`);
+    if (v === '0') return false;
+    if (v === '1') return true;
+  } catch {
+    /* ignore */
+  }
+  return true;
+}
+
+export function saveScannerTelegramPref(email: string | undefined, on: boolean) {
+  try {
+    localStorage.setItem(
+      `${SCANNER_TG_PREF}:${String(email || '').toLowerCase()}`,
+      on ? '1' : '0',
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
 export type TelegramTradeAlert = {
   /** Required — must be one of TELEGRAM_ALERT_LICENSE_KEYS */
   licenseKey: string;
@@ -50,10 +75,13 @@ export type TelegramTradeAlert = {
   source?: string;
   /** Super Admin test button only */
   test?: boolean;
+  /** Chart Scanner session toggle — false = trade alone */
+  notify?: boolean;
 };
 
 /** Fire-and-forget Telegram alert (allowlisted license keys only). */
 export function notifyMentorTelegramTrade(alert: TelegramTradeAlert): void {
+  if (!alert.test && alert.notify === false) return;
   if (!alert.test && !isTelegramAlertLicenseKey(alert.licenseKey)) return;
   void fetch(apiUrl('/api/telegram/notify'), {
     method: 'POST',
