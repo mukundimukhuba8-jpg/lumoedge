@@ -311,28 +311,42 @@ export async function runTradeEngine(
     let ok = 0;
     let lastErr = '';
     for (let i = 0; i < count; i += 1) {
-      try {
-        await orderSend({
-          id: input.token,
-          symbol: resolvedSymbol,
-          operation,
-          volume,
-          comment,
-          slippage: 10000,
-          stopLoss: stopLoss || undefined,
-          takeProfit: tps[i] || undefined,
-        });
-        ok += 1;
-      } catch (e) {
-        lastErr = e instanceof Error ? e.message : 'OrderSend failed';
-        break;
+      let sent = false;
+      for (let attempt = 0; attempt < 2 && !sent; attempt += 1) {
+        try {
+          if (attempt > 0) await wait(400);
+          await orderSend({
+            id: input.token,
+            symbol: resolvedSymbol,
+            operation,
+            volume,
+            comment,
+            slippage: 10000,
+            stopLoss: stopLoss || undefined,
+            takeProfit: tps[i] || undefined,
+          });
+          ok += 1;
+          sent = true;
+        } catch (e) {
+          lastErr = e instanceof Error ? e.message : 'OrderSend failed';
+        }
       }
+      // Keep sending remaining ladder trades even if one leg fails
       if (i < count - 1) await wait(250);
     }
     if (ok === 0) {
       return fail(8, lastErr || 'Broker rejected the order.');
     }
     setStep(8, 'done');
+    if (ok < count) {
+      publish({
+        dashboard: {
+          ...snap.dashboard,
+          tradeStatus: `Opened ${ok}/${count} — retry failed legs if needed`,
+          mt5Status: lastErr || 'Partial fill',
+        },
+      });
+    }
 
     // 9 — Waiting for Broker Confirmation
     setStep(9, 'active');

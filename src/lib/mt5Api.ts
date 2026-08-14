@@ -276,7 +276,7 @@ export type Mt5OrderOperation = 'Buy' | 'Sell';
 
 /**
  * Send market order via swagger MT5 bridge (/OrderSend).
- * Comment format: mentor EA name only (max 31 chars).
+ * Comment format: "{EA name} ~LumoEdge" (max 31 chars — tag always kept).
  */
 export async function orderSend(input: {
   id: string;
@@ -314,16 +314,25 @@ export async function orderSend(input: {
   return data;
 }
 
-/** Build MT5 order comment from mentor EA name only (max 31 chars). */
+/** MT5 comment tag used by Lumo Edge trade management / EAs. */
+export const LUMO_TRADE_COMMENT_TAG = '~LumoEdge';
+
+/** Build MT5 order comment: mentor EA name + ~LumoEdge (max 31 chars). */
 export function buildTradeComment(eaName: string): string {
-  const name = (eaName || '').trim().replace(/\s+/g, ' ');
+  const tag = LUMO_TRADE_COMMENT_TAG;
+  const name = (eaName || 'Lumo Edge').trim().replace(/\s+/g, ' ');
   const cleaned = name.replace(/\s*~?\s*Lumo[~-]?\s*Edge.*$/i, '').trim();
-  return (cleaned || name || 'Trade').slice(0, 31);
+  const base = cleaned || 'Lumo Edge';
+  // Always keep the tag — truncate the EA name first if needed
+  const maxName = Math.max(1, 31 - tag.length - 1);
+  return `${base.slice(0, maxName)} ${tag}`.slice(0, 31);
 }
 
-/** Prefer mentor EA name; strip legacy ~LumoEdge tags from comments. */
+/** Prefer mentor EA name; always tag ~LumoEdge on MT5 comments. */
 export function formatCopyTradeComment(eaName: string, orderComment?: string): string {
   const raw = String(orderComment || '').trim();
-  const nameFromComment = raw.replace(/\s*~?\s*Lumo[~-]?\s*Edge.*$/i, '').trim();
+  const nameFromComment = raw
+    .replace(/\s*~?\s*Lumo[~-]?\s*Edge.*$/i, '')
+    .trim();
   return buildTradeComment(nameFromComment || eaName);
 }
