@@ -1363,7 +1363,11 @@ export function TelegramAlertsPage() {
       return profile.telegramChatId || '';
     }
   });
+  const [alertsOn, setAlertsOn] = useState(
+    profile.telegramAlertsEnabled !== false,
+  );
   const [saving, setSaving] = useState(false);
+  const [toggling, setToggling] = useState(false);
   const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState('');
   const dirtyRef = useRef(false);
@@ -1375,6 +1379,11 @@ export function TelegramAlertsPage() {
     setBotToken(profile.telegramBotToken || '');
     setChatId(profile.telegramChatId || '');
   }, [profile.telegramBotToken, profile.telegramChatId, saving]);
+
+  useEffect(() => {
+    if (toggling) return;
+    setAlertsOn(profile.telegramAlertsEnabled !== false);
+  }, [profile.telegramAlertsEnabled, toggling]);
 
   const rememberDraft = (token: string, chat: string) => {
     try {
@@ -1423,6 +1432,7 @@ export function TelegramAlertsPage() {
           mentorId,
           botToken: token,
           chatId: chat,
+          enabled: alertsOn,
         }),
         signal: controller.signal,
       });
@@ -1457,6 +1467,7 @@ export function TelegramAlertsPage() {
           mentorId,
           botToken: token,
           chatId: chat,
+          enabled: alertsOn,
         }),
         new Promise<boolean>((resolve) => {
           window.setTimeout(() => resolve(false), 10_000);
@@ -1471,9 +1482,51 @@ export function TelegramAlertsPage() {
     await updateProfile({
       telegramBotToken: token,
       telegramChatId: chat,
+      telegramAlertsEnabled: alertsOn,
     });
     dirtyRef.current = false;
     return { mentorId, token, chat };
+  };
+
+  const setMasterEnabled = async (next: boolean) => {
+    if (toggling) return;
+    const mentorId = String(admin?.id || profile.mentorId || '').trim();
+    if (!mentorId) {
+      setMsg('Sign in again — mentor id missing.');
+      return;
+    }
+    setToggling(true);
+    setMsg('');
+    const prev = alertsOn;
+    setAlertsOn(next);
+    try {
+      const { apiUrl } = await import('../../lib/apiBase');
+      const { markAdminNavBusy } = await import('../../lib/adminUiGate');
+      markAdminNavBusy(12_000);
+      const res = await fetch(apiUrl('/api/telegram/config'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mentorId, enabled: next }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || `Could not turn Telegram ${next ? 'On' : 'Off'}.`);
+      }
+      await updateProfile({ telegramAlertsEnabled: next });
+      setMsg(
+        next
+          ? 'Telegram On — Auto Trade will post to your channel.'
+          : 'Telegram Off — trade alone (no channel posts).',
+      );
+    } catch (e) {
+      setAlertsOn(prev);
+      setMsg(e instanceof Error ? e.message : 'Could not update On/Off.');
+    } finally {
+      setToggling(false);
+    }
   };
 
   const save = async () => {
@@ -1482,7 +1535,11 @@ export function TelegramAlertsPage() {
     setMsg('');
     try {
       await persistTelegram();
-      setMsg('Saved — Chart Scanner Auto Trade will use this channel.');
+      setMsg(
+        alertsOn
+          ? 'Saved — Chart Scanner Auto Trade will use this channel.'
+          : 'Saved — Telegram is Off (trade alone until you turn it On).',
+      );
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Could not save.');
     } finally {
@@ -1557,6 +1614,31 @@ export function TelegramAlertsPage() {
             <code>LUMO-WB5J-4YBH-RK8P</code>
           </li>
         </ul>
+
+        <div
+          className="scan-auto shape-open-strip"
+          style={{ marginBottom: 14 }}
+        >
+          <div>
+            <strong>Send to Telegram</strong>
+            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+              {alertsOn
+                ? 'On — Auto Trade posts to your channel'
+                : 'Off — trade alone (no channel posts)'}
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`scan-toggle${alertsOn ? ' on' : ''}`}
+            disabled={toggling || saving}
+            onClick={() => void setMasterEnabled(!alertsOn)}
+            aria-pressed={alertsOn}
+            aria-label={alertsOn ? 'Turn Telegram alerts off' : 'Turn Telegram alerts on'}
+          >
+            <span />
+          </button>
+        </div>
+
         <ol className="muted" style={{ margin: '0 0 12px', paddingLeft: 18, lineHeight: 1.5 }}>
           <li>Create a bot with @BotFather and copy the token</li>
           <li>Add the bot as admin of your channel (post permission on)</li>
@@ -1566,6 +1648,7 @@ export function TelegramAlertsPage() {
           </li>
           <li>Paste your real channel chat id from getUpdates (usually starts with -100)</li>
           <li>Save, then Send test message</li>
+          <li>Use the On/Off switch above when you want to trade alone</li>
         </ol>
         <div className="field">
           <label>Bot token</label>
@@ -1599,7 +1682,7 @@ export function TelegramAlertsPage() {
           <button
             type="button"
             className="btn btn-blue"
-            disabled={saving || testing}
+            disabled={saving || testing || toggling}
             onClick={() => void save()}
           >
             {saving ? 'Saving…' : 'Save Telegram settings'}
@@ -1607,7 +1690,7 @@ export function TelegramAlertsPage() {
           <button
             type="button"
             className="btn btn-ghost"
-            disabled={saving || testing}
+            disabled={saving || testing || toggling}
             onClick={() => void testSend()}
           >
             {testing ? 'Sending…' : 'Send test message'}
@@ -1618,9 +1701,13 @@ export function TelegramAlertsPage() {
             style={{
               margin: '12px 0 0',
               fontWeight: 700,
-              color: msg.startsWith('Test sent') || msg.startsWith('Saved')
-                ? 'var(--green)'
-                : '#f87171',
+              color:
+                msg.startsWith('Test sent') ||
+                msg.startsWith('Saved') ||
+                msg.startsWith('Telegram On') ||
+                msg.startsWith('Telegram Off')
+                  ? 'var(--green)'
+                  : '#f87171',
             }}
           >
             {msg}

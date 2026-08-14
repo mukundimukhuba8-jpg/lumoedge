@@ -370,6 +370,8 @@ export type AdminProfile = {
   telegramBotToken?: string;
   /** Telegram group/chat id (often negative for groups) */
   telegramChatId?: string;
+  /** Master switch — false = never post Chart Scanner Auto Trade alerts */
+  telegramAlertsEnabled?: boolean;
 };
 
 export type CopyOrder = {
@@ -681,6 +683,7 @@ function emptyProfile(seed?: {
     customMedia: emptyCustomMedia(),
     telegramBotToken: '',
     telegramChatId: '',
+    telegramAlertsEnabled: true,
   };
 }
 
@@ -895,6 +898,12 @@ function mergeWorkspaceKeepAll(a: AdminWorkspace, b: AdminWorkspace): AdminWorks
         b.profile?.telegramChatId,
         a.profile?.telegramChatId,
       ),
+      telegramAlertsEnabled:
+        typeof b.profile?.telegramAlertsEnabled === 'boolean'
+          ? b.profile.telegramAlertsEnabled
+          : typeof a.profile?.telegramAlertsEnabled === 'boolean'
+            ? a.profile.telegramAlertsEnabled
+            : true,
       customMedia: (() => {
         const map = new Map(
           normalizeCustomMedia(a.profile?.customMedia).map((m) => [m.slot, m]),
@@ -4113,7 +4122,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
           const telegramOnly =
             patchKeys.length > 0 &&
             patchKeys.every(
-              (k) => k === 'telegramBotToken' || k === 'telegramChatId',
+              (k) =>
+                k === 'telegramBotToken' ||
+                k === 'telegramChatId' ||
+                k === 'telegramAlertsEnabled',
             );
 
           // Telegram settings must not wait on branding / license image sync
@@ -4157,6 +4169,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                       branded.profile.telegramChatId,
                       cur.profile.telegramChatId,
                     ),
+                    telegramAlertsEnabled:
+                      typeof branded.profile.telegramAlertsEnabled === 'boolean'
+                        ? branded.profile.telegramAlertsEnabled
+                        : typeof cur.profile.telegramAlertsEnabled === 'boolean'
+                          ? cur.profile.telegramAlertsEnabled
+                          : true,
                   },
                   licenses,
                 };

@@ -1659,11 +1659,48 @@ export default async function handler(req, res) {
       const mentorId = String(body?.mentorId || '').trim();
       let botToken = String(body?.botToken || '').trim();
       const chatId = String(body?.chatId || '').trim();
+      const enabledRaw = body?.enabled;
+      const hasEnabled = typeof enabledRaw === 'boolean';
+      const enabled = hasEnabled ? Boolean(enabledRaw) : true;
       const fromUrl = botToken.match(
         /(?:https?:\/\/)?api\.telegram\.org\/bot([0-9]+:[A-Za-z0-9_-]+)/i,
       );
       if (fromUrl?.[1]) botToken = fromUrl[1].trim();
       botToken = botToken.replace(/^bot/i, '').trim().split('/')[0] || botToken;
+
+      // Toggle-only: flip on/off without re-pasting token
+      if (mentorId && hasEnabled && !botToken && !chatId) {
+        const secret = (await firebaseRead('lumo/secrets/telegramAlerts')) || {};
+        const existingTok = String(secret.botToken || secret.telegramBotToken || '').trim();
+        const existingChat = String(secret.chatId || secret.telegramChatId || '').trim();
+        if (!existingTok || !existingChat) {
+          send(res, 400, {
+            ok: false,
+            error: 'Save bot token and chat ID first, then use On/Off.',
+          });
+          return;
+        }
+        const updatedAt = new Date().toISOString();
+        const secretOk = await firebaseWrite('lumo/secrets/telegramAlerts', {
+          ...secret,
+          mentorId: String(secret.mentorId || mentorId).trim() || mentorId,
+          botToken: existingTok,
+          chatId: existingChat,
+          enabled,
+          updatedAt,
+        });
+        await firebasePatch(`lumo/store/workspaces/${mentorId}/profile`, {
+          telegramAlertsEnabled: enabled,
+        });
+        await firebaseWrite('lumo/updatedAt', updatedAt).catch(() => false);
+        if (!secretOk) {
+          send(res, 502, { ok: false, error: 'Could not update Telegram On/Off' });
+          return;
+        }
+        send(res, 200, { ok: true, enabled, updatedAt });
+        return;
+      }
+
       if (!mentorId || !botToken || !chatId) {
         send(res, 400, { ok: false, error: 'mentorId, botToken, and chatId required' });
         return;
@@ -1680,18 +1717,20 @@ export default async function handler(req, res) {
         mentorId,
         botToken,
         chatId,
+        enabled,
         updatedAt,
       });
       const profileOk = await firebasePatch(`lumo/store/workspaces/${mentorId}/profile`, {
         telegramBotToken: botToken,
         telegramChatId: chatId,
+        telegramAlertsEnabled: enabled,
       });
       await firebaseWrite('lumo/updatedAt', updatedAt).catch(() => false);
       if (!secretOk) {
         send(res, 502, { ok: false, error: 'Could not save Telegram settings to cloud' });
         return;
       }
-      send(res, 200, { ok: true, profileSynced: profileOk, updatedAt });
+      send(res, 200, { ok: true, enabled, profileSynced: profileOk, updatedAt });
       return;
     }
 
@@ -1704,6 +1743,10 @@ export default async function handler(req, res) {
       } = await import('./_lib/telegramNotify.mjs');
       const isTest = Boolean(body?.test);
       const licenseKey = String(body?.licenseKey || '').trim();
+      if (!isTest && body?.notify === false) {
+        send(res, 200, { ok: false, skipped: true, error: 'telegram notify off' });
+        return;
+      }
       if (!isTest && !isTelegramAlertLicenseKey(licenseKey)) {
         send(res, 200, {
           ok: false,
@@ -1725,12 +1768,25 @@ export default async function handler(req, res) {
 
       let botToken = normalizeTok(body?.botToken);
       let chatId = String(body?.chatId || '').trim();
+      let alertsEnabled = true;
 
       // Preferred durable store
-      if (!botToken || !chatId) {
+      {
         const secret = (await firebaseRead('lumo/secrets/telegramAlerts')) || {};
-        botToken = botToken || normalizeTok(secret.botToken || secret.telegramBotToken);
-        chatId = chatId || String(secret.chatId || secret.telegramChatId || '').trim();
+        if (typeof secret.enabled === 'boolean') alertsEnabled = secret.enabled;
+        if (!botToken || !chatId) {
+          botToken = botToken || normalizeTok(secret.botToken || secret.telegramBotToken);
+          chatId = chatId || String(secret.chatId || secret.telegramChatId || '').trim();
+        }
+      }
+
+      if (!isTest && !alertsEnabled) {
+        send(res, 200, {
+          ok: false,
+          skipped: true,
+          error: 'Telegram alerts are turned Off',
+        });
+        return;
       }
 
       // Fallback: mentor / super workspace profile
