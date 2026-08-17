@@ -1,0 +1,12 @@
+{
+  "name": "lumoedge-functions",
+  "description": "Lumo Edge Cloud Functions — Resend email triggers (server-side only)",
+  "engines": { "node": "20" },
+  "main": "index.js",
+  "type": "commonjs",
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.0"
+  },
+  "private": true
+}

@@ -1,77 +1,120 @@
 import { useMemo, useState } from 'react';
-import {
-  Check,
-  Copy,
-  Edit3,
-  Loader2,
-  Mail,
-  Send,
-  Trash2,
-  Users,
-} from 'lucide-react';
+import { Loader2, Mail, Send, Users } from 'lucide-react';
+import { useAdmin } from '../../context/AdminContext';
+import { apiUrl } from '../../lib/apiBase';
 
-type Tab = 'templates' | 'compose' | 'send';
+type Tab = 'compose' | 'templates';
 
-type Template = {
-  id: string;
-  title: string;
-  subject: string;
-  body: string;
-  tag: string;
-};
-
-const TEMPLATES: Template[] = [
-  { id: 'welcome', title: 'Welcome Email', subject: 'Welcome to Lumo Edge', body: 'Hi {{name}}, welcome to your premium trading platform.', tag: 'Onboarding' },
-  { id: 'license', title: 'License Activated', subject: 'Your license is active', body: 'Your license key is now active. Happy trading!', tag: 'License' },
-  { id: 'expiring', title: 'License Expiring', subject: 'License expiring soon', body: 'Your license expires in {{days}} days.', tag: 'License' },
-  { id: 'sub', title: 'Subscription Reminder', subject: 'Subscription renewal', body: 'Please renew your subscription to keep access.', tag: 'Billing' },
-  { id: 'paid', title: 'Payment Confirmation', subject: 'Payment received', body: 'We received your payment. Thank you!', tag: 'Billing' },
-  { id: 'approved', title: 'Account Approved', subject: 'Account approved', body: 'Your mentor account has been approved.', tag: 'Admin' },
-  { id: 'suspended', title: 'Account Suspended', subject: 'Account suspended', body: 'Your account has been suspended. Contact support.', tag: 'Admin' },
-  { id: 'trade', title: 'Trade Update', subject: 'New trade signal', body: 'Your mentor sent a new trade signal.', tag: 'Trading' },
-  { id: 'weekly', title: 'Weekly Report', subject: 'Weekly performance report', body: 'Here is your weekly trading summary.', tag: 'Reports' },
-  { id: 'announce', title: 'Announcement', subject: 'Platform announcement', body: 'Important update from Lumo Edge.', tag: 'News' },
+const TEMPLATES = [
+  {
+    id: 'announce',
+    title: 'Announcement',
+    subject: 'Platform announcement from Lumo Edge',
+    body: 'Important update from Lumo Edge.\n\nPlease open the app for details.',
+  },
+  {
+    id: 'welcome',
+    title: 'Welcome',
+    subject: 'Welcome to Lumo Edge',
+    body: 'Hi,\n\nWelcome to Lumo Edge — your premium trading platform.',
+  },
+  {
+    id: 'license',
+    title: 'License note',
+    subject: 'Your Lumo Edge license',
+    body: 'Your license key is ready. Open Lumo Edge to activate it.',
+  },
 ];
 
-const AUDIENCES = [
-  { id: 'all', label: 'All Clients', count: 128 },
-  { id: 'paid', label: 'Paid Clients', count: 94 },
-  { id: 'trial', label: 'Trial Clients', count: 22 },
-  { id: 'expired', label: 'Expired Clients', count: 12 },
-  { id: 'admins', label: 'Admins', count: 8 },
-  { id: 'mentors', label: 'Mentors', count: 14 },
-  { id: 'client', label: 'Specific Client', count: 1 },
-  { id: 'admin', label: 'Specific Admin', count: 1 },
-  { id: 'custom', label: 'Custom Email List', count: 0 },
-] as const;
-
 export function EmailCenterPage() {
-  const [tab, setTab] = useState<Tab>('templates');
+  const { admin, admins, clients } = useAdmin();
+  const [tab, setTab] = useState<Tab>('compose');
+  const [toMode, setToMode] = useState<'pick' | 'custom'>('pick');
+  const [picked, setPicked] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
-  const [audience, setAudience] = useState<string>('all');
+  const [message, setMessage] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
   const [sending, setSending] = useState(false);
-  const [sentMsg, setSentMsg] = useState('');
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState(false);
 
-  const recipientCount = useMemo(
-    () => AUDIENCES.find((a) => a.id === audience)?.count ?? 0,
-    [audience],
-  );
+  const people = useMemo(() => {
+    const rows: { email: string; label: string }[] = [];
+    const seen = new Set<string>();
+    for (const a of admins || []) {
+      const email = String(a.email || '').trim().toLowerCase();
+      if (!email || seen.has(email)) continue;
+      seen.add(email);
+      rows.push({
+        email,
+        label: `${a.fullName || a.email} (mentor · ${a.role || 'pending'})`,
+      });
+    }
+    for (const c of clients || []) {
+      const email = String(c.email || '').trim().toLowerCase();
+      if (!email || seen.has(email)) continue;
+      seen.add(email);
+      rows.push({
+        email,
+        label: `${[c.firstName, c.lastName].filter(Boolean).join(' ') || email} (client)`,
+      });
+    }
+    return rows.sort((a, b) => a.label.localeCompare(b.label));
+  }, [admins, clients]);
 
-  const applyTemplate = (tpl: Template) => {
+  const recipient = toMode === 'custom' ? customTo.trim() : picked.trim();
+
+  const applyTemplate = (tpl: (typeof TEMPLATES)[number]) => {
     setSubject(tpl.subject);
-    setBody(tpl.body);
+    setMessage(tpl.body);
     setTab('compose');
   };
 
-  const sendNow = async () => {
-    setConfirmOpen(false);
+  const sendEmail = async () => {
+    if (sending) return;
     setSending(true);
-    setSentMsg('');
-    await new Promise((r) => window.setTimeout(r, 1400));
-    setSending(false);
-    setSentMsg(`Successfully queued for ${recipientCount} recipients.`);
+    setStatus('');
+    setError(false);
+    try {
+      if (!recipient || !subject.trim() || !message.trim()) {
+        throw new Error('Enter recipient, subject, and message.');
+      }
+      if (!adminPassword.trim()) {
+        throw new Error('Enter your Super Admin password to send.');
+      }
+      const res = await fetch(apiUrl('/api/email/send'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminEmail: admin?.email || '',
+          adminPassword,
+          to: recipient,
+          subject: subject.trim(),
+          message: message.trim(),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        sent?: number;
+        results?: Array<{ ok?: boolean; error?: string }>;
+      };
+      if (!res.ok || !data.ok) {
+        throw new Error(
+          data.error ||
+            data.results?.find((r) => !r.ok)?.error ||
+            `Send failed (${res.status})`,
+        );
+      }
+      setStatus(`Sent successfully to ${recipient}.`);
+      setAdminPassword('');
+    } catch (e) {
+      setError(true);
+      setStatus(e instanceof Error ? e.message : 'Send failed.');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -79,131 +122,126 @@ export function EmailCenterPage() {
       <header className="email-center-head glow-card cyber-card">
         <Mail size={22} color="var(--electric)" />
         <div>
-          <h2 style={{ margin: 0 }}>Email Center</h2>
+          <h2 style={{ margin: 0 }}>Send Emails</h2>
           <p className="muted" style={{ margin: '4px 0 0', fontSize: 12 }}>
-            Premium templates, compose, and audience targeting
+            Super Admin only — branded Lumo Edge emails via secure server
           </p>
         </div>
       </header>
 
       <div className="email-tabs">
-        {([
-          ['templates', 'Templates'],
-          ['compose', 'Compose'],
-          ['send', 'Send To'],
-        ] as const).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            className={`email-tab${tab === id ? ' active' : ''}`}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
+        <button
+          type="button"
+          className={`email-tab${tab === 'compose' ? ' active' : ''}`}
+          onClick={() => setTab('compose')}
+        >
+          Compose
+        </button>
+        <button
+          type="button"
+          className={`email-tab${tab === 'templates' ? ' active' : ''}`}
+          onClick={() => setTab('templates')}
+        >
+          Templates
+        </button>
       </div>
 
       {tab === 'templates' ? (
         <div className="email-template-grid">
           {TEMPLATES.map((tpl) => (
             <article key={tpl.id} className="glow-card cyber-card email-template-card">
-              <span className="email-template-tag">{tpl.tag}</span>
               <h3>{tpl.title}</h3>
               <p className="muted">{tpl.subject}</p>
-              <div className="email-template-actions">
-                <button type="button" className="btn btn-ghost" onClick={() => applyTemplate(tpl)}>
-                  <Edit3 size={14} /> Use
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={() => applyTemplate(tpl)}>
-                  Preview
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={() => applyTemplate({ ...tpl, id: `${tpl.id}-copy` })}>
-                  <Copy size={14} />
-                </button>
-                <button type="button" className="btn btn-ghost" aria-label="Delete">
-                  <Trash2 size={14} />
-                </button>
-              </div>
+              <button type="button" className="btn btn-blue" onClick={() => applyTemplate(tpl)}>
+                Use template
+              </button>
             </article>
           ))}
         </div>
-      ) : null}
-
-      {tab === 'compose' ? (
-        <div className="glow-card cyber-card email-compose">
+      ) : (
+        <div className="glow-card cyber-card email-compose" style={{ display: 'grid', gap: 12 }}>
+          <div className="field">
+            <label>To</label>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <button
+                type="button"
+                className={`btn ${toMode === 'pick' ? 'btn-blue' : 'btn-ghost'}`}
+                onClick={() => setToMode('pick')}
+              >
+                <Users size={14} /> Select user
+              </button>
+              <button
+                type="button"
+                className={`btn ${toMode === 'custom' ? 'btn-blue' : 'btn-ghost'}`}
+                onClick={() => setToMode('custom')}
+              >
+                Enter email
+              </button>
+            </div>
+            {toMode === 'pick' ? (
+              <select value={picked} onChange={(e) => setPicked(e.target.value)}>
+                <option value="">Select mentor or client…</option>
+                {people.map((p) => (
+                  <option key={p.email} value={p.email}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                placeholder="client@email.com"
+                autoComplete="off"
+              />
+            )}
+          </div>
           <div className="field">
             <label>Subject</label>
-            <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Email subject" />
+            <input
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="Email subject"
+            />
           </div>
           <div className="field">
             <label>Message</label>
             <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
               rows={8}
               placeholder="Write your message…"
               className="email-editor"
             />
           </div>
-          <div className="email-compose-meta">
-            <span className="muted">{body.length} characters</span>
-            <div className="email-compose-actions">
-              <button type="button" className="btn btn-ghost">Save Draft</button>
-              <button type="button" className="btn btn-ghost">Send Test</button>
-              <button type="button" className="btn btn-ghost">Schedule</button>
-              <button
-                type="button"
-                className="btn btn-blue"
-                disabled={!subject.trim() || sending}
-                onClick={() => setConfirmOpen(true)}
-              >
-                {sending ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
-                Send Now
-              </button>
-            </div>
+          <div className="field">
+            <label>Super Admin password (required to send)</label>
+            <input
+              type="password"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              placeholder="Confirm it is you"
+              autoComplete="current-password"
+            />
           </div>
-          <div className="email-preview glow-card">
-            <strong>Preview</strong>
-            <p className="muted" style={{ margin: '6px 0' }}>{subject || 'Subject line'}</p>
-            <div>{body || 'Message preview…'}</div>
-          </div>
-        </div>
-      ) : null}
-
-      {tab === 'send' ? (
-        <div className="email-audience-grid">
-          {AUDIENCES.map((a) => (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <button
-              key={a.id}
               type="button"
-              className={`email-audience-card glow-card cyber-card${audience === a.id ? ' active' : ''}`}
-              onClick={() => setAudience(a.id)}
+              className="btn btn-blue"
+              disabled={sending}
+              onClick={() => void sendEmail()}
             >
-              <Users size={18} />
-              <strong>{a.label}</strong>
-              <span className="muted">{a.count} recipients</span>
-              {audience === a.id ? <Check size={16} className="email-aud-check" /> : null}
+              {sending ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
+              {sending ? 'Sending…' : 'Send Email'}
             </button>
-          ))}
-        </div>
-      ) : null}
-
-      {sentMsg ? <p className="email-sent-msg">{sentMsg}</p> : null}
-
-      {confirmOpen ? (
-        <div className="email-confirm-backdrop smooth-fade">
-          <div className="glow-card cyber-card email-confirm">
-            <h3 style={{ marginTop: 0 }}>Confirm send</h3>
-            <p className="muted">
-              Send to <strong>{AUDIENCES.find((a) => a.id === audience)?.label}</strong> ({recipientCount} recipients)?
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <button type="button" className="btn btn-ghost" onClick={() => setConfirmOpen(false)}>Cancel</button>
-              <button type="button" className="btn btn-blue" onClick={() => void sendNow()}>Confirm Send</button>
-            </div>
+            {status ? (
+              <span style={{ fontWeight: 700, color: error ? '#f87171' : 'var(--green)' }}>
+                {status}
+              </span>
+            ) : null}
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
