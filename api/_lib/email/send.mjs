@@ -46,6 +46,7 @@ export async function sendResendEmail({
   to,
   subject,
   html,
+  text,
   replyTo,
   tags,
   firebaseRead,
@@ -63,14 +64,25 @@ export async function sendResendEmail({
     return { ok: false, skipped: true, error: 'invalid or missing recipient email' };
   }
   const from = resolveFrom();
+  const plain =
+    String(text || '').trim() ||
+    String(html || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   const payload = {
     from,
     to: [recipient],
     subject: String(subject || '').trim() || 'Lumo Edge',
     html: String(html || ''),
+    text: plain,
     reply_to: String(
       replyTo || process.env.EMAIL_REPLY_TO || 'lumoedge08@gmail.com',
     ).trim(),
+    headers: {
+      'List-Unsubscribe': `<mailto:lumoedge08@gmail.com?subject=unsubscribe>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    },
   };
   if (Array.isArray(tags) && tags.length) {
     payload.tags = tags.map((t) =>

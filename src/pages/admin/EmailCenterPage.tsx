@@ -4,6 +4,7 @@ import { useAdmin } from '../../context/AdminContext';
 import { apiUrl } from '../../lib/apiBase';
 
 type Tab = 'compose' | 'templates' | 'setup';
+type ToMode = 'pick' | 'custom' | 'all_mentors' | 'all_clients' | 'everyone';
 
 const TEMPLATES = [
   {
@@ -29,7 +30,7 @@ const TEMPLATES = [
 export function EmailCenterPage() {
   const { admin, admins, clientRequests } = useAdmin();
   const [tab, setTab] = useState<Tab>('compose');
-  const [toMode, setToMode] = useState<'pick' | 'custom'>('pick');
+  const [toMode, setToMode] = useState<ToMode>('pick');
   const [picked, setPicked] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [subject, setSubject] = useState('');
@@ -42,6 +43,28 @@ export function EmailCenterPage() {
   const [error, setError] = useState(false);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [configSource, setConfigSource] = useState<string>('');
+
+  const mentorCount = useMemo(() => {
+    const seen = new Set<string>();
+    for (const a of admins || []) {
+      const email = String(a.email || '')
+        .trim()
+        .toLowerCase();
+      if (email) seen.add(email);
+    }
+    return seen.size;
+  }, [admins]);
+
+  const clientCount = useMemo(() => {
+    const seen = new Set<string>();
+    for (const c of clientRequests || []) {
+      const email = String(c.email || '')
+        .trim()
+        .toLowerCase();
+      if (email) seen.add(email);
+    }
+    return seen.size;
+  }, [clientRequests]);
 
   const refreshStatus = async () => {
     try {
@@ -66,7 +89,9 @@ export function EmailCenterPage() {
     const rows: { email: string; label: string }[] = [];
     const seen = new Set<string>();
     for (const a of admins || []) {
-      const email = String(a.email || '').trim().toLowerCase();
+      const email = String(a.email || '')
+        .trim()
+        .toLowerCase();
       if (!email || seen.has(email)) continue;
       seen.add(email);
       rows.push({
@@ -75,16 +100,22 @@ export function EmailCenterPage() {
       });
     }
     for (const c of clientRequests || []) {
-      const email = String(c.email || '').trim().toLowerCase();
+      const email = String(c.email || '')
+        .trim()
+        .toLowerCase();
       if (!email || seen.has(email)) continue;
       seen.add(email);
+      const name = [c.firstName, c.lastName].filter(Boolean).join(' ');
       rows.push({
         email,
-        label: `${[c.firstName, c.lastName].filter(Boolean).join(' ') || email} (client)`,
+        label: `${name || email} (client)`,
       });
     }
     return rows.sort((a, b) => a.label.localeCompare(b.label));
   }, [admins, clientRequests]);
+
+  const isBroadcast =
+    toMode === 'all_mentors' || toMode === 'all_clients' || toMode === 'everyone';
 
   const recipient = toMode === 'custom' ? customTo.trim() : picked.trim();
 
@@ -139,27 +170,37 @@ export function EmailCenterPage() {
     setStatus('');
     setError(false);
     try {
-      if (!recipient || !subject.trim() || !message.trim()) {
-        throw new Error('Enter recipient, subject, and message.');
+      if (!subject.trim() || !message.trim()) {
+        throw new Error('Enter subject and message.');
+      }
+      if (!isBroadcast && !recipient) {
+        throw new Error('Choose a recipient, or send to every mentor / every client.');
       }
       if (!adminPassword.trim()) {
         throw new Error('Enter your Super Admin password to send.');
       }
+      const payload: Record<string, string> = {
+        adminEmail: admin?.email || '',
+        adminPassword,
+        subject: subject.trim(),
+        message: message.trim(),
+      };
+      if (isBroadcast) {
+        payload.audience = toMode;
+      } else {
+        payload.to = recipient;
+      }
       const res = await fetch(apiUrl('/api/email/send'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          adminEmail: admin?.email || '',
-          adminPassword,
-          to: recipient,
-          subject: subject.trim(),
-          message: message.trim(),
-        }),
+        body: JSON.stringify(payload),
       });
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
         sent?: number;
+        total?: number;
+        failed?: number;
         results?: Array<{ ok?: boolean; error?: string }>;
       };
       if (!res.ok || !data.ok) {
@@ -169,7 +210,15 @@ export function EmailCenterPage() {
             `Send failed (${res.status})`,
         );
       }
-      setStatus(`Sent successfully to ${recipient}.`);
+      if (isBroadcast) {
+        setStatus(
+          `Sent to ${data.sent ?? 0} of ${data.total ?? 0} recipients` +
+            (data.failed ? ` (${data.failed} failed)` : '') +
+            '.',
+        );
+      } else {
+        setStatus(`Sent successfully to ${recipient}.`);
+      }
       setAdminPassword('');
     } catch (e) {
       setError(true);
@@ -234,6 +283,11 @@ export function EmailCenterPage() {
             Paste your Resend API key here if Vercel env is missing. Key is saved
             server-side to Firebase secrets (not in the browser bundle).
           </p>
+          <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+            To stop spam: in Resend → Domains, verify <strong>lumoedge.com</strong>, then set
+            Vercel env EMAIL_FROM to something like{' '}
+            <code>Lumo Edge &lt;noreply@lumoedge.com&gt;</code> and redeploy.
+          </p>
           <div className="field">
             <label>Resend API key</label>
             <input
@@ -294,7 +348,7 @@ export function EmailCenterPage() {
           ) : null}
           <div className="field">
             <label>To</label>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
               <button
                 type="button"
                 className={`btn ${toMode === 'pick' ? 'btn-blue' : 'btn-ghost'}`}
@@ -309,6 +363,27 @@ export function EmailCenterPage() {
               >
                 Enter email
               </button>
+              <button
+                type="button"
+                className={`btn ${toMode === 'all_mentors' ? 'btn-blue' : 'btn-ghost'}`}
+                onClick={() => setToMode('all_mentors')}
+              >
+                Every mentor ({mentorCount})
+              </button>
+              <button
+                type="button"
+                className={`btn ${toMode === 'all_clients' ? 'btn-blue' : 'btn-ghost'}`}
+                onClick={() => setToMode('all_clients')}
+              >
+                Every client ({clientCount})
+              </button>
+              <button
+                type="button"
+                className={`btn ${toMode === 'everyone' ? 'btn-blue' : 'btn-ghost'}`}
+                onClick={() => setToMode('everyone')}
+              >
+                Everyone
+              </button>
             </div>
             {toMode === 'pick' ? (
               <select value={picked} onChange={(e) => setPicked(e.target.value)}>
@@ -319,14 +394,32 @@ export function EmailCenterPage() {
                   </option>
                 ))}
               </select>
-            ) : (
+            ) : null}
+            {toMode === 'custom' ? (
               <input
                 value={customTo}
                 onChange={(e) => setCustomTo(e.target.value)}
                 placeholder="client@email.com"
                 autoComplete="off"
               />
-            )}
+            ) : null}
+            {toMode === 'all_mentors' ? (
+              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                Sends to every mentor email registered on the platform (~{mentorCount} on this
+                device roster; server uses the live cloud list).
+              </p>
+            ) : null}
+            {toMode === 'all_clients' ? (
+              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                Sends to every client email on the platform (~{clientCount} visible here; server
+                uses the live cloud list).
+              </p>
+            ) : null}
+            {toMode === 'everyone' ? (
+              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                Sends to every mentor and every client (duplicates removed).
+              </p>
+            ) : null}
           </div>
           <div className="field">
             <label>Subject</label>
@@ -364,7 +457,15 @@ export function EmailCenterPage() {
               onClick={() => void sendEmail()}
             >
               {sending ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
-              {sending ? 'Sending…' : 'Send Email'}
+              {sending
+                ? 'Sending…'
+                : toMode === 'all_mentors'
+                  ? 'Send to every mentor'
+                  : toMode === 'all_clients'
+                    ? 'Send to every client'
+                    : toMode === 'everyone'
+                      ? 'Send to everyone'
+                      : 'Send Email'}
             </button>
             {status ? (
               <span style={{ fontWeight: 700, color: error ? '#f87171' : 'var(--green)' }}>
