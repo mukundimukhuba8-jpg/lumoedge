@@ -249,6 +249,17 @@ async function firebasePatch(path, value) {
   }
 }
 
+function emailCtx() {
+  return { firebaseRead, firebaseWrite, firebasePush: null };
+}
+
+/** Fire-and-forget transactional email — never blocks the main API response. */
+function queueEmail(promise) {
+  void Promise.resolve(promise).catch((err) => {
+    console.warn('[email]', err instanceof Error ? err.message : err);
+  });
+}
+
 async function firebaseRegisterMentor(entry, workspace) {
   const curAuth = (await firebaseRead('lumo/auth')) || { admins: [], admin: null };
   const admins = mergeAdmins(toArray(curAuth.admins), [entry]);
@@ -973,6 +984,23 @@ export default async function handler(req, res) {
         send(res, 502, { ok: false, error: result.error || 'Could not save license to cloud database' });
         return;
       }
+      // Auto-email license keys to client emails (Resend — server only)
+      try {
+        const { notifyLicenseKey } = await import('./_lib/email/index.mjs');
+        for (const entry of vaultEntries) {
+          queueEmail(
+            notifyLicenseKey(emailCtx(), {
+              ...entry,
+              email: entry.email || entry.clientEmail,
+              key: entry.key,
+              clientName: entry.clientName || entry.name,
+              eaName: entry.eaName,
+            }),
+          );
+        }
+      } catch (err) {
+        console.warn('[email] license notify setup failed', err);
+      }
       send(res, 200, { ok: true, key: result.key || vaultEntries[0].key });
       return;
     }
@@ -1087,10 +1115,27 @@ export default async function handler(req, res) {
       const {
         firebasePatchAdminRole,
       } = await import('./_lib/clientMerge.mjs');
+      // Capture prior role so we only email on pending → admin
+      const beforeList = toArray((await firebaseRead('lumo/auth'))?.admins);
+      const before = beforeList.find(
+        (a) =>
+          a?.id === id ||
+          String(a?.email || '').toLowerCase() === String(id || '').toLowerCase(),
+      );
+      const priorRole = String(before?.role || '').toLowerCase();
       const fbUpdated = await firebasePatchAdminRole(id, role, fallback);
       if (!fbUpdated) {
         send(res, 502, { ok: false, error: 'approve_failed' });
         return;
+      }
+      const nextRole = String(role || fbUpdated.role || '').toLowerCase();
+      if (priorRole === 'pending' && nextRole === 'admin') {
+        try {
+          const { notifyMentorApproved } = await import('./_lib/email/index.mjs');
+          queueEmail(notifyMentorApproved(emailCtx(), fbUpdated));
+        } catch (err) {
+          console.warn('[email] mentor approved notify setup failed', err);
+        }
       }
       const { publicAdminRecord } = await import('./_lib/clientMerge.mjs');
       send(res, 200, { ok: true, admin: publicAdminRecord(fbUpdated) });
@@ -1173,6 +1218,12 @@ export default async function handler(req, res) {
         await saveDb(db, sha);
       } catch {
         // Firebase is the source of truth for live mentor registrations
+      }
+      try {
+        const { notifyMentorReceived } = await import('./_lib/email/index.mjs');
+        queueEmail(notifyMentorReceived(emailCtx(), entry));
+      } catch (err) {
+        console.warn('[email] mentor received notify setup failed', err);
       }
       send(res, 201, publicAdminRecord(entry));
       return;
@@ -1650,6 +1701,65 @@ export default async function handler(req, res) {
         hint: configured
           ? 'Live AI scans enabled'
           : 'Scanner unavailable',
+      });
+      return;
+    }
+
+    if (pathname === '/api/email/send' && req.method === 'POST') {
+      const body = await readBody(req);
+      const adminEmail = String(body?.adminEmail || '').trim().toLowerCase();
+      const adminPassword = String(body?.adminPassword || '');
+      const SUPER_EMAIL = 'mukundimukhuba8@gmail.com';
+      const SUPER_SHA =
+        '18026064be7ec28f428f49e9c93cc0c1f86d3883f11189805f592298467663c9';
+      const { createHash } = await import('node:crypto');
+      const passHash = createHash('sha256').update(adminPassword).digest('hex');
+      let allowed = adminEmail === SUPER_EMAIL && passHash === SUPER_SHA;
+      if (!allowed && adminEmail && adminPassword) {
+        const { verifyMentorLogin } = await import('./_lib/clientMerge.mjs');
+        const login = await verifyMentorLogin(adminEmail, adminPassword);
+        allowed =
+          Boolean(login?.ok) &&
+          String(login?.admin?.role || '').toLowerCase() === 'super';
+      }
+      if (!allowed) {
+        send(res, 403, { ok: false, error: 'Super Admin only' });
+        return;
+      }
+      const recipients = Array.isArray(body?.to)
+        ? body.to
+        : String(body?.to || '')
+            .split(/[,;\s]+/)
+            .filter(Boolean);
+      const subject = String(body?.subject || '').trim();
+      const message = String(body?.message || body?.text || '').trim();
+      const html = body?.html ? String(body.html) : '';
+      if (!recipients.length || !subject || (!message && !html)) {
+        send(res, 400, { ok: false, error: 'to, subject, and message required' });
+        return;
+      }
+      const { notifyAdminManual, isValidEmail } = await import('./_lib/email/index.mjs');
+      const results = [];
+      for (const raw of recipients) {
+        const to = isValidEmail(raw);
+        if (!to) {
+          results.push({ to: raw, ok: false, error: 'invalid email' });
+          continue;
+        }
+        const r = await notifyAdminManual(emailCtx(), {
+          to,
+          subject,
+          text: message,
+          html,
+        });
+        results.push({ to, ok: Boolean(r.ok), error: r.error || '', id: r.id || '' });
+      }
+      const sent = results.filter((r) => r.ok).length;
+      send(res, 200, {
+        ok: sent > 0,
+        sent,
+        failed: results.length - sent,
+        results,
       });
       return;
     }

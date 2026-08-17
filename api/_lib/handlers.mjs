@@ -6,6 +6,7 @@ import {
   firebasePostClientEntry,
   firebaseRegisterMentor,
   firebaseRead,
+  firebaseWrite,
   loadMergedClients,
   mergeAdminsLive,
   mergeClients,
@@ -318,6 +319,15 @@ export async function handleApi(req, res, pathname) {
       } catch {
         // Firebase is the source of truth for live mentor registrations
       }
+      try {
+        const { notifyMentorReceived } = await import('./email/index.mjs');
+        void notifyMentorReceived(
+          { firebaseRead, firebaseWrite, firebasePush: null },
+          entry,
+        ).catch(() => undefined);
+      } catch {
+        /* never block registration */
+      }
       json(res, 201, publicAdminRecord(entry));
       return true;
     }
@@ -359,11 +369,27 @@ export async function handleApi(req, res, pathname) {
         fallback = body.fallback;
       }
       await saveDb(db, sha);
+      const priorRole = String(
+        (fallback && fallback.role) ||
+          (updated && updated.role) ||
+          'pending',
+      ).toLowerCase();
       const fbUpdated = await firebasePatchAdminRole(id, role, fallback).catch(() => null);
       if (!fbUpdated) {
         console.warn('[api] mentor approve failed', { id, role, email: updated?.email });
         json(res, 502, { ok: false, error: 'approve_failed' });
         return true;
+      }
+      if (priorRole === 'pending' && role === 'admin') {
+        try {
+          const { notifyMentorApproved } = await import('./email/index.mjs');
+          void notifyMentorApproved(
+            { firebaseRead, firebaseWrite, firebasePush: null },
+            fbUpdated,
+          ).catch(() => undefined);
+        } catch {
+          /* never block approve */
+        }
       }
       json(res, 200, { ok: true, admin: publicAdminRecord(fbUpdated) });
       return true;
