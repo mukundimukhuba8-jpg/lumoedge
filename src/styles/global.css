@@ -5954,6 +5954,46 @@ button:active:not(:disabled),
   resize: vertical;
 }
 
+.email-audience-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.email-audience-card {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.email-audience-card strong {
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.email-audience-card span {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.email-audience-card.active {
+  border-color: var(--electric);
+  background: color-mix(in srgb, var(--electric) 14%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--electric) 35%, transparent);
+}
+
+.email-audience-card.active strong {
+  color: var(--electric);
+}
+
 .email-compose-meta {
   display: flex;
   justify-content: space-between;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Copy, Loader2, MoreVertical, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck, Cpu } from 'lucide-react';
+import { Copy, Loader2, Mail, MoreVertical, Plus, Trash2, Ban, Clock, CreditCard, KeyRound, ShieldCheck, Users, UserCheck, Cpu } from 'lucide-react';
 import { BackgroundManager } from '../../components/BackgroundManager';
 import { normalizeAdminRole } from '../../lib/adminQueue';
 import { normalizeClientStatus } from '../../lib/clientQueue';
@@ -275,6 +275,17 @@ export function DashboardPage() {
           </>
         )}
       </div>
+      {isSuper ? (
+        <div className="glow-card" style={{ display: 'grid', gap: 10 }}>
+          <h3 style={{ margin: 0 }}>Send emails</h3>
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+            Message one person, every mentor, every client, or everyone on the platform.
+          </p>
+          <Link to="/admin/emails" className="btn btn-blue" style={{ textDecoration: 'none', width: 'fit-content' }}>
+            <Mail size={16} /> Open Send Emails
+          </Link>
+        </div>
+      ) : null}
       {isSuper ? (
         <ScanAdminTools
           approvedEmails={clientRequests
@@ -1203,6 +1214,11 @@ export function ProfilePage() {
           {isSuper ? (
             <Link to="/admin/approve" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
               <UserCheck size={16} /> Approve mentors
+            </Link>
+          ) : null}
+          {isSuper ? (
+            <Link to="/admin/emails" className="btn btn-ghost" style={{ textDecoration: 'none' }}>
+              <Mail size={16} /> Send Emails
             </Link>
           ) : null}
         </div>
