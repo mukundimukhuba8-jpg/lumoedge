@@ -27,7 +27,7 @@ const TEMPLATES = [
 ];
 
 export function EmailCenterPage() {
-  const { admin, admins, clients } = useAdmin();
+  const { admin, admins, clientRequests } = useAdmin();
   const [tab, setTab] = useState<Tab>('compose');
   const [toMode, setToMode] = useState<'pick' | 'custom'>('pick');
   const [picked, setPicked] = useState('');
@@ -51,7 +51,7 @@ export function EmailCenterPage() {
         label: `${a.fullName || a.email} (mentor · ${a.role || 'pending'})`,
       });
     }
-    for (const c of clients || []) {
+    for (const c of clientRequests || []) {
       const email = String(c.email || '').trim().toLowerCase();
       if (!email || seen.has(email)) continue;
       seen.add(email);
@@ -61,7 +61,7 @@ export function EmailCenterPage() {
       });
     }
     return rows.sort((a, b) => a.label.localeCompare(b.label));
-  }, [admins, clients]);
+  }, [admins, clientRequests]);
 
   const recipient = toMode === 'custom' ? customTo.trim() : picked.trim();
 
