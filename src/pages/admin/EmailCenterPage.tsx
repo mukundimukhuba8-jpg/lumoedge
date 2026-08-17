@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Mail, Send, Users } from 'lucide-react';
+import { Loader2, Mail, Send } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { apiUrl } from '../../lib/apiBase';
 
@@ -340,52 +340,62 @@ export function EmailCenterPage() {
       ) : null}
 
       {tab === 'compose' ? (
-        <div className="glow-card cyber-card email-compose" style={{ display: 'grid', gap: 12 }}>
+        <div className="glow-card cyber-card email-compose" style={{ display: 'grid', gap: 14 }}>
           {!configured ? (
             <p style={{ margin: 0, color: '#f87171', fontWeight: 700 }}>
               Resend is not configured. Open the Setup tab and paste your API key first.
             </p>
           ) : null}
-          <div className="field">
-            <label>To</label>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label style={{ fontSize: 14, fontWeight: 800 }}>Who should get this email?</label>
+            <div className="email-audience-grid">
               <button
                 type="button"
-                className={`btn ${toMode === 'pick' ? 'btn-blue' : 'btn-ghost'}`}
-                onClick={() => setToMode('pick')}
-              >
-                <Users size={14} /> Select user
-              </button>
-              <button
-                type="button"
-                className={`btn ${toMode === 'custom' ? 'btn-blue' : 'btn-ghost'}`}
-                onClick={() => setToMode('custom')}
-              >
-                Enter email
-              </button>
-              <button
-                type="button"
-                className={`btn ${toMode === 'all_mentors' ? 'btn-blue' : 'btn-ghost'}`}
+                className={`email-audience-card${toMode === 'all_mentors' ? ' active' : ''}`}
                 onClick={() => setToMode('all_mentors')}
               >
-                Every mentor ({mentorCount})
+                <strong>Every mentor</strong>
+                <span>All mentors registered on Lumo Edge ({mentorCount})</span>
               </button>
               <button
                 type="button"
-                className={`btn ${toMode === 'all_clients' ? 'btn-blue' : 'btn-ghost'}`}
+                className={`email-audience-card${toMode === 'all_clients' ? ' active' : ''}`}
                 onClick={() => setToMode('all_clients')}
               >
-                Every client ({clientCount})
+                <strong>Every client</strong>
+                <span>All clients on the platform ({clientCount})</span>
               </button>
               <button
                 type="button"
-                className={`btn ${toMode === 'everyone' ? 'btn-blue' : 'btn-ghost'}`}
+                className={`email-audience-card${toMode === 'everyone' ? ' active' : ''}`}
                 onClick={() => setToMode('everyone')}
               >
-                Everyone
+                <strong>Everyone</strong>
+                <span>Mentors + clients (no duplicates)</span>
+              </button>
+              <button
+                type="button"
+                className={`email-audience-card${toMode === 'pick' ? ' active' : ''}`}
+                onClick={() => setToMode('pick')}
+              >
+                <strong>One person</strong>
+                <span>Pick a mentor or client from the list</span>
+              </button>
+              <button
+                type="button"
+                className={`email-audience-card${toMode === 'custom' ? ' active' : ''}`}
+                onClick={() => setToMode('custom')}
+              >
+                <strong>Custom email</strong>
+                <span>Type any email address</span>
               </button>
             </div>
-            {toMode === 'pick' ? (
+          </div>
+
+          {toMode === 'pick' ? (
+            <div className="field">
+              <label>Select mentor or client</label>
               <select value={picked} onChange={(e) => setPicked(e.target.value)}>
                 <option value="">Select mentor or client…</option>
                 {people.map((p) => (
@@ -394,33 +404,35 @@ export function EmailCenterPage() {
                   </option>
                 ))}
               </select>
-            ) : null}
-            {toMode === 'custom' ? (
+            </div>
+          ) : null}
+          {toMode === 'custom' ? (
+            <div className="field">
+              <label>Email address</label>
               <input
                 value={customTo}
                 onChange={(e) => setCustomTo(e.target.value)}
                 placeholder="client@email.com"
                 autoComplete="off"
               />
-            ) : null}
-            {toMode === 'all_mentors' ? (
-              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                Sends to every mentor email registered on the platform (~{mentorCount} on this
-                device roster; server uses the live cloud list).
-              </p>
-            ) : null}
-            {toMode === 'all_clients' ? (
-              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                Sends to every client email on the platform (~{clientCount} visible here; server
-                uses the live cloud list).
-              </p>
-            ) : null}
-            {toMode === 'everyone' ? (
-              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                Sends to every mentor and every client (duplicates removed).
-              </p>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
+          {toMode === 'all_mentors' ? (
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              Will send to every mentor email in the live cloud roster.
+            </p>
+          ) : null}
+          {toMode === 'all_clients' ? (
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              Will send to every client email in the live cloud roster.
+            </p>
+          ) : null}
+          {toMode === 'everyone' ? (
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              Will send to every mentor and every client on the platform.
+            </p>
+          ) : null}
+
           <div className="field">
             <label>Subject</label>
             <input
