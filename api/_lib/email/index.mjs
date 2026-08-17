@@ -1,4 +1,4 @@
-import { isValidEmail, sendResendEmail } from './send.mjs';
+import { isValidEmail, sendResendEmail, resolveResendApiKey } from './send.mjs';
 import { sendTrackedEmail } from './log.mjs';
 import {
   adminManualEmail,
@@ -7,7 +7,7 @@ import {
   mentorReceivedEmail,
 } from './messages.mjs';
 
-export { isValidEmail, sendResendEmail };
+export { isValidEmail, sendResendEmail, resolveResendApiKey };
 
 export async function notifyMentorReceived(ctx, mentor) {
   const to = isValidEmail(mentor?.email);

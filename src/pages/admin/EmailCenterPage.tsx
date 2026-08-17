@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Mail, Send, Users } from 'lucide-react';
 import { useAdmin } from '../../context/AdminContext';
 import { apiUrl } from '../../lib/apiBase';
 
-type Tab = 'compose' | 'templates';
+type Tab = 'compose' | 'templates' | 'setup';
 
 const TEMPLATES = [
   {
@@ -35,9 +35,32 @@ export function EmailCenterPage() {
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
+  const [resendKey, setResendKey] = useState('');
   const [sending, setSending] = useState(false);
+  const [savingKey, setSavingKey] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState(false);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [configSource, setConfigSource] = useState<string>('');
+
+  const refreshStatus = async () => {
+    try {
+      const res = await fetch(apiUrl('/api/email/status'), { cache: 'no-store' });
+      const data = (await res.json().catch(() => ({}))) as {
+        configured?: boolean;
+        source?: string;
+      };
+      setConfigured(Boolean(data.configured));
+      setConfigSource(String(data.source || ''));
+    } catch {
+      setConfigured(false);
+      setConfigSource('');
+    }
+  };
+
+  useEffect(() => {
+    void refreshStatus();
+  }, []);
 
   const people = useMemo(() => {
     const rows: { email: string; label: string }[] = [];
@@ -69,6 +92,45 @@ export function EmailCenterPage() {
     setSubject(tpl.subject);
     setMessage(tpl.body);
     setTab('compose');
+  };
+
+  const saveApiKey = async () => {
+    if (savingKey) return;
+    setSavingKey(true);
+    setStatus('');
+    setError(false);
+    try {
+      if (!resendKey.trim().startsWith('re_')) {
+        throw new Error('Paste your Resend API key (starts with re_).');
+      }
+      if (!adminPassword.trim()) {
+        throw new Error('Enter your Super Admin password to save the key.');
+      }
+      const res = await fetch(apiUrl('/api/email/config'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminEmail: admin?.email || '',
+          adminPassword,
+          apiKey: resendKey.trim(),
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || `Save failed (${res.status})`);
+      }
+      setResendKey('');
+      setStatus('Resend API key saved — emails are ready.');
+      await refreshStatus();
+    } catch (e) {
+      setError(true);
+      setStatus(e instanceof Error ? e.message : 'Could not save key.');
+    } finally {
+      setSavingKey(false);
+    }
   };
 
   const sendEmail = async () => {
@@ -126,6 +188,19 @@ export function EmailCenterPage() {
           <p className="muted" style={{ margin: '4px 0 0', fontSize: 12 }}>
             Super Admin only — branded Lumo Edge emails via secure server
           </p>
+          {configured === null ? (
+            <p className="muted" style={{ margin: '6px 0 0', fontSize: 12 }}>
+              Checking Resend…
+            </p>
+          ) : configured ? (
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>
+              Resend connected{configSource ? ` (${configSource})` : ''}
+            </p>
+          ) : (
+            <p style={{ margin: '6px 0 0', fontSize: 12, color: '#f87171', fontWeight: 700 }}>
+              Resend API key not configured — open Setup and paste your key
+            </p>
+          )}
         </div>
       </header>
 
@@ -139,12 +214,62 @@ export function EmailCenterPage() {
         </button>
         <button
           type="button"
+          className={`email-tab${tab === 'setup' ? ' active' : ''}`}
+          onClick={() => setTab('setup')}
+        >
+          Setup
+        </button>
+        <button
+          type="button"
           className={`email-tab${tab === 'templates' ? ' active' : ''}`}
           onClick={() => setTab('templates')}
         >
           Templates
         </button>
       </div>
+
+      {tab === 'setup' ? (
+        <div className="glow-card cyber-card" style={{ display: 'grid', gap: 12 }}>
+          <p className="muted" style={{ margin: 0 }}>
+            Paste your Resend API key here if Vercel env is missing. Key is saved
+            server-side to Firebase secrets (not in the browser bundle).
+          </p>
+          <div className="field">
+            <label>Resend API key</label>
+            <input
+              type="password"
+              value={resendKey}
+              onChange={(e) => setResendKey(e.target.value)}
+              placeholder="re_..."
+              autoComplete="off"
+            />
+          </div>
+          <div className="field">
+            <label>Super Admin password</label>
+            <input
+              type="password"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              placeholder="Confirm it is you"
+              autoComplete="current-password"
+            />
+          </div>
+          <button
+            type="button"
+            className="btn btn-blue"
+            disabled={savingKey}
+            onClick={() => void saveApiKey()}
+          >
+            {savingKey ? <Loader2 size={16} className="spin" /> : null}
+            {savingKey ? 'Saving…' : 'Save Resend API key'}
+          </button>
+          {status ? (
+            <p style={{ margin: 0, fontWeight: 700, color: error ? '#f87171' : 'var(--green)' }}>
+              {status}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {tab === 'templates' ? (
         <div className="email-template-grid">
@@ -158,8 +283,15 @@ export function EmailCenterPage() {
             </article>
           ))}
         </div>
-      ) : (
+      ) : null}
+
+      {tab === 'compose' ? (
         <div className="glow-card cyber-card email-compose" style={{ display: 'grid', gap: 12 }}>
+          {!configured ? (
+            <p style={{ margin: 0, color: '#f87171', fontWeight: 700 }}>
+              Resend is not configured. Open the Setup tab and paste your API key first.
+            </p>
+          ) : null}
           <div className="field">
             <label>To</label>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -228,7 +360,7 @@ export function EmailCenterPage() {
             <button
               type="button"
               className="btn btn-blue"
-              disabled={sending}
+              disabled={sending || configured === false}
               onClick={() => void sendEmail()}
             >
               {sending ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
@@ -241,7 +373,7 @@ export function EmailCenterPage() {
             ) : null}
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

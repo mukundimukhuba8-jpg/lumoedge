@@ -5,16 +5,41 @@ export function isValidEmail(raw) {
   return EMAIL_RE.test(email) ? email : '';
 }
 
+function cleanKey(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .trim();
+}
+
 function resolveFrom() {
-  // Prefer verified domain when available; fall back to Resend onboarding sender.
   const configured = String(process.env.EMAIL_FROM || '').trim();
   if (configured) return configured;
-  // lumoedge.com domain exists in Resend but may be unverified — onboarding works immediately
+  // Until lumoedge.com is verified in Resend, onboarding sender works
   return 'Lumo Edge <onboarding@resend.dev>';
 }
 
+/** Env first, then optional Firebase secret reader (server-side only). */
+export async function resolveResendApiKey(firebaseRead) {
+  const fromEnv =
+    cleanKey(process.env.RESEND_API_KEY) ||
+    cleanKey(process.env.RESEND_KEY) ||
+    cleanKey(process.env.RESEND_TOKEN);
+  if (fromEnv) return { apiKey: fromEnv, source: 'env' };
+  if (typeof firebaseRead === 'function') {
+    try {
+      const secret = (await firebaseRead('lumo/secrets/resend')) || {};
+      const key = cleanKey(secret.apiKey || secret.RESEND_API_KEY || secret.key);
+      if (key) return { apiKey: key, source: 'firebase' };
+    } catch {
+      /* ignore */
+    }
+  }
+  return { apiKey: '', source: '' };
+}
+
 /**
- * Send via Resend. API key must only live in server env / Functions secrets.
+ * Send via Resend. API key from Vercel env or Firebase secret (never frontend).
  * @returns {Promise<{ ok: boolean, id?: string, error?: string, skipped?: boolean }>}
  */
 export async function sendResendEmail({
@@ -23,10 +48,15 @@ export async function sendResendEmail({
   html,
   replyTo,
   tags,
+  firebaseRead,
 }) {
-  const apiKey = String(process.env.RESEND_API_KEY || '').trim();
+  const { apiKey } = await resolveResendApiKey(firebaseRead);
   if (!apiKey) {
-    return { ok: false, error: 'RESEND_API_KEY not configured' };
+    return {
+      ok: false,
+      error:
+        'Resend API key not configured. Super Admin → Send Emails → paste API key and Save, or set RESEND_API_KEY on Vercel and Redeploy.',
+    };
   }
   const recipient = isValidEmail(to);
   if (!recipient) {
@@ -38,7 +68,9 @@ export async function sendResendEmail({
     to: [recipient],
     subject: String(subject || '').trim() || 'Lumo Edge',
     html: String(html || ''),
-    reply_to: String(replyTo || process.env.EMAIL_REPLY_TO || 'lumoedge08@gmail.com').trim(),
+    reply_to: String(
+      replyTo || process.env.EMAIL_REPLY_TO || 'lumoedge08@gmail.com',
+    ).trim(),
   };
   if (Array.isArray(tags) && tags.length) {
     payload.tags = tags.map((t) =>
