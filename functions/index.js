@@ -23,8 +23,10 @@ const resendApiKey = defineSecret('RESEND_API_KEY');
 const SUPER_EMAIL = 'mukundimukhuba8@gmail.com';
 const SUPER_SHA =
   '18026064be7ec28f428f49e9c93cc0c1f86d3883f11189805f592298467663c9';
-const LOGO_URL = 'https://lumoedge.com/lumo-logo.png';
+const LOGO_URL = 'https://lumoedge.com/lumo-logo-email.png';
 const APP_ORIGIN = 'https://lumoedge.com';
+const APP_HOME_URL = 'https://lumoedge.com/';
+const APP_LOGIN_URL = 'https://lumoedge.com/admin/login';
 const SUPPORT_EMAIL = 'lumoedge08@gmail.com';
 
 function esc(v) {
@@ -35,12 +37,19 @@ function esc(v) {
     .replace(/"/g, '&quot;');
 }
 
+function displayName(mentor) {
+  return String(mentor?.fullName || mentor?.mentorName || mentor?.name || '').trim();
+}
+
 function renderEmail({ title, preheader, bodyHtml, ctaLabel, ctaUrl }) {
+  let url = String(ctaUrl || APP_HOME_URL).trim();
+  if (url.startsWith('/')) url = `${APP_ORIGIN}${url}`;
+  if (!/^https?:\/\//i.test(url)) url = APP_HOME_URL;
   const cta =
-    ctaLabel && ctaUrl
-      ? `<tr><td align="center" style="padding:8px 0 28px;"><a href="${esc(ctaUrl)}" style="display:inline-block;background:linear-gradient(135deg,#2563eb,#0ea5e9);color:#fff;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;padding:14px 28px;border-radius:999px;">${esc(ctaLabel)}</a></td></tr>`
+    ctaLabel && url
+      ? `<tr><td align="center" style="padding:12px 28px 28px;"><table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr><td align="center" bgcolor="#2563eb" style="border-radius:999px;background-color:#2563eb;"><a href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 28px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;">${esc(ctaLabel)}</a></td></tr></table><p style="margin:12px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#93a4c7;">Or open: <a href="${esc(url)}" target="_blank" style="color:#60a5fa;word-break:break-all;">${esc(url)}</a></p></td></tr>`
       : '';
-  return `<!DOCTYPE html><html><body style="margin:0;background:#070b14;color:#e8eefc;"><div style="display:none;max-height:0;overflow:hidden;">${esc(preheader || '')}</div><table width="100%" cellpadding="0" cellspacing="0" style="background:#070b14;padding:24px 12px;"><tr><td align="center"><table width="100%" style="max-width:560px;background:#0c1220;border:1px solid rgba(59,130,246,.28);border-radius:18px;"><tr><td align="center" style="padding:28px 24px 12px;"><img src="${LOGO_URL}" width="72" height="72" alt="Lumo Edge" style="border-radius:16px;"/><div style="font-family:Arial,sans-serif;font-size:20px;font-weight:800;letter-spacing:.06em;color:#fff;margin-top:14px;">LUMO EDGE</div></td></tr><tr><td style="padding:8px 28px;font-family:Arial,sans-serif;font-size:15px;line-height:1.65;color:#d7e0f5;">${bodyHtml}</td></tr>${cta}<tr><td style="padding:18px 28px 28px;border-top:1px solid rgba(148,163,184,.18);font-family:Arial,sans-serif;font-size:12px;color:#8b9bb8;text-align:center;"><strong style="color:#c7d2ea;">Lumo Edge</strong><br/>Contact <a href="mailto:${SUPPORT_EMAIL}" style="color:#60a5fa;text-decoration:none;">${SUPPORT_EMAIL}</a></td></tr></table></td></tr></table></body></html>`;
+  return `<!DOCTYPE html><html><body style="margin:0;background:#070b14;color:#e8eefc;"><div style="display:none;max-height:0;overflow:hidden;">${esc(preheader || '')}</div><table width="100%" cellpadding="0" cellspacing="0" style="background:#070b14;padding:24px 12px;"><tr><td align="center"><table width="100%" style="max-width:560px;background:#0c1220;border:1px solid rgba(59,130,246,.28);border-radius:18px;"><tr><td align="center" style="padding:28px 24px 12px;"><a href="${APP_HOME_URL}" target="_blank" rel="noopener noreferrer"><img src="${LOGO_URL}" width="72" height="72" alt="Lumo Edge logo" style="display:block;width:72px;height:72px;border:0;border-radius:16px;"/></a><div style="font-family:Arial,sans-serif;font-size:20px;font-weight:800;letter-spacing:.06em;color:#fff;margin-top:14px;">LUMO EDGE</div></td></tr><tr><td style="padding:8px 28px;font-family:Arial,sans-serif;font-size:15px;line-height:1.65;color:#d7e0f5;">${bodyHtml}</td></tr>${cta}<tr><td style="padding:18px 28px 28px;border-top:1px solid rgba(148,163,184,.18);font-family:Arial,sans-serif;font-size:12px;color:#8b9bb8;text-align:center;"><strong style="color:#c7d2ea;">Lumo Edge</strong><br/>Contact <a href="mailto:${SUPPORT_EMAIL}" style="color:#60a5fa;text-decoration:none;">${SUPPORT_EMAIL}</a><br/><a href="${APP_HOME_URL}" target="_blank" style="color:#93a4c7;text-decoration:none;">${APP_HOME_URL}</a></td></tr></table></td></tr></table></body></html>`;
 }
 
 function p(text) {
@@ -67,6 +76,14 @@ async function sendResend({ apiKey, to, subject, html, type, idempotencyKey, rel
     return { ok: true, skipped: true };
   }
   const from = process.env.EMAIL_FROM || 'Lumo Edge <onboarding@resend.dev>';
+  const text = String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -78,7 +95,12 @@ async function sendResend({ apiKey, to, subject, html, type, idempotencyKey, rel
       to: [to],
       subject,
       html,
+      text,
       reply_to: process.env.EMAIL_REPLY_TO || SUPPORT_EMAIL,
+      headers: {
+        'List-Unsubscribe': `<mailto:${SUPPORT_EMAIL}?subject=unsubscribe>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
     }),
   });
   const data = await res.json().catch(() => ({}));
@@ -116,16 +138,24 @@ exports.onMentorAdminWrite = onValueWritten(
       const email = String(mentor.email).trim().toLowerCase();
 
       if (!prev && role === 'pending') {
+        const name = displayName(mentor);
         const html = renderEmail({
           title: 'Application received',
           preheader: 'Your mentor application is under review.',
           bodyHtml: [
-            p(`Hi ${mentor.fullName || ''},`.trim()),
+            p(name ? `Hi ${name},` : 'Hi,'),
+            name
+              ? p(`This confirmation is for your Lumo Edge mentor signup as “${name}”.`)
+              : '',
             p('Thank you for registering as a mentor with Lumo Edge.'),
             p('Your mentor account is currently awaiting approval from our team.'),
             p('You will receive another email as soon as your account has been approved.'),
             p('Please do not create another account while your application is being reviewed.'),
-          ].join(''),
+          ]
+            .filter(Boolean)
+            .join(''),
+          ctaLabel: 'OPEN LUMO EDGE',
+          ctaUrl: APP_HOME_URL,
         });
         await sendResend({
           apiKey,
@@ -139,17 +169,20 @@ exports.onMentorAdminWrite = onValueWritten(
       }
 
       if (prevRole === 'pending' && role === 'admin') {
+        const name = displayName(mentor);
         const html = renderEmail({
           title: 'Mentor approved',
           preheader: 'Your mentor account is approved.',
           bodyHtml: [
-            p(`Congratulations ${mentor.fullName || ''}!`.trim()),
-            p('Your Lumo Edge mentor account has been approved.'),
+            p(name ? `Congratulations ${name}!` : 'Congratulations!'),
+            name
+              ? p(`Your mentor account registered as “${name}” is now approved.`)
+              : p('Your Lumo Edge mentor account has been approved.'),
             p('You can now log in to your mentor dashboard and start using your account.'),
             p('Welcome to Lumo Edge.'),
           ].join(''),
           ctaLabel: 'LOGIN TO YOUR DASHBOARD',
-          ctaUrl: `${APP_ORIGIN}/admin/login`,
+          ctaUrl: APP_LOGIN_URL,
         });
         await sendResend({
           apiKey,
@@ -201,7 +234,7 @@ exports.onVaultWrite = onValueWritten(
           p(`Need help? Email ${SUPPORT_EMAIL}.`),
         ].join(''),
         ctaLabel: 'OPEN LUMO EDGE',
-        ctaUrl: APP_ORIGIN,
+        ctaUrl: APP_HOME_URL,
       });
       await sendResend({
         apiKey,
@@ -246,7 +279,7 @@ exports.sendAdminEmail = onRequest(
         .map((line) => p(line))
         .join(''),
       ctaLabel: 'OPEN LUMO EDGE',
-      ctaUrl: APP_ORIGIN,
+      ctaUrl: APP_HOME_URL,
     });
     const result = await sendResend({
       apiKey: resendApiKey.value(),

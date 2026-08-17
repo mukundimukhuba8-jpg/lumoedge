@@ -48,6 +48,7 @@ export async function sendTrackedEmail({
   to,
   subject,
   html,
+  text = null,
 }) {
   try {
     const existing = await findEmailLogByKey(firebaseRead, idempotencyKey);
@@ -58,6 +59,7 @@ export async function sendTrackedEmail({
       to,
       subject,
       html,
+      text,
       tags: [type],
       firebaseRead,
     });

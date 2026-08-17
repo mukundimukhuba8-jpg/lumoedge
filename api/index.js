@@ -1792,20 +1792,44 @@ export default async function handler(req, res) {
         send(res, 403, { ok: false, error: 'Super Admin only' });
         return;
       }
-      const recipients = Array.isArray(body?.to)
-        ? body.to
-        : String(body?.to || '')
-            .split(/[,;\s]+/)
-            .filter(Boolean);
+      const audience = String(body?.audience || '')
+        .trim()
+        .toLowerCase();
+      const {
+        notifyAdminManual,
+        isValidEmail,
+        resolveAudienceEmails,
+      } = await import('./_lib/email/index.mjs');
+      let recipients = [];
+      if (
+        audience === 'all_mentors' ||
+        audience === 'all_clients' ||
+        audience === 'everyone'
+      ) {
+        recipients = await resolveAudienceEmails(audience, firebaseRead);
+      } else if (Array.isArray(body?.to)) {
+        recipients = body.to;
+      } else {
+        recipients = String(body?.to || '')
+          .split(/[,;\s]+/)
+          .filter(Boolean);
+      }
       const subject = String(body?.subject || '').trim();
       const message = String(body?.message || body?.text || '').trim();
       const html = body?.html ? String(body.html) : '';
       if (!recipients.length || !subject || (!message && !html)) {
-        send(res, 400, { ok: false, error: 'to, subject, and message required' });
+        send(res, 400, {
+          ok: false,
+          error: recipients.length
+            ? 'subject and message required'
+            : audience
+              ? `No emails found for audience “${audience}”`
+              : 'to, subject, and message required',
+        });
         return;
       }
-      const { notifyAdminManual, isValidEmail } = await import('./_lib/email/index.mjs');
       const results = [];
+      const batchId = `bcast-${Date.now()}`;
       for (const raw of recipients) {
         const to = isValidEmail(raw);
         if (!to) {
@@ -1817,14 +1841,23 @@ export default async function handler(req, res) {
           subject,
           text: message,
           html,
+          relatedId: audience || batchId,
         });
-        results.push({ to, ok: Boolean(r.ok), error: r.error || '', id: r.id || '' });
+        results.push({
+          to,
+          ok: Boolean(r.ok),
+          error: r.error || '',
+          id: r.id || '',
+          skipped: Boolean(r.skipped),
+        });
       }
       const sent = results.filter((r) => r.ok).length;
       send(res, 200, {
         ok: sent > 0,
         sent,
         failed: results.length - sent,
+        audience: audience || null,
+        total: results.length,
         results,
       });
       return;
