@@ -1705,6 +1705,72 @@ export default async function handler(req, res) {
       return;
     }
 
+    if (pathname === '/api/email/status' && req.method === 'GET') {
+      const { resolveResendApiKey } = await import('./_lib/email/index.mjs');
+      const resolved = await resolveResendApiKey(firebaseRead);
+      send(res, 200, {
+        ok: true,
+        configured: Boolean(resolved.apiKey),
+        source: resolved.source || null,
+        from: process.env.EMAIL_FROM || 'Lumo Edge <onboarding@resend.dev>',
+        replyTo: process.env.EMAIL_REPLY_TO || 'lumoedge08@gmail.com',
+      });
+      return;
+    }
+
+    if (pathname === '/api/email/config' && req.method === 'POST') {
+      const body = await readBody(req);
+      const adminEmail = String(body?.adminEmail || '').trim().toLowerCase();
+      const adminPassword = String(body?.adminPassword || '');
+      const SUPER_EMAIL = 'mukundimukhuba8@gmail.com';
+      const SUPER_SHA =
+        '18026064be7ec28f428f49e9c93cc0c1f86d3883f11189805f592298467663c9';
+      const { createHash } = await import('node:crypto');
+      const passHash = createHash('sha256').update(adminPassword).digest('hex');
+      const allowed = adminEmail === SUPER_EMAIL && passHash === SUPER_SHA;
+      if (!allowed) {
+        send(res, 403, { ok: false, error: 'Super Admin only' });
+        return;
+      }
+      const apiKey = String(body?.apiKey || '')
+        .trim()
+        .replace(/^["']|["']$/g, '')
+        .trim();
+      if (!apiKey.startsWith('re_')) {
+        send(res, 400, {
+          ok: false,
+          error: 'Paste a valid Resend API key (starts with re_).',
+        });
+        return;
+      }
+      // Quick live check so we don't save a dead key
+      const probe = await fetch('https://api.resend.com/domains', {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!probe.ok) {
+        const err = await probe.json().catch(() => ({}));
+        send(res, 400, {
+          ok: false,
+          error:
+            err?.message ||
+            `Resend rejected this key (${probe.status}). Create a new API key in Resend.`,
+        });
+        return;
+      }
+      const updatedAt = new Date().toISOString();
+      const ok = await firebaseWrite('lumo/secrets/resend', {
+        apiKey,
+        updatedAt,
+        updatedBy: adminEmail,
+      });
+      if (!ok) {
+        send(res, 502, { ok: false, error: 'Could not save Resend key to cloud' });
+        return;
+      }
+      send(res, 200, { ok: true, configured: true, source: 'firebase', updatedAt });
+      return;
+    }
+
     if (pathname === '/api/email/send' && req.method === 'POST') {
       const body = await readBody(req);
       const adminEmail = String(body?.adminEmail || '').trim().toLowerCase();

@@ -54,7 +54,13 @@ export async function sendTrackedEmail({
     if (existing) {
       return { ok: true, skipped: true, reason: 'already_sent', log: existing };
     }
-    const result = await sendResendEmail({ to, subject, html, tags: [type] });
+    const result = await sendResendEmail({
+      to,
+      subject,
+      html,
+      tags: [type],
+      firebaseRead,
+    });
     await writeEmailLog(firebaseWrite, firebasePush, {
       to,
       type,
