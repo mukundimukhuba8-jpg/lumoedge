@@ -2,6 +2,7 @@ import { startTransition, useEffect, useMemo, useState, type ReactNode } from 'r
 import { createPortal } from 'react-dom';
 import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
+  Building2,
   Cpu,
   CreditCard,
   KeyRound,
@@ -35,6 +36,7 @@ const ALL_MENU: {
   { to: '/admin/setup', label: 'Setup Methods', Icon: Settings2, roles: ['super'] },
   { to: '/admin/telegram', label: 'Telegram Alerts', Icon: MessageCircle, roles: ['super'] },
   { to: '/admin/connect-ea', label: 'Connect EA', Icon: Monitor, roles: ['super', 'admin'] },
+  { to: '/admin/brokers', label: 'Brokers', Icon: Building2, roles: ['super', 'admin'] },
   { to: '/admin/orders', label: 'Open Orders', Icon: LineChart, roles: ['super', 'admin'] },
   { to: '/admin/licenses', label: 'Generate License', Icon: KeyRound, roles: ['super', 'admin'] },
   { to: '/admin/eas', label: 'Manage EAs', Icon: Cpu, roles: ['super', 'admin'] },

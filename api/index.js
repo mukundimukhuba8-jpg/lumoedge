@@ -2127,8 +2127,172 @@ export default async function handler(req, res) {
       if (result.ok && result.token) {
         send(res, 200, { token: result.token });
       } else {
-        send(res, 502, { error: result.error || 'Connect failed' });
+        const msg = result.error || 'Connect failed';
+        const unreachable = /unreachable|timeout|abort|fetch failed/i.test(msg);
+        send(res, unreachable ? 502 : 400, { error: msg });
       }
+      return;
+    }
+
+    // Central broker catalog (Admin + Android share this)
+    if (pathname === '/api/brokers' && req.method === 'GET') {
+      const {
+        ensureBrokerCatalog,
+        filterCatalog,
+        matchBrokerCatalog,
+        accountTypesForSelection,
+        inferPlatformFromServer,
+      } = await import('./_lib/brokers.mjs');
+      const catalog = await ensureBrokerCatalog(firebaseRead, firebaseWrite);
+      const q = String(url.searchParams.get('q') || url.searchParams.get('company') || '').trim();
+      const includeLive = String(url.searchParams.get('live') || '1') !== '0';
+      let live = [];
+      if (includeLive && q.length >= 2) {
+        try {
+          const host = (process.env.MT5_API_HOST || '66.23.225.158').trim();
+          const bases = [`http://${host}`, `https://${host}`];
+          for (const base of bases) {
+            const ac = new AbortController();
+            const timer = setTimeout(() => ac.abort(), 9000);
+            try {
+              const upstream = await fetch(
+                `${base}/Search?company=${encodeURIComponent(q)}`,
+                {
+                  headers: { Accept: 'application/json' },
+                  signal: ac.signal,
+                },
+              );
+              clearTimeout(timer);
+              if (!upstream.ok) continue;
+              const data = await upstream.json().catch(() => null);
+              if (Array.isArray(data)) {
+                live = data;
+                break;
+              }
+            } catch {
+              clearTimeout(timer);
+            }
+          }
+        } catch {
+          live = [];
+        }
+      }
+      const catalogHits = filterCatalog(catalog, q);
+      const companies = [];
+      const seen = new Set();
+      for (const row of live) {
+        const company = String(row?.company || '').trim();
+        if (!company || seen.has(company.toLowerCase())) continue;
+        seen.add(company.toLowerCase());
+        const meta = matchBrokerCatalog(company, catalog);
+        const results = Array.isArray(row?.results) ? row.results : [];
+        companies.push({
+          company,
+          brokerId: meta?.id || null,
+          logoUrl: results[0]?.logo_url || meta?.logoUrl || '',
+          site: results[0]?.site || meta?.site || '',
+          accountTypes: meta
+            ? accountTypesForSelection(meta, results[0]?.name || '')
+            : [],
+          platforms: meta?.platforms || ['MT5'],
+          results: results.map((r) => ({
+            name: r.name,
+            logo_url: r.logo_url,
+            site: r.site,
+            access: r.access,
+            platform: inferPlatformFromServer(r.name),
+          })),
+        });
+      }
+      // Catalog-only brokers (when live Search misses them)
+      for (const b of catalogHits) {
+        const already = companies.some(
+          (c) =>
+            c.brokerId === b.id ||
+            c.company.toLowerCase().includes(String(b.name).toLowerCase()),
+        );
+        if (already) continue;
+        companies.push({
+          company: b.name,
+          brokerId: b.id,
+          logoUrl: b.logoUrl || '',
+          site: b.site || '',
+          accountTypes: (b.accountTypes || []).map((t) => t.name),
+          platforms: b.platforms || ['MT5'],
+          results: (b.servers || []).map((s) => ({
+            name: s.name,
+            logo_url: b.logoUrl || null,
+            site: b.site || null,
+            access: [],
+            platform: s.platform || 'MT5',
+          })),
+        });
+      }
+      send(res, 200, {
+        ok: true,
+        query: q,
+        companies,
+        catalog: catalogHits,
+      });
+      return;
+    }
+
+    if (pathname === '/api/brokers/catalog' && req.method === 'GET') {
+      const { ensureBrokerCatalog } = await import('./_lib/brokers.mjs');
+      const catalog = await ensureBrokerCatalog(firebaseRead, firebaseWrite);
+      send(res, 200, { ok: true, brokers: catalog });
+      return;
+    }
+
+    if (pathname === '/api/brokers' && req.method === 'POST') {
+      const body = await readBody(req);
+      const adminEmail = String(body?.adminEmail || '').trim().toLowerCase();
+      const adminPassword = String(body?.adminPassword || '');
+      const SUPER_EMAIL = 'mukundimukhuba8@gmail.com';
+      const SUPER_SHA =
+        '18026064be7ec28f428f49e9c93cc0c1f86d3883f11189805f592298467663c9';
+      const { createHash } = await import('node:crypto');
+      const passHash = createHash('sha256').update(adminPassword).digest('hex');
+      let allowed = adminEmail === SUPER_EMAIL && passHash === SUPER_SHA;
+      if (!allowed && adminEmail && adminPassword) {
+        const { verifyMentorLogin } = await import('./_lib/clientMerge.mjs');
+        const login = await verifyMentorLogin(adminEmail, adminPassword);
+        allowed =
+          Boolean(login?.ok) &&
+          ['super', 'admin'].includes(String(login?.admin?.role || '').toLowerCase());
+      }
+      if (!allowed) {
+        send(res, 403, { ok: false, error: 'Admin only' });
+        return;
+      }
+      const {
+        ensureBrokerCatalog,
+        normalizeBrokerRecord,
+        brokersFromFirebase,
+      } = await import('./_lib/brokers.mjs');
+      await ensureBrokerCatalog(firebaseRead, firebaseWrite);
+      const action = String(body?.action || 'upsert').toLowerCase();
+      const current = brokersFromFirebase(await firebaseRead('lumo/brokers'));
+      const map = Object.fromEntries(current.map((b) => [b.id, b]));
+      if (action === 'delete') {
+        const id = String(body?.id || '').trim();
+        if (!id || !map[id]) {
+          send(res, 404, { ok: false, error: 'Broker not found' });
+          return;
+        }
+        delete map[id];
+        await firebaseWrite('lumo/brokers', map);
+        send(res, 200, { ok: true, brokers: Object.values(map) });
+        return;
+      }
+      const record = normalizeBrokerRecord(body?.broker || body || {}, body?.id);
+      if (!record.name) {
+        send(res, 400, { ok: false, error: 'Broker name required' });
+        return;
+      }
+      map[record.id] = { ...record, updatedAt: new Date().toISOString() };
+      await firebaseWrite('lumo/brokers', map);
+      send(res, 200, { ok: true, broker: map[record.id], brokers: Object.values(map) });
       return;
     }
 
@@ -2137,10 +2301,11 @@ export default async function handler(req, res) {
       // Swagger UI: https://66.23.225.158/swagger/index.html — API root is the host only
       const MT5_HOST = (process.env.MT5_API_HOST || '66.23.225.158').trim();
       const envBase = String(process.env.MT5_API_BASE || '').replace(/\/$/, '');
-      // Try env base first, then https and http on the swagger host
+      // Prefer HTTP — HTTPS on this host often hangs from serverless.
       const bases = [
-        ...(envBase ? [envBase] : []),
         `http://${MT5_HOST}`,
+        ...(envBase && !/^https:\/\//i.test(envBase) ? [envBase] : []),
+        ...(envBase ? [envBase] : []),
         `https://${MT5_HOST}`,
       ].filter((b, i, arr) => arr.indexOf(b) === i);
 

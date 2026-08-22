@@ -60,11 +60,30 @@ export type Mt5ServerResult = {
   logo_url?: string;
   site?: string;
   access?: string[];
+  platform?: string;
 };
 
 export type Mt5Company = {
   company: string;
   results: Mt5ServerResult[];
+  brokerId?: string | null;
+  logoUrl?: string;
+  site?: string;
+  accountTypes?: string[];
+  platforms?: string[];
+};
+
+export type BrokerCatalogEntry = {
+  id: string;
+  name: string;
+  aliases?: string[];
+  enabled?: boolean;
+  recommended?: boolean;
+  platforms?: string[];
+  site?: string;
+  logoUrl?: string;
+  accountTypes?: Array<{ name: string; platform?: string }>;
+  servers?: Array<{ name: string; platform?: string; mode?: string }>;
 };
 
 export type Mt5AccountSummary = {
@@ -107,13 +126,23 @@ export type Mt5OpenedOrder = {
 
 /** Turn raw broker API failures into honest, readable messages */
 function brokerError(status: number, data: unknown, fallback: string): Error {
-  const text = typeof data === 'string' ? data : '';
+  const text =
+    typeof data === 'string'
+      ? data
+      : data && typeof data === 'object' && 'error' in data
+        ? String((data as { error?: string }).error || '')
+        : '';
   if (/not found in database/i.test(text)) {
     return new Error('MT5 session expired — open MetaTrader and connect again.');
   }
   if (status === 503 || /service is unavailable/i.test(text)) {
     return new Error(
       'The broker service is temporarily offline (server maintenance). This is not your internet — try again in a few minutes.',
+    );
+  }
+  if (/invalid login|invalid_account|wrong.?password|invalid password/i.test(text)) {
+    return new Error(
+      'Invalid login or password for this server. Check MT5 credentials and try again.',
     );
   }
   return new Error(text || fallback);
@@ -139,17 +168,48 @@ export async function pingMt5(): Promise<boolean> {
   }
 }
 
-/** Search broker companies via swagger /Search */
+/** Search brokers via central catalog + live MT5 Search (shared by Android + Admin). */
 export async function searchBrokers(company: string): Promise<Mt5Company[]> {
   const q = company.trim();
   if (q.length < 2) return [];
 
+  try {
+    const res = await fetch(
+      apiUrl(`/api/brokers?q=${encodeURIComponent(q)}&live=1`),
+      { headers: { Accept: 'application/json' } },
+    );
+    const data = await readBody(res);
+    if (res.ok && data && typeof data === 'object' && Array.isArray((data as { companies?: unknown }).companies)) {
+      return (data as { companies: Mt5Company[] }).companies;
+    }
+  } catch {
+    /* fall through to live Search proxy */
+  }
+
   const res = await mt5Fetch(`/Search?company=${encodeURIComponent(q)}`);
   const data = await readBody(res);
-  if (!res.ok) {
-    return [];
-  }
+  if (!res.ok) return [];
   return Array.isArray(data) ? (data as Mt5Company[]) : [];
+}
+
+export async function fetchBrokerCatalog(): Promise<BrokerCatalogEntry[]> {
+  try {
+    const res = await fetch(apiUrl('/api/brokers/catalog'), {
+      headers: { Accept: 'application/json' },
+    });
+    const data = await readBody(res);
+    if (
+      res.ok &&
+      data &&
+      typeof data === 'object' &&
+      Array.isArray((data as { brokers?: unknown }).brokers)
+    ) {
+      return (data as { brokers: BrokerCatalogEntry[] }).brokers;
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
 }
 
 /**
@@ -162,9 +222,9 @@ export async function connectEx(input: {
   server: string;
 }): Promise<string> {
   const ac = new AbortController();
-  const timer = window.setTimeout(() => ac.abort(), 20_000);
+  const timer = window.setTimeout(() => ac.abort(), 22_000);
   try {
-    const res = await fetch('/api/mt5/connect', {
+    const res = await fetch(apiUrl('/api/mt5/connect'), {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -199,7 +259,7 @@ export async function connectEx(input: {
     return token.replace(/^"|"$/g, '');
   } catch (err) {
     if (err instanceof Error && /abort/i.test(err.message)) {
-      throw new Error('Not connecting');
+      throw new Error('Connection timed out — check server name and try again.');
     }
     throw err;
   } finally {

@@ -61,8 +61,6 @@ type ClientMt5 = {
 
 const MT5_KEY = 'ub-web/client-mt5-v1';
 
-const ACCOUNT_TYPES = ['100% Bonus Standard', '200%'];
-
 const CONNECTION_STEPS = [
   'Initializing Engine',
   'Validating MT5 Credentials',
@@ -126,6 +124,9 @@ export function MetaTraderPage() {
   const [brokerQuery, setBrokerQuery] = useState('');
   const [companies, setCompanies] = useState<Mt5Company[]>([]);
   const [servers, setServers] = useState<Mt5ServerResult[]>([]);
+  const [accountTypes, setAccountTypes] = useState<string[]>([
+    RAZOR_MARKETS.accountType,
+  ]);
   const [searching, setSearching] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [status, setStatus] = useState('');
@@ -255,7 +256,7 @@ export function MetaTraderPage() {
       setCompanies(list);
       if (open) setBrokerOpen(true);
       const flat = list.flatMap((c) =>
-        (c.results || []).map((r) => ({ ...r, company: c.company })),
+        (c.results || []).map((r) => ({ ...r, company: c.company, accountTypes: c.accountTypes })),
       );
       if (flat.length && !form.connected) {
         const razor =
@@ -270,15 +271,13 @@ export function MetaTraderPage() {
           flat[0];
         if (match) {
           const companyName = (match as { company?: string }).company || list[0]?.company || '';
-          setServers(
-            list.find((c) => c.company === companyName)?.results ||
-              list[0].results ||
-              [],
-          );
+          const co = list.find((c) => c.company === companyName) || list[0];
+          setServers(co?.results || list[0].results || []);
+          if (co?.accountTypes?.length) setAccountTypes(co.accountTypes);
           if (razor || !form.server) {
             persist({
               ...form,
-              broker: RAZOR_MARKETS.broker,
+              broker: razor ? RAZOR_MARKETS.broker : companyName.replace(/\s*\(.*\)\s*$/, '').trim(),
               company: companyName,
               server: match.name,
               site: match.site
@@ -286,7 +285,10 @@ export function MetaTraderPage() {
                   ? match.site
                   : `https://${match.site}`
                 : RAZOR_MARKETS.site,
-              accountType: form.accountType || RAZOR_MARKETS.accountType,
+              accountType:
+                (co?.accountTypes || []).includes(form.accountType)
+                  ? form.accountType
+                  : co?.accountTypes?.[0] || form.accountType || RAZOR_MARKETS.accountType,
             });
           }
         }
@@ -306,20 +308,35 @@ export function MetaTraderPage() {
     }, 350);
   };
 
-  const pickServer = (company: string, server: Mt5ServerResult) => {
+  const pickServer = (company: string, server: Mt5ServerResult, co?: Mt5Company) => {
+    const hit = co || companies.find((c) => c.company === company);
+    const types = hit?.accountTypes?.length
+      ? hit.accountTypes
+      : accountTypes.length
+        ? accountTypes
+        : [];
+    const platformTypes =
+      types.length && server.platform
+        ? // Prefer types; list already filtered server-side when possible
+          types
+        : types;
+    setAccountTypes(platformTypes.length ? platformTypes : types);
     persist({
       ...form,
       broker: company.replace(/\s*\(.*\)\s*$/, '').trim() || company,
       company,
       server: server.name,
+      accountType:
+        platformTypes.includes(form.accountType) || types.includes(form.accountType)
+          ? form.accountType
+          : platformTypes[0] || types[0] || '',
       site: server.site
         ? server.site.startsWith('http')
           ? server.site
           : `https://${server.site}`
-        : form.site,
+        : hit?.site || form.site,
     });
-    const co = companies.find((c) => c.company === company);
-    setServers(co?.results || [server]);
+    setServers(hit?.results || [server]);
     setBrokerOpen(false);
     setBrokerQuery(company);
   };
@@ -368,7 +385,9 @@ export function MetaTraderPage() {
       setNotConnecting(false);
       setStatus('Connected');
       void refreshAccount(token);
-    } catch {
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Connection failed';
+      setStatus(msg);
       setNotConnecting(true);
     } finally {
       setConnecting(false);
@@ -501,11 +520,12 @@ export function MetaTraderPage() {
 
         <div className={`mt5-banner mt5-banner-${bannerState}`} role="status">
           <Zap size={16} aria-hidden />
-          <span>{bannerText}</span>
-          {status && bannerState === 'idle' && status !== bannerText ? (
-            <span className="mt5-banner-sub">{status}</span>
-          ) : null}
-          {notConnecting ? <span className="mt5-banner-sub">Not connecting</span> : null}
+          <div className="mt5-banner-copy">
+            <span>{bannerText}</span>
+            {status && (bannerState === 'idle' || bannerState === 'failed') && status !== bannerText ? (
+              <span className="mt5-banner-sub">{status}</span>
+            ) : null}
+          </div>
         </div>
 
         {connecting ? (
@@ -613,7 +633,12 @@ export function MetaTraderPage() {
             </section>
           </>
         ) : (
-          <section className="mt5-glass mt5-form-panel">
+          <section className="mt5-glass mt5-form-panel mt5-form-modern">
+            <div className="mt5-form-intro">
+              <h2>Connect Broker</h2>
+              <p>Search your broker, pick the exact MT4/MT5 server, then sign in with your trading login.</p>
+            </div>
+
             <a
               className="mt5-recommended mt5-rec-cyber"
               href="https://razormarkets.co.za"
@@ -631,15 +656,19 @@ export function MetaTraderPage() {
             </a>
 
             <div className="mt5-field">
-              <label>BROKER</label>
+              <label>Broker</label>
               <div className="mt5-pass-wrap">
                 <input
                   className="mt5-input mt5-input-cyber"
-                  style={{ paddingLeft: 40, paddingRight: 40 }}
+                  style={{ paddingLeft: 42, paddingRight: 40 }}
                   value={brokerQuery}
                   onChange={(e) => onBrokerQuery(e.target.value)}
-                  onFocus={() => setBrokerOpen(true)}
-                  placeholder="Search Broker"
+                  onFocus={() => {
+                    setBrokerOpen(true);
+                    if (brokerQuery.trim().length >= 2) void runSearch(brokerQuery);
+                  }}
+                  placeholder="Search Exness, XM, IC Markets…"
+                  autoComplete="off"
                 />
                 <span className="mt5-search-ico">
                   {searching ? <Loader2 size={16} className="spin" /> : <Search size={16} />}
@@ -650,16 +679,30 @@ export function MetaTraderPage() {
               </div>
               {brokerOpen && companies.length ? (
                 <div className="mt5-dropdown mt5-broker-drop">
-                  {companies.slice(0, 12).map((co) => (
+                  {companies.slice(0, 16).map((co) => (
                     <div key={co.company} className="mt5-co-block">
-                      <div className="mt5-co-name">{co.company}</div>
-                      {(co.results || []).slice(0, 8).map((r) => (
+                      <div className="mt5-co-head">
+                        {co.logoUrl || co.results?.[0]?.logo_url ? (
+                          <img
+                            src={co.logoUrl || co.results?.[0]?.logo_url}
+                            alt=""
+                            className="mt5-co-logo"
+                          />
+                        ) : (
+                          <span className="mt5-co-logo mt5-co-logo-fallback" aria-hidden>
+                            <Building2 size={14} />
+                          </span>
+                        )}
+                        <div className="mt5-co-name">{co.company}</div>
+                      </div>
+                      {(co.results || []).slice(0, 10).map((r) => (
                         <button
                           key={`${co.company}-${r.name}`}
                           type="button"
-                          onClick={() => pickServer(co.company, r)}
+                          onClick={() => pickServer(co.company, r, co)}
                         >
-                          {r.name}
+                          <span>{r.name}</span>
+                          <em>{r.platform || 'MT5'}</em>
                         </button>
                       ))}
                     </div>
@@ -669,7 +712,7 @@ export function MetaTraderPage() {
             </div>
 
             <div className="mt5-field">
-              <label>SELECT SERVER</label>
+              <label>Select server</label>
               <div className="mt5-pass-wrap">
                 <select
                   className="mt5-input mt5-input-cyber"
@@ -678,7 +721,13 @@ export function MetaTraderPage() {
                     color: form.server ? undefined : 'var(--muted)',
                   }}
                   value={form.server}
-                  onChange={(e) => persist({ ...form, server: e.target.value })}
+                  onChange={(e) => {
+                    const nextServer = e.target.value;
+                    const hit = servers.find((s) => s.name === nextServer);
+                    const co = companies.find((c) => c.company === form.company);
+                    if (hit && co) pickServer(co.company, hit, co);
+                    else persist({ ...form, server: nextServer });
+                  }}
                 >
                   <option value="" disabled hidden>
                     Select broker server
@@ -686,6 +735,7 @@ export function MetaTraderPage() {
                   {servers.map((s) => (
                     <option key={s.name} value={s.name}>
                       {s.name}
+                      {s.platform ? ` · ${s.platform}` : ''}
                     </option>
                   ))}
                   {form.server && !servers.some((s) => s.name === form.server) ? (
@@ -699,7 +749,7 @@ export function MetaTraderPage() {
             </div>
 
             <div className="mt5-field">
-              <label>ACCOUNT TYPE</label>
+              <label>Account type</label>
               <div className="mt5-pass-wrap">
                 <select
                   className="mt5-input mt5-input-cyber"
@@ -709,15 +759,21 @@ export function MetaTraderPage() {
                   }}
                   value={form.accountType}
                   onChange={(e) => persist({ ...form, accountType: e.target.value })}
+                  disabled={!accountTypes.length}
                 >
                   <option value="" disabled hidden>
-                    Select account type
+                    {accountTypes.length
+                      ? 'Select account type'
+                      : 'Search a broker to load account types'}
                   </option>
-                  {ACCOUNT_TYPES.map((t) => (
+                  {accountTypes.map((t) => (
                     <option key={t} value={t}>
                       {t}
                     </option>
                   ))}
+                  {form.accountType && !accountTypes.includes(form.accountType) ? (
+                    <option value={form.accountType}>{form.accountType}</option>
+                  ) : null}
                 </select>
                 <span className="mt5-chevron" aria-hidden>
                   <ChevronDown size={16} />
@@ -726,31 +782,33 @@ export function MetaTraderPage() {
             </div>
 
             <div className="mt5-field">
-              <label>LOGIN</label>
+              <label>Login</label>
               <input
                 className="mt5-input mt5-input-cyber"
                 value={form.login}
                 onChange={(e) => setForm({ ...form, login: e.target.value })}
-                placeholder="Enter your MT5 login"
+                placeholder="MT4 / MT5 account number"
                 inputMode="numeric"
+                autoComplete="username"
               />
             </div>
 
             <div className="mt5-field">
-              <label>PASSWORD</label>
+              <label>Password</label>
               <div className="mt5-pass-wrap">
                 <input
                   className="mt5-input mt5-input-cyber"
                   type={showPass ? 'text' : 'password'}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  placeholder="Enter your password"
+                  placeholder="Investor or master password"
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
                   className="mt5-eye"
                   onClick={() => setShowPass((v) => !v)}
-                  aria-label="Toggle password"
+                  aria-label={showPass ? 'Hide password' : 'Show password'}
                 >
                   {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
@@ -760,7 +818,7 @@ export function MetaTraderPage() {
             <div className="mt5-btn-row">
               <button
                 type="button"
-                className="mt5-btn mt5-btn-primary"
+                className="mt5-btn mt5-btn-primary mt5-btn-connect"
                 onClick={() => void connect()}
                 disabled={connecting}
               >

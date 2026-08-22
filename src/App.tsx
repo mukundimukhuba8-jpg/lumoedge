@@ -55,6 +55,9 @@ const SubscriptionsPage = lazy(() =>
 const ConnectEAPage = lazy(() =>
   import('./pages/admin/AdminPages').then((m) => ({ default: m.ConnectEAPage })),
 );
+const BrokersAdminPage = lazy(() =>
+  import('./pages/admin/BrokersAdminPage').then((m) => ({ default: m.BrokersAdminPage })),
+);
 const OpenOrdersPage = lazy(() =>
   import('./pages/admin/AdminPages').then((m) => ({ default: m.OpenOrdersPage })),
 );
@@ -193,6 +196,7 @@ export default function App() {
               }
             />
             <Route path="connect-ea" element={<ConnectEAPage />} />
+            <Route path="brokers" element={<BrokersAdminPage />} />
             <Route path="orders" element={<OpenOrdersPage />} />
             <Route path="licenses" element={<GenerateLicensePage />} />
             <Route path="eas" element={<ManageEAsPage />} />

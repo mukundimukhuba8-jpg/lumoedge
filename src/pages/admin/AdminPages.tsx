@@ -852,44 +852,256 @@ export function GenerateLicensePage() {
 }
 
 export function ConnectEAPage() {
-  const { mt5, profile, saveMt5 } = useAdmin();
-  const [form, setForm] = useState({ ...mt5, eaName: mt5.eaName || profile.eaDisplayName });
+  const { mt5, profile, saveMt5, admin } = useAdmin();
+  const [form, setForm] = useState({
+    ...mt5,
+    eaName: mt5.eaName || profile.eaDisplayName,
+    password: '',
+  });
+  const [brokerQuery, setBrokerQuery] = useState(mt5.broker || '');
+  const [companies, setCompanies] = useState<
+    Array<{
+      company: string;
+      results: Array<{ name: string; site?: string; logo_url?: string; platform?: string }>;
+      accountTypes?: string[];
+    }>
+  >([]);
+  const [servers, setServers] = useState<
+    Array<{ name: string; site?: string; platform?: string }>
+  >([]);
+  const [accountTypes, setAccountTypes] = useState<string[]>(
+    mt5.accountType ? [mt5.accountType] : [],
+  );
+  const [open, setOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState(false);
+  const timer = useRef<number | null>(null);
+
+  useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      ...mt5,
+      eaName: mt5.eaName || profile.eaDisplayName || prev.eaName,
+      password: '',
+    }));
+    setBrokerQuery(mt5.broker || '');
+  }, [mt5, profile.eaDisplayName]);
+
+  const runSearch = async (q: string) => {
+    const query = q.trim();
+    if (query.length < 2) {
+      setCompanies([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const { searchBrokers } = await import('../../lib/mt5Api');
+      const list = await searchBrokers(query);
+      setCompanies(list);
+      setOpen(true);
+    } catch (e) {
+      setError(true);
+      setStatus(e instanceof Error ? e.message : 'Broker search failed');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const onQuery = (value: string) => {
+    setBrokerQuery(value);
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => void runSearch(value), 350);
+  };
+
+  const pick = (
+    company: string,
+    server: { name: string; site?: string; platform?: string },
+    types: string[] = [],
+  ) => {
+    setServers(
+      companies.find((c) => c.company === company)?.results || [server],
+    );
+    setAccountTypes(types);
+    setForm((prev) => ({
+      ...prev,
+      broker: company.replace(/\s*\(.*\)\s*$/, '').trim() || company,
+      server: server.name,
+      accountType: types.includes(prev.accountType) ? prev.accountType : types[0] || '',
+    }));
+    setBrokerQuery(company);
+    setOpen(false);
+  };
+
+  const connect = async () => {
+    if (connecting) return;
+    setConnecting(true);
+    setStatus('');
+    setError(false);
+    try {
+      if (!form.login.trim() || !form.password.trim()) {
+        throw new Error('Enter login and password');
+      }
+      if (!form.server.trim()) throw new Error('Select a broker server');
+      const { connectEx } = await import('../../lib/mt5Api');
+      await connectEx({
+        user: form.login.trim(),
+        password: form.password,
+        server: form.server.trim(),
+      });
+      saveMt5({
+        ...form,
+        connected: true,
+        password: '',
+        eaName: form.eaName || profile.eaDisplayName || admin?.fullName || '',
+      });
+      setForm((prev) => ({ ...prev, connected: true, password: '' }));
+      setStatus('Connected to broker');
+    } catch (e) {
+      setError(true);
+      setStatus(e instanceof Error ? e.message : 'Connection failed');
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   return (
-    <div className="glow-card">
-      <h3 style={{ marginTop: 0, color: 'var(--electric)' }}>MT5 Connection</h3>
+    <div className="glow-card cyber-card" style={{ display: 'grid', gap: 12 }}>
+      <div>
+        <h3 style={{ margin: 0, color: 'var(--electric)' }}>MT5 Connection</h3>
+        <p className="muted" style={{ margin: '6px 0 0', fontSize: 13 }}>
+          Same live broker database as Android — search, pick server, connect with real credentials.
+        </p>
+      </div>
       {mt5.connected ? (
-        <p style={{ color: 'var(--green)', fontWeight: 700 }}>LIVE · {mt5.broker} · #{mt5.login}</p>
+        <p style={{ color: 'var(--green)', fontWeight: 700, margin: 0 }}>
+          LIVE · {mt5.broker} · #{mt5.login}
+        </p>
       ) : null}
-      <div className="field"><label>Broker</label>
-        <select value={form.broker} onChange={(e) => setForm({ ...form, broker: e.target.value })}>
-          {['Razor Markets', 'IC Markets', 'Exness', 'FTMO'].map((b) => <option key={b}>{b}</option>)}
+
+      <div className="field">
+        <label>Broker</label>
+        <div style={{ position: 'relative' }}>
+          <input
+            value={brokerQuery}
+            onChange={(e) => onQuery(e.target.value)}
+            onFocus={() => {
+              setOpen(true);
+              if (brokerQuery.trim().length >= 2) void runSearch(brokerQuery);
+            }}
+            placeholder="Search Exness, XM, IC Markets…"
+            autoComplete="off"
+          />
+          {searching ? (
+            <Loader2
+              size={16}
+              className="spin"
+              style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }}
+            />
+          ) : null}
+          {open && companies.length ? (
+            <div className="mt5-dropdown mt5-broker-drop" style={{ position: 'absolute', zIndex: 20, left: 0, right: 0 }}>
+              {companies.slice(0, 12).map((co) => (
+                <div key={co.company} className="mt5-co-block">
+                  <div className="mt5-co-name">{co.company}</div>
+                  {(co.results || []).slice(0, 8).map((r) => (
+                    <button
+                      key={`${co.company}-${r.name}`}
+                      type="button"
+                      onClick={() => pick(co.company, r, co.accountTypes || [])}
+                    >
+                      <span>{r.name}</span>
+                      <em>{r.platform || 'MT5'}</em>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="field">
+        <label>Select server</label>
+        <select
+          value={form.server}
+          onChange={(e) => setForm({ ...form, server: e.target.value })}
+        >
+          <option value="">Select server…</option>
+          {servers.map((s) => (
+            <option key={s.name} value={s.name}>
+              {s.name}
+            </option>
+          ))}
+          {form.server && !servers.some((s) => s.name === form.server) ? (
+            <option value={form.server}>{form.server}</option>
+          ) : null}
         </select>
       </div>
-      <div className="field"><label>Select Server</label>
-        <select value={form.server} onChange={(e) => setForm({ ...form, server: e.target.value })}>
-          {['RazorMarkets-Live', 'RazorMarkets-Demo', 'ICMarkets-Live'].map((b) => <option key={b}>{b}</option>)}
+
+      <div className="field">
+        <label>Account type</label>
+        <select
+          value={form.accountType}
+          onChange={(e) => setForm({ ...form, accountType: e.target.value })}
+          disabled={!accountTypes.length}
+        >
+          <option value="">
+            {accountTypes.length ? 'Select account type' : 'Search a broker first'}
+          </option>
+          {accountTypes.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
         </select>
       </div>
-      <div className="field"><label>Account Type</label>
-        <select value={form.accountType} onChange={(e) => setForm({ ...form, accountType: e.target.value })}>
-          {['100% Bonus Standard', '200%'].map((b) => <option key={b}>{b}</option>)}
-        </select>
+
+      <div className="field">
+        <label>Login</label>
+        <input
+          value={form.login}
+          onChange={(e) => setForm({ ...form, login: e.target.value })}
+          inputMode="numeric"
+        />
       </div>
-      <div className="field"><label>Login</label><input value={form.login} onChange={(e) => setForm({ ...form, login: e.target.value })} /></div>
-      <div className="field"><label>Password</label><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Enter your password" /></div>
-      <div className="field"><label>EA Name</label><input value={form.eaName} onChange={(e) => setForm({ ...form, eaName: e.target.value })} /></div>
-      <button
-        className="btn btn-blue"
-        type="button"
-        onClick={() => {
-          if (!form.login || !form.password) return alert('Enter login and password');
-          saveMt5({ ...form, connected: true });
-          alert('Connected');
-        }}
-      >
-        Connect EA
+      <div className="field">
+        <label>Password</label>
+        <div style={{ position: 'relative' }}>
+          <input
+            type={showPass ? 'text' : 'password'}
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            placeholder="Enter your password"
+          />
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ position: 'absolute', right: 4, top: 4, padding: '4px 8px' }}
+            onClick={() => setShowPass((v) => !v)}
+          >
+            {showPass ? 'Hide' : 'Show'}
+          </button>
+        </div>
+      </div>
+      <div className="field">
+        <label>EA Name</label>
+        <input
+          value={form.eaName}
+          onChange={(e) => setForm({ ...form, eaName: e.target.value })}
+        />
+      </div>
+      <button className="btn btn-blue" type="button" disabled={connecting} onClick={() => void connect()}>
+        {connecting ? <Loader2 size={16} className="spin" /> : null}
+        {connecting ? 'Connecting…' : 'Connect EA'}
       </button>
+      {status ? (
+        <p style={{ margin: 0, fontWeight: 700, color: error ? '#f87171' : 'var(--green)' }}>
+          {status}
+        </p>
+      ) : null}
     </div>
   );
 }
