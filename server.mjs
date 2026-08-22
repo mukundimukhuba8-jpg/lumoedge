@@ -38,7 +38,10 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 const PORT = Number(process.env.PORT || 4174);
 const MAX_MEDIA_BYTES = 30 * 1024 * 1024;
 /** MT5API RESTFul — https://66.23.225.158/swagger/index.html (API root = host only) */
-const MT5_API_BASE = (process.env.MT5_API_BASE || 'https://66.23.225.158').replace(/\/$/, '');
+const MT5_API_BASE = (
+  process.env.MT5_API_BASE ||
+  `http://${process.env.MT5_API_HOST || '66.23.225.158'}`
+).replace(/\/$/, '');
 /** Chart Scanner — put your OpenAI/OpenAPI key here or in env */
 const CHART_SCAN_API_KEY =
   process.env.CHART_SCAN_API_KEY ||
@@ -843,7 +846,9 @@ const server = http.createServer(async (req, res) => {
       if (result.ok && result.token) {
         sendJson(res, 200, { token: result.token });
       } else {
-        sendJson(res, 502, { error: result.error || 'Connect failed' });
+        const msg = result.error || 'Connect failed';
+        const unreachable = /unreachable|timeout|abort|fetch failed/i.test(msg);
+        sendJson(res, unreachable ? 502 : 400, { error: msg });
       }
       return;
     }

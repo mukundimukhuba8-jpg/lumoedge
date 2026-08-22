@@ -3067,7 +3067,7 @@ html[data-admin-portal] .admin-drawer-backdrop {
 }
 
 .mt5-broker-drop {
-  max-height: 240px;
+  max-height: 280px;
   overflow: auto;
 }
 
@@ -3076,13 +3076,77 @@ html[data-admin-portal] .admin-drawer-backdrop {
   padding-bottom: 4px;
 }
 
-.mt5-co-name {
+.mt5-co-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 10px 14px 4px;
+}
+
+.mt5-co-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.mt5-co-logo-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.mt5-co-name {
+  padding: 0;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.4px;
   color: var(--electric);
   text-transform: uppercase;
+}
+
+.mt5-broker-drop button {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.mt5-broker-drop button em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.mt5-form-modern {
+  gap: 14px;
+}
+
+.mt5-form-intro h2 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+
+.mt5-form-intro p {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.mt5-banner-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mt5-btn-connect {
+  min-height: 48px;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
 }
 
 .mt5-connect {
@@ -3093,6 +3157,61 @@ html[data-admin-portal] .admin-drawer-backdrop {
 
 .spin {
   animation: mt5-spin 0.8s linear infinite;
+}
+
+/* ——— Admin broker manager ——— */
+.broker-admin {
+  display: grid;
+  gap: 14px;
+}
+
+.broker-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.broker-admin-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.broker-admin-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: start;
+}
+
+.broker-admin-card h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.broker-admin-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.broker-admin-chip {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--muted);
+}
+
+.broker-admin-chip.on {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 40%, transparent);
+}
+
+.broker-admin-chip.off {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.35);
 }
 
 /* ——— EA status popup (floating avatar tap) ——— */
