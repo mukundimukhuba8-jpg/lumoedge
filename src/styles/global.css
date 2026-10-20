@@ -76,6 +76,10 @@ a {
   z-index: 1;
 }
 
+.page.admin-auth-static {
+  padding: 14px 14px 24px;
+}
+
 .glow-card {
   background: linear-gradient(165deg, rgba(16, 22, 36, 0.94), rgba(8, 12, 20, 0.92));
   border: 1px solid var(--card-border);
@@ -394,11 +398,11 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 }
 
 .admin-top-cyber {
-  padding: 14px 16px;
+  padding: 10px 12px;
 }
 
 .admin-top-title-cyber {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 800;
   letter-spacing: -0.03em;
   background: linear-gradient(135deg, #f8fafc 0%, #67e8f9 55%, #a855f7 100%);
@@ -409,14 +413,14 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 }
 
 .admin-top-spacer {
-  width: 44px;
+  width: 36px;
   flex-shrink: 0;
 }
 
 .admin-menu-btn-cyber {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -437,7 +441,7 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 }
 
 .admin-page-body-cyber {
-  padding: 18px 16px 44px;
+  padding: 12px 12px 32px;
   position: relative;
   z-index: 1;
   background: transparent;
@@ -445,7 +449,7 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 
 .admin-dashboard {
   display: grid;
-  gap: 16px;
+  gap: 10px;
 }
 
 .admin-shell-dark .glow-card,
@@ -454,11 +458,17 @@ html[data-admin-portal] .admin-shell-dark .drawer {
   backdrop-filter: blur(18px) saturate(150%);
   -webkit-backdrop-filter: blur(18px) saturate(150%);
   border: 1px solid var(--admin-glass-border);
-  border-radius: 20px;
+  border-radius: 14px;
+  padding: 12px;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 12px 40px rgba(0, 0, 0, 0.35),
-    0 0 24px rgba(59, 130, 246, 0.08);
+    0 8px 24px rgba(0, 0, 0, 0.3),
+    0 0 16px rgba(59, 130, 246, 0.06);
+}
+
+.admin-shell-dark .glow-card h2,
+.admin-shell-dark .glow-card h3 {
+  font-size: 14px;
 }
 
 /* Phones: glass blur stacks with sync work and freezes taps — solid fill only */
@@ -481,19 +491,19 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 }
 
 .admin-welcome-card {
-  padding: 18px;
+  padding: 12px;
 }
 
 .admin-welcome-row {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   align-items: flex-start;
 }
 
 .admin-welcome-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 17px;
   font-weight: 800;
   letter-spacing: -0.03em;
   line-height: 1.15;
@@ -501,9 +511,9 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 
 .admin-welcome-meta {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  margin-top: 10px;
+  margin-top: 6px;
   flex-wrap: wrap;
 }
 
@@ -516,19 +526,19 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 .admin-id-pill {
   border: 1px solid rgba(103, 232, 249, 0.45);
   border-radius: 999px;
-  padding: 4px 12px;
+  padding: 2px 8px;
   color: var(--admin-cyan);
   font-weight: 700;
-  font-size: 12px;
+  font-size: 11px;
   background: rgba(34, 211, 238, 0.08);
   box-shadow: 0 0 16px rgba(34, 211, 238, 0.12);
 }
 
 .admin-role-chip {
   border-radius: 999px;
-  padding: 6px 12px;
+  padding: 4px 8px;
   font-weight: 800;
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.08em;
   background: rgba(59, 130, 246, 0.14);
   color: #93c5fd;
@@ -576,14 +586,14 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 
 /* Premium stat cards */
 .admin-stat-grid {
-  gap: 12px;
+  gap: 8px;
 }
 
 .admin-stat-card {
   position: relative;
   overflow: hidden;
-  padding: 14px 14px 12px;
-  min-height: 96px;
+  padding: 10px 10px 8px;
+  min-height: 72px;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -596,7 +606,7 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 .admin-stat-card:nth-child(4) { animation-delay: 0.16s; }
 
 .admin-stat-skeleton {
-  min-height: 96px;
+  min-height: 72px;
   background:
     linear-gradient(
       110deg,
@@ -634,11 +644,11 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 
 .admin-stat-icon-wrap {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 34px;
-  height: 34px;
-  border-radius: 12px;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.04);
@@ -647,8 +657,13 @@ html[data-admin-portal] .admin-shell-dark .drawer {
   box-shadow: 0 0 18px var(--stat-glow, rgba(34, 211, 238, 0.2));
 }
 
+.admin-stat-icon-wrap svg {
+  width: 14px;
+  height: 14px;
+}
+
 .admin-stat-value {
-  font-size: 28px;
+  font-size: 20px;
   font-weight: 800;
   letter-spacing: -0.04em;
   line-height: 1;
@@ -657,8 +672,8 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 }
 
 .admin-stat-label {
-  margin-top: 6px;
-  font-size: 11px;
+  margin-top: 4px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
   color: rgba(226, 232, 240, 0.72);
@@ -709,12 +724,18 @@ html[data-admin-portal] .admin-shell-dark .drawer {
   box-shadow: 0 8px 24px rgba(34, 197, 94, 0.28);
 }
 
+.admin-shell-dark .btn {
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
 .admin-shell-dark .field input,
 .admin-shell-dark .field select,
 .admin-shell-dark .field textarea {
   background: rgba(8, 12, 22, 0.72);
   border: 1px solid rgba(103, 232, 249, 0.18);
-  border-radius: 14px;
+  border-radius: 11px;
   /* 16px prevents iOS Safari zoom-on-focus in admin portal */
   font-size: 16px;
 }
@@ -752,7 +773,7 @@ html[data-admin-portal] .admin-shell-dark .drawer {
   box-shadow:
     12px 0 48px rgba(0, 0, 0, 0.55),
     inset -1px 0 0 rgba(168, 85, 247, 0.12);
-  padding: 18px 14px;
+  padding: 12px 10px;
 }
 
 .admin-shell-dark .drawer.is-open,
@@ -765,8 +786,8 @@ html[data-admin-portal] .admin-shell-dark .drawer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 18px;
-  gap: 10px;
+  margin-bottom: 12px;
+  gap: 8px;
 }
 
 .admin-drawer-brand {
@@ -777,7 +798,7 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 }
 
 .admin-drawer-logo {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 800;
 }
 
@@ -799,9 +820,9 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 }
 
 .admin-drawer-close {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.04);
@@ -810,9 +831,9 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 }
 
 .admin-drawer-user {
-  margin-bottom: 14px;
-  padding: 12px;
-  border-radius: 16px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -826,21 +847,21 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 
 .admin-drawer-user-name {
   font-weight: 800;
-  font-size: 16px;
+  font-size: 14px;
   letter-spacing: -0.02em;
 }
 
 .admin-drawer-user-id {
   color: var(--admin-cyan);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   margin-top: 2px;
 }
 
 .admin-drawer-note {
-  font-size: 12px;
-  margin: 0 0 12px;
-  line-height: 1.45;
+  font-size: 11px;
+  margin: 0 0 8px;
+  line-height: 1.4;
 }
 
 .admin-drawer-nav {
@@ -853,16 +874,16 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 
 .admin-drawer-item {
   position: relative;
-  gap: 12px;
-  padding: 11px 12px;
-  border-radius: 14px;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 11px;
   border: 1px solid transparent;
 }
 
 .admin-drawer-item-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.04);
@@ -873,7 +894,7 @@ html[data-admin-portal] .admin-shell-dark .drawer {
 
 .admin-drawer-item-label {
   flex: 1;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
 }
 
