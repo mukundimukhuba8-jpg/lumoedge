@@ -57,12 +57,58 @@ function mount() {
 
 mount();
 
-// Safari bfcache / tab resume: remount if the tree was discarded
-window.addEventListener('pageshow', (event) => {
-  if (!event.persisted) return;
+function rootLooksDead(): boolean {
+  const el = document.getElementById('root');
+  if (!el) return true;
+  if (el.childElementCount === 0) return true;
+  const text = (el.innerText || '').replace(/\s+/g, ' ').trim();
+  if (text.length >= 8) return false;
+  return el.querySelectorAll('button, a, input, textarea, select').length === 0;
+}
+
+let resumeRemounting = false;
+
+function recoverFromBlank(reason: string) {
+  if (resumeRemounting) return;
+  if (document.visibilityState === 'hidden') return;
+  if (!rootLooksDead()) return;
+  resumeRemounting = true;
   try {
+    // Prefer remount first — cheaper than full reload
     mount();
+    window.setTimeout(() => {
+      if (rootLooksDead()) {
+        location.reload();
+        return;
+      }
+      resumeRemounting = false;
+      markReady();
+    }, 900);
   } catch {
     location.reload();
   }
+  void reason;
+}
+
+// Safari bfcache / tab resume: remount if the tree was discarded
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) {
+    try {
+      mount();
+    } catch {
+      location.reload();
+    }
+    return;
+  }
+  window.setTimeout(() => recoverFromBlank('pageshow'), 500);
+});
+
+// Switching to Cursor / another app then back often freezes iOS WebKit black
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  window.setTimeout(() => recoverFromBlank('visibility'), 700);
+});
+
+window.addEventListener('focus', () => {
+  window.setTimeout(() => recoverFromBlank('focus'), 900);
 });
