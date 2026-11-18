@@ -206,8 +206,16 @@ button {
   box-shadow: 0 0 12px rgba(225, 6, 0, 0.25);
 }
 
-.ctrl-ring > svg[hidden] {
-  display: none !important;
+.ctrl-ring .icon-play {
+  display: none;
+}
+
+.ctrl.is-off .ctrl-ring .icon-stop {
+  display: none;
+}
+
+.ctrl.is-off .ctrl-ring .icon-play {
+  display: block;
 }
 
 .ctrl-primary .ctrl-ring {

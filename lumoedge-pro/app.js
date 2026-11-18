@@ -13,9 +13,6 @@
   const drawerClose = document.getElementById("drawerClose");
   const drawerBackdrop = document.getElementById("drawerBackdrop");
 
-  const iconStop = powerBtn.querySelector(".icon-stop");
-  const iconPlay = powerBtn.querySelector(".icon-play");
-
   let running = true;
   let removed = false;
   let toastTimer = null;
@@ -45,8 +42,6 @@
       powerLabel.textContent = "start";
       powerBtn.classList.add("is-off");
       powerBtn.setAttribute("aria-pressed", "false");
-      iconStop.hidden = true;
-      iconPlay.hidden = false;
       statusBar.style.opacity = "0.55";
       return;
     }
@@ -58,16 +53,12 @@
       powerLabel.textContent = "stop";
       powerBtn.classList.remove("is-off");
       powerBtn.setAttribute("aria-pressed", "true");
-      iconStop.hidden = false;
-      iconPlay.hidden = true;
     } else {
       statusState.textContent = "stopped";
       statusState.className = "status-state is-stopped";
       powerLabel.textContent = "start";
       powerBtn.classList.add("is-off");
       powerBtn.setAttribute("aria-pressed", "false");
-      iconStop.hidden = true;
-      iconPlay.hidden = false;
     }
   }
 
