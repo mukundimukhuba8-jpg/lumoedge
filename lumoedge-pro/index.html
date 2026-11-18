@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>lumoedge pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" type="image/png" href="assets/avatar.png" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" id="menuBtn" aria-label="Menu" type="button">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
+      <div class="brand-pill" aria-hidden="true">
+        <img src="assets/avatar.png" alt="" class="brand-pill-avatar" />
+        <span>lumoedge pro</span>
+      </div>
+      <span class="topbar-spacer" aria-hidden="true"></span>
+    </header>
+
+    <section class="hero" aria-label="lumoedge pro">
+      <div class="hero-glow"></div>
+      <img class="hero-img" src="assets/hero.jpg" alt="lumoedge pro cyborg" />
+      <div class="hero-fade"></div>
+    </section>
+
+    <h1 class="title">lumoedge pro</h1>
+
+    <section class="controls" aria-label="Controls">
+      <button class="ctrl" id="quotesBtn" type="button">
+        <span class="ctrl-ring">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 17l6-6 4 4 7-8" />
+            <path d="M14 7h6v6" />
+          </svg>
+        </span>
+        <span class="ctrl-label">quotes</span>
+      </button>
+
+      <button class="ctrl ctrl-primary" id="powerBtn" type="button" aria-pressed="true">
+        <span class="ctrl-ring ctrl-ring-glow">
+          <svg class="icon-stop" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" />
+          </svg>
+          <svg class="icon-play" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" hidden>
+            <path d="M8 5.5v13l11-6.5L8 5.5z" fill="currentColor" />
+          </svg>
+        </span>
+        <span class="ctrl-label" id="powerLabel">stop</span>
+      </button>
+
+      <button class="ctrl" id="removeBtn" type="button">
+        <span class="ctrl-ring">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 7h16" />
+            <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+            <path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" />
+            <path d="M10 11v6M14 11v6" />
+          </svg>
+        </span>
+        <span class="ctrl-label">remove</span>
+      </button>
+    </section>
+
+    <p class="powered">powered by <span>trade port.co</span></p>
+
+    <section class="status-bar" id="statusBar" aria-live="polite">
+      <img src="assets/avatar-sq.png" alt="" class="status-avatar" />
+      <div class="status-text">
+        <div class="status-name">lumoedge pro</div>
+        <div class="status-state" id="statusState">running</div>
+      </div>
+    </section>
+  </div>
+
+  <aside class="drawer" id="drawer" hidden>
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+    <nav class="drawer-panel" aria-label="Menu">
+      <div class="drawer-head">
+        <img src="assets/avatar.png" alt="" width="36" height="36" />
+        <div>
+          <strong>lumoedge pro</strong>
+          <span>edge trading terminal</span>
+        </div>
+      </div>
+      <button type="button" data-nav="quotes">Live quotes</button>
+      <button type="button" data-nav="power">Start / Stop</button>
+      <button type="button" data-nav="remove">Remove bot</button>
+      <button type="button" class="drawer-close" id="drawerClose">Close</button>
+    </nav>
+  </aside>
+
+  <div class="sheet" id="quotesSheet" hidden>
+    <div class="sheet-backdrop" data-close-sheet></div>
+    <div class="sheet-panel" role="dialog" aria-label="Live quotes">
+      <div class="sheet-handle"></div>
+      <h2>live quotes</h2>
+      <ul class="quote-list" id="quoteList"></ul>
+      <button type="button" class="sheet-done" data-close-sheet>done</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
